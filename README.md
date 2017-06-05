@@ -1,5 +1,4 @@
 # sql-server-maintenance-solution
-SQL Server Maintenance Solution
 
 Supported versions: SQL Server 2005, SQL Server 2008, SQL Server 2008 R2, SQL Server 2012, SQL Server 2014, and SQL Server 2016
 
