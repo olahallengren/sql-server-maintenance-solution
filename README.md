@@ -17,7 +17,7 @@ Numerous SQL Server community experts recommend the SQL Server Maintenance Solut
 [2011](http://sqlmag.com/sql-server/2011-sql-server-magazine-editors-best-and-community-choice-awards), 
 and [2010](http://sqlmag.com/sql-server/2010-sql-server-magazine-editors-best-and-community-choice-awards)
 SQL Server Magazine Awards.
-The SQL Server Maintenance Solution is free with [MIT License]()
+The SQL Server Maintenance Solution is free with [MIT License](/LICENSE)
 
 
 ## Getting Started
