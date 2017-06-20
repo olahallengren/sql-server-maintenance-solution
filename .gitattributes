@@ -54,4 +54,4 @@
 *.LDF  BINARY
 
 # T-SQL files
-*.sql 	eol=crlf merge=union
+*.sql text	eol=crlf merge=union
