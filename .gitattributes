@@ -1,0 +1,5 @@
+# Force this repository to use Windows line endings
+* text=crlf
+
+# T-SQL files
+*.sql diff text eol=crlf merge=union
