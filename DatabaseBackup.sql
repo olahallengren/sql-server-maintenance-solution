@@ -99,7 +99,7 @@ BEGIN
   DECLARE @CurrentCommand03 nvarchar(max)
   DECLARE @CurrentCommand04 nvarchar(max)
   DECLARE @CurrentCommand05 nvarchar(max)
-  DECLARE @CurrentCommand06 nvarchar(max)
+  DECLARE @CurrentCommand06 nvarchar(max) /* BGO THIS IS A TEST COMMENT */
 
   DECLARE @CurrentCommandOutput01 int
   DECLARE @CurrentCommandOutput02 int
@@ -137,6 +137,9 @@ BEGIN
 
   DECLARE @tmpDatabasesAvailabilityGroups TABLE (DatabaseName nvarchar(max), AvailabilityGroupName nvarchar(max))
 
+
+  /* BGO THIS IS A NEW LINE */
+  
   DECLARE @SelectedDatabases TABLE (DatabaseName nvarchar(max),
                                     DatabaseType nvarchar(max),
                                     AvailabilityGroup nvarchar(max),
