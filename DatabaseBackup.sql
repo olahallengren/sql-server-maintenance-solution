@@ -711,7 +711,7 @@ BEGIN
     SET @Error = @@ERROR
   END
 
-  IF @ChangeBackupType NOT IN ('Y','N') OR @ChangeBackupType IS NULL
+  IF @ChangeBackupType NOT IN ('Y','N','MSDB') OR @ChangeBackupType IS NULL
   BEGIN
     SET @ErrorMessage = 'The value for the parameter @ChangeBackupType is not supported.' + CHAR(13) + CHAR(10) + ' '
     RAISERROR(@ErrorMessage,16,1) WITH NOWAIT
@@ -994,6 +994,20 @@ BEGIN
         SET @CurrentBackupType = 'FULL'
       END
     END
+
+    /* 
+      Escalate to full backups if no full is found in MSDB.
+      More info: https://github.com/olahallengren/sql-server-maintenance-solution/issues/12 
+    */
+    IF @ChangeBackupType = 'MSDB'
+    BEGIN
+      IF @CurrentBackupType = 'LOG' AND DATABASEPROPERTYEX(@CurrentDatabaseName,'Recovery') <> 'SIMPLE' AND @CurrentDatabaseName <> 'master'
+          AND NOT EXISTS (SELECT * FROM msdb.dbo.backupset WHERE [database_name] = @CurrentDatabaseName AND type = 'D' AND backup_finish_date IS NOT NULL)
+      BEGIN
+        SET @CurrentBackupType = 'FULL'
+      END
+    END
+
 
     IF @CurrentBackupType = 'LOG' AND (@CleanupTime IS NOT NULL OR @MirrorCleanupTime IS NOT NULL)
     BEGIN
