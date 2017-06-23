@@ -1157,10 +1157,10 @@ BEGIN
         SET @CurrentDirectoryOverride = REPLACE(@CurrentDirectoryOverride, '**CLUSTER**', COALESCE(@Cluster,''));
         SET @CurrentDirectoryOverride = REPLACE(@CurrentDirectoryOverride, '**AVAILABILITYGROUP**', COALESCE(@CurrentAvailabilityGroup,''));
         SET @CurrentDirectoryOverride = REPLACE(@CurrentDirectoryOverride, '**SERVERNAME**', REPLACE(CAST(SERVERPROPERTY('servername') AS nvarchar(max)),'\','$'));
-        IF CHARINDEX('$',CAST(SERVERPROPERTY('servername') AS nvarchar(max))) > 0
+        IF CHARINDEX('\',CAST(SERVERPROPERTY('servername') AS nvarchar(max))) > 0
         BEGIN
-            SET @CurrentDirectoryOverride = REPLACE(@CurrentDirectoryOverride, '**SERVERNAMEWITHOUTINSTANCE**', SUBSTRING(CAST(SERVERPROPERTY('servername') AS nvarchar(max)), 1, (CHARINDEX('$',CAST(SERVERPROPERTY('servername') AS nvarchar(max))) - 1)));
-            SET @CurrentDirectoryOverride = REPLACE(@CurrentDirectoryOverride, '**INSTANCENAME**', SUBSTRING(CAST(SERVERPROPERTY('servername') AS nvarchar(max)), CHARINDEX('$',CAST(SERVERPROPERTY('servername') AS nvarchar(max))), (LEN(CAST(SERVERPROPERTY('servername') AS nvarchar(max))) - CHARINDEX('$',CAST(SERVERPROPERTY('servername') AS nvarchar(max)))) + 1));
+            SET @CurrentDirectoryOverride = REPLACE(@CurrentDirectoryOverride, '**SERVERNAMEWITHOUTINSTANCE**', SUBSTRING(CAST(SERVERPROPERTY('servername') AS nvarchar(max)), 1, (CHARINDEX('\',CAST(SERVERPROPERTY('servername') AS nvarchar(max))) - 1)));
+            SET @CurrentDirectoryOverride = REPLACE(@CurrentDirectoryOverride, '**INSTANCENAME**', SUBSTRING(CAST(SERVERPROPERTY('servername') AS nvarchar(max)), CHARINDEX('\',CAST(SERVERPROPERTY('servername') AS nvarchar(max))), (LEN(CAST(SERVERPROPERTY('servername') AS nvarchar(max))) - CHARINDEX('\',CAST(SERVERPROPERTY('servername') AS nvarchar(max)))) + 1));
         END
         ELSE /* No instance installed */
         BEGIN
@@ -1177,10 +1177,10 @@ BEGIN
         SET @CurrentMirrorDirectoryOverride = REPLACE(@CurrentMirrorDirectoryOverride, '**CLUSTER**', COALESCE(@Cluster,''));
         SET @CurrentMirrorDirectoryOverride = REPLACE(@CurrentMirrorDirectoryOverride, '**AVAILABILITYGROUP**', COALESCE(@CurrentAvailabilityGroup,''));
         SET @CurrentMirrorDirectoryOverride = REPLACE(@CurrentMirrorDirectoryOverride, '**SERVERNAME**', REPLACE(CAST(SERVERPROPERTY('servername') AS nvarchar(max)),'\','$'));
-        IF CHARINDEX('$',CAST(SERVERPROPERTY('servername') AS nvarchar(max))) > 0
+        IF CHARINDEX('\',CAST(SERVERPROPERTY('servername') AS nvarchar(max))) > 0
         BEGIN
-            SET @CurrentMirrorDirectoryOverride = REPLACE(@CurrentMirrorDirectoryOverride, '**SERVERNAMEWITHOUTINSTANCE**', SUBSTRING(CAST(SERVERPROPERTY('servername') AS nvarchar(max)), 1, (CHARINDEX('$',CAST(SERVERPROPERTY('servername') AS nvarchar(max))) - 1)));
-            SET @CurrentMirrorDirectoryOverride = REPLACE(@CurrentMirrorDirectoryOverride, '**INSTANCENAME**', SUBSTRING(CAST(SERVERPROPERTY('servername') AS nvarchar(max)), CHARINDEX('$',CAST(SERVERPROPERTY('servername') AS nvarchar(max))), (LEN(CAST(SERVERPROPERTY('servername') AS nvarchar(max))) - CHARINDEX('$',CAST(SERVERPROPERTY('servername') AS nvarchar(max)))) + 1));
+            SET @CurrentMirrorDirectoryOverride = REPLACE(@CurrentMirrorDirectoryOverride, '**SERVERNAMEWITHOUTINSTANCE**', SUBSTRING(CAST(SERVERPROPERTY('servername') AS nvarchar(max)), 1, (CHARINDEX('\',CAST(SERVERPROPERTY('servername') AS nvarchar(max))) - 1)));
+            SET @CurrentMirrorDirectoryOverride = REPLACE(@CurrentMirrorDirectoryOverride, '**INSTANCENAME**', SUBSTRING(CAST(SERVERPROPERTY('servername') AS nvarchar(max)), CHARINDEX('\',CAST(SERVERPROPERTY('servername') AS nvarchar(max))), (LEN(CAST(SERVERPROPERTY('servername') AS nvarchar(max))) - CHARINDEX('\',CAST(SERVERPROPERTY('servername') AS nvarchar(max)))) + 1));
         END
         ELSE /* No instance installed */
         BEGIN
