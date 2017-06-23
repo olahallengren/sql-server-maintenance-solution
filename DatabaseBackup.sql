@@ -1151,7 +1151,11 @@ BEGIN
       WHEN @BackupSoftware = 'SQLSAFE' AND @CurrentBackupType = 'LOG' THEN 'safe'
       END
 
-      IF @DirectoryOverride IS NOT NULL
+      IF @DirectoryOverride IS NULL
+      BEGIN
+        SET @CurrentDirectoryOverride = CASE WHEN @CurrentAvailabilityGroup IS NOT NULL THEN @Cluster + '$' + @CurrentAvailabilityGroup ELSE REPLACE(CAST(SERVERPROPERTY('servername') AS nvarchar(max)),'\','$') END + '\' + @CurrentDatabaseNameFS + '\' + UPPER(@CurrentBackupType);
+      END
+      ELSE /* IF @DirectoryOverride IS NULL */
       BEGIN
         SET @CurrentDirectoryOverride = @DirectoryOverride;
         SET @CurrentDirectoryOverride = REPLACE(@CurrentDirectoryOverride, '**CLUSTER**', COALESCE(@Cluster,''));
@@ -1171,7 +1175,11 @@ BEGIN
         SET @CurrentDirectoryOverride = REPLACE(@CurrentDirectoryOverride, '**BACKUPTYPE**', UPPER(@CurrentBackupType));
       END /* IF @DirectoryOverride IS NOT NULL */
 
-      IF @MirrorDirectoryOverride IS NOT NULL
+      IF @MirrorDirectoryOverride IS NULL
+      BEGIN
+        SET @CurrentMirrorDirectoryOverride = CASE WHEN @CurrentAvailabilityGroup IS NOT NULL THEN @Cluster + '$' + @CurrentAvailabilityGroup ELSE REPLACE(CAST(SERVERPROPERTY('servername') AS nvarchar(max)),'\','$') END + '\' + @CurrentDatabaseNameFS + '\' + UPPER(@CurrentBackupType);
+      END
+      ELSE /* IF @MirrorDirectoryOverride IS NULL */
       BEGIN
         SET @CurrentMirrorDirectoryOverride = @MirrorDirectoryOverride;
         SET @CurrentMirrorDirectoryOverride = REPLACE(@CurrentMirrorDirectoryOverride, '**CLUSTER**', COALESCE(@Cluster,''));
@@ -1195,14 +1203,8 @@ BEGIN
 
       INSERT INTO @CurrentDirectories (ID, DirectoryPath, Mirror, DirectoryNumber, CreateCompleted, CleanupCompleted)
       SELECT ROW_NUMBER() OVER (ORDER BY ID), DirectoryPath + CASE WHEN RIGHT(DirectoryPath,1) = '\' THEN '' ELSE '\' END 
-          + CASE WHEN Mirror = 0 THEN
-              + CASE WHEN @CurrentDirectoryOverride IS NULL THEN + CASE WHEN @CurrentAvailabilityGroup IS NOT NULL THEN @Cluster + '$' + @CurrentAvailabilityGroup ELSE REPLACE(CAST(SERVERPROPERTY('servername') AS nvarchar(max)),'\','$') END + '\' + @CurrentDatabaseNameFS + '\' + UPPER(@CurrentBackupType) 
-                ELSE @CurrentDirectoryOverride
-                END
-            ELSE /* Mirror */
-              + CASE WHEN @CurrentMirrorDirectoryOverride IS NULL THEN + CASE WHEN @CurrentAvailabilityGroup IS NOT NULL THEN @Cluster + '$' + @CurrentAvailabilityGroup ELSE REPLACE(CAST(SERVERPROPERTY('servername') AS nvarchar(max)),'\','$') END + '\' + @CurrentDatabaseNameFS + '\' + UPPER(@CurrentBackupType) 
-                ELSE @CurrentMirrorDirectoryOverride
-                END
+          + CASE WHEN Mirror = 1 THEN @CurrentMirrorDirectoryOverride
+                 ELSE @CurrentDirectoryOverride
             END
           + CASE WHEN @ReadWriteFileGroups = 'Y' THEN '_PARTIAL' ELSE '' END + CASE WHEN @CopyOnly = 'Y' THEN '_COPY_ONLY' ELSE '' END, Mirror, ROW_NUMBER() OVER (PARTITION BY Mirror ORDER BY ID ASC), 0, 0
       FROM @Directories
