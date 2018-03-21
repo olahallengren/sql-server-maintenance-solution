@@ -25,7 +25,7 @@ AS
 BEGIN
 
   ----------------------------------------------------------------------------------------------------
-  --// Source: https://ola.hallengren.com                                                          //--
+  --// Source: https://ola.hallengren.com                                                         //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -724,6 +724,7 @@ BEGIN
 
     IF DATABASEPROPERTYEX(@CurrentDatabaseName,'Status') = 'ONLINE'
     AND (@CurrentIsDatabaseAccessible = 1 OR @CurrentIsDatabaseAccessible IS NULL)
+    AND (@CurrentAvailabilityGroupRole = 'PRIMARY' OR @CurrentAvailabilityGroupRole IS NULL OR SERVERPROPERTY('EngineEdition') = 3)
     AND (@CurrentAvailabilityGroupRole = @AvailabilityGroupReplicas OR @AvailabilityGroupReplicas = 'ALL' OR @CurrentAvailabilityGroupRole IS NULL)
     AND NOT (@CurrentIsReadOnly = 1 AND @Updateability = 'READ_WRITE')
     AND NOT (@CurrentIsReadOnly = 0 AND @Updateability = 'READ_ONLY')
