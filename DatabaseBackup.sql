@@ -1746,6 +1746,13 @@ BEGIN
       END
     END
 
+    IF DATABASEPROPERTYEX(@CurrentDatabaseName,'Status') = 'SUSPECT'
+    BEGIN
+      SET @ErrorMessage = 'The database ' + QUOTENAME(@CurrentDatabaseName) + ' is in a SUSPECT state.' + CHAR(13) + CHAR(10) + ' '
+      RAISERROR(@ErrorMessage,16,1) WITH NOWAIT
+      SET @Error = @@ERROR
+    END
+
     -- Update that the database is completed
     UPDATE @tmpDatabases
     SET Completed = 1
