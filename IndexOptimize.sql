@@ -793,6 +793,59 @@ BEGIN
   END
 
   ----------------------------------------------------------------------------------------------------
+  --// Check that selected databases and availability groups exist                                //--
+  ----------------------------------------------------------------------------------------------------
+
+  SET @ErrorMessage = ''
+  SELECT @ErrorMessage = @ErrorMessage + QUOTENAME(DatabaseName) + ', '
+  FROM @SelectedDatabases
+  WHERE DatabaseName NOT LIKE '%[%]%'
+  AND DatabaseName NOT IN (SELECT DatabaseName FROM @tmpDatabases)
+  IF @@ROWCOUNT > 0
+  BEGIN
+    SET @ErrorMessage = 'The following databases in the @Databases parameter do not exist: ' + LEFT(@ErrorMessage,LEN(@ErrorMessage)-1) + '.' + CHAR(13) + CHAR(10) + ' '
+    RAISERROR(@ErrorMessage,16,1) WITH NOWAIT
+    SET @Error = @@ERROR
+  END
+
+  SET @ErrorMessage = ''
+  SELECT @ErrorMessage = @ErrorMessage + QUOTENAME(DatabaseName) + ', '
+  FROM @SelectedIndexes
+  WHERE DatabaseName NOT LIKE '%[%]%'
+  AND DatabaseName NOT IN (SELECT DatabaseName FROM @tmpDatabases)
+  IF @@ROWCOUNT > 0
+  BEGIN
+    SET @ErrorMessage = 'The following databases in the @Indexes parameter do not exist: ' + LEFT(@ErrorMessage,LEN(@ErrorMessage)-1) + '.' + CHAR(13) + CHAR(10) + ' '
+    RAISERROR(@ErrorMessage,16,1) WITH NOWAIT
+    SET @Error = @@ERROR
+  END
+
+  SET @ErrorMessage = ''
+  SELECT @ErrorMessage = @ErrorMessage + QUOTENAME(AvailabilityGroupName) + ', '
+  FROM @SelectedAvailabilityGroups
+  WHERE AvailabilityGroupName NOT LIKE '%[%]%'
+  AND AvailabilityGroupName NOT IN (SELECT AvailabilityGroupName FROM @tmpAvailabilityGroups)
+  IF @@ROWCOUNT > 0
+  BEGIN
+    SET @ErrorMessage = 'The following availability groups do not exist: ' + LEFT(@ErrorMessage,LEN(@ErrorMessage)-1) + '.' + CHAR(13) + CHAR(10) + ' '
+    RAISERROR(@ErrorMessage,16,1) WITH NOWAIT
+    SET @Error = @@ERROR
+  END
+
+  SET @ErrorMessage = ''
+  SELECT @ErrorMessage = @ErrorMessage + QUOTENAME(DatabaseName) + ', '
+  FROM @SelectedIndexes
+  WHERE DatabaseName NOT LIKE '%[%]%'
+  AND DatabaseName IN (SELECT DatabaseName FROM @tmpDatabases)
+  AND DatabaseName NOT IN (SELECT DatabaseName FROM @tmpDatabases WHERE Selected = 1)
+  IF @@ROWCOUNT > 0
+  BEGIN
+    SET @ErrorMessage = 'The following databases have been selected in the @Indexes parameter, but not in the @Databases or @AvailabilityGroups parameters: ' + LEFT(@ErrorMessage,LEN(@ErrorMessage)-1) + '.' + CHAR(13) + CHAR(10) + ' '
+    RAISERROR(@ErrorMessage,16,1) WITH NOWAIT
+    SET @Error = @@ERROR
+  END
+
+  ----------------------------------------------------------------------------------------------------
   --// Check Availability Group cluster name                                                      //--
   ----------------------------------------------------------------------------------------------------
 
@@ -931,6 +984,36 @@ BEGIN
         INNER JOIN @SelectedIndexes SelectedIndexes
         ON @CurrentDatabaseName LIKE REPLACE(SelectedIndexes.DatabaseName,'_','[_]') AND tmpIndexesStatistics.SchemaName LIKE REPLACE(SelectedIndexes.SchemaName,'_','[_]') AND tmpIndexesStatistics.ObjectName LIKE REPLACE(SelectedIndexes.ObjectName,'_','[_]') AND COALESCE(tmpIndexesStatistics.IndexName,tmpIndexesStatistics.StatisticsName) LIKE REPLACE(SelectedIndexes.IndexName,'_','[_]')
         WHERE SelectedIndexes.Selected = 0
+      END
+
+      SET @ErrorMessage = ''
+      SELECT @ErrorMessage = @ErrorMessage + QUOTENAME(DatabaseName) + '.' + QUOTENAME(SchemaName) + '.' + QUOTENAME(ObjectName) + ', '
+      FROM @SelectedIndexes SelectedIndexes
+      WHERE DatabaseName = @CurrentDatabaseName
+      AND SchemaName NOT LIKE '%[%]%'
+      AND ObjectName NOT LIKE '%[%]%'
+      AND IndexName LIKE '%[%]%'
+      AND NOT EXISTS (SELECT * FROM @tmpIndexesStatistics WHERE SchemaName = SelectedIndexes.SchemaName AND ObjectName = SelectedIndexes.ObjectName)
+      IF @@ROWCOUNT > 0
+      BEGIN
+        SET @ErrorMessage = 'The following objects in the @Indexes parameter do not exist: ' + LEFT(@ErrorMessage,LEN(@ErrorMessage)-1) + '.' + CHAR(13) + CHAR(10) + ' '
+        RAISERROR(@ErrorMessage,16,1) WITH NOWAIT
+        SET @Error = @@ERROR
+      END
+
+      SET @ErrorMessage = ''
+      SELECT @ErrorMessage = @ErrorMessage + QUOTENAME(DatabaseName) + QUOTENAME(SchemaName) + '.' + QUOTENAME(ObjectName) + '.' + QUOTENAME(IndexName) + ', '
+      FROM @SelectedIndexes SelectedIndexes
+      WHERE DatabaseName = @CurrentDatabaseName
+      AND SchemaName NOT LIKE '%[%]%'
+      AND ObjectName NOT LIKE '%[%]%'
+      AND IndexName NOT LIKE '%[%]%'
+      AND NOT EXISTS (SELECT * FROM @tmpIndexesStatistics WHERE SchemaName = SelectedIndexes.SchemaName AND ObjectName = SelectedIndexes.ObjectName AND IndexName = SelectedIndexes.IndexName)
+      IF @@ROWCOUNT > 0
+      BEGIN
+        SET @ErrorMessage = 'The following indexes in the @Indexes parameter do not exist: ' + LEFT(@ErrorMessage,LEN(@ErrorMessage)-1) + '.' + CHAR(13) + CHAR(10) + ' '
+        RAISERROR(@ErrorMessage,16,1) WITH NOWAIT
+        SET @Error = @@ERROR
       END
 
       WHILE EXISTS (SELECT * FROM @tmpIndexesStatistics WHERE Selected = 1 AND Completed = 0 AND (GETDATE() < DATEADD(ss,@TimeLimit,@StartTime) OR @TimeLimit IS NULL))

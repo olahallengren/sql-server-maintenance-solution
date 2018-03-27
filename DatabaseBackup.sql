@@ -918,6 +918,45 @@ BEGIN
   END
 
   ----------------------------------------------------------------------------------------------------
+  --// Check that selected databases and availability groups exist                                //--
+  ----------------------------------------------------------------------------------------------------
+
+  SET @ErrorMessage = ''
+  SELECT @ErrorMessage = @ErrorMessage + QUOTENAME(DatabaseName) + ', '
+  FROM @SelectedDatabases
+  WHERE DatabaseName NOT LIKE '%[%]%'
+  AND DatabaseName NOT IN (SELECT DatabaseName FROM @tmpDatabases)
+  IF @@ROWCOUNT > 0
+  BEGIN
+    SET @ErrorMessage = 'The following databases in the @Databases parameter do not exist: ' + LEFT(@ErrorMessage,LEN(@ErrorMessage)-1) + '.' + CHAR(13) + CHAR(10) + ' '
+    RAISERROR(@ErrorMessage,16,1) WITH NOWAIT
+    SET @Error = @@ERROR
+  END
+
+  SET @ErrorMessage = ''
+  SELECT @ErrorMessage = @ErrorMessage + QUOTENAME(AvailabilityGroupName) + ', '
+  FROM @SelectedAvailabilityGroups
+  WHERE AvailabilityGroupName NOT LIKE '%[%]%'
+  AND AvailabilityGroupName NOT IN (SELECT AvailabilityGroupName FROM @tmpAvailabilityGroups)
+  IF @@ROWCOUNT > 0
+  BEGIN
+    SET @ErrorMessage = 'The following availability groups do not exist: ' + LEFT(@ErrorMessage,LEN(@ErrorMessage)-1) + '.' + CHAR(13) + CHAR(10) + ' '
+    RAISERROR(@ErrorMessage,16,1) WITH NOWAIT
+    SET @Error = @@ERROR
+  END
+
+  ----------------------------------------------------------------------------------------------------
+  --// Check @@SERVERNAME                                                                         //--
+  ----------------------------------------------------------------------------------------------------
+
+  IF @@SERVERNAME <> SERVERPROPERTY('ServerName') AND SERVERPROPERTY('IsHadrEnabled') = 1
+  BEGIN
+    SET @ErrorMessage = 'The @@SERVERNAME does not match SERVERPROPERTY(''ServerName''). Please see ' + CASE WHEN SERVERPROPERTY('IsClustered') = 0 THEN 'https://docs.microsoft.com/en-us/sql/database-engine/install-windows/rename-a-computer-that-hosts-a-stand-alone-instance-of-sql-server' WHEN SERVERPROPERTY('IsClustered') = 1 THEN 'https://docs.microsoft.com/en-us/sql/sql-server/failover-clusters/install/rename-a-sql-server-failover-cluster-instance' END + '.' + CHAR(13) + CHAR(10) + ' '
+    RAISERROR(@ErrorMessage,16,1) WITH NOWAIT
+    SET @Error = @@ERROR
+  END
+
+  ----------------------------------------------------------------------------------------------------
   --// Check Availability Group cluster name                                                      //--
   ----------------------------------------------------------------------------------------------------
 

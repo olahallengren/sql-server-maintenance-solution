@@ -648,6 +648,84 @@ BEGIN
   END
 
   ----------------------------------------------------------------------------------------------------
+  --// Check that selected databases and availability groups exist                                //--
+  ----------------------------------------------------------------------------------------------------
+
+  SET @ErrorMessage = ''
+  SELECT @ErrorMessage = @ErrorMessage + QUOTENAME(DatabaseName) + ', '
+  FROM @SelectedDatabases
+  WHERE DatabaseName NOT LIKE '%[%]%'
+  AND DatabaseName NOT IN (SELECT DatabaseName FROM @tmpDatabases)
+  IF @@ROWCOUNT > 0
+  BEGIN
+    SET @ErrorMessage = 'The following databases in the @Databases parameter do not exist: ' + LEFT(@ErrorMessage,LEN(@ErrorMessage)-1) + '.' + CHAR(13) + CHAR(10) + ' '
+    RAISERROR(@ErrorMessage,16,1) WITH NOWAIT
+    SET @Error = @@ERROR
+  END
+
+  SET @ErrorMessage = ''
+  SELECT @ErrorMessage = @ErrorMessage + QUOTENAME(DatabaseName) + ', '
+  FROM @SelectedFileGroups
+  WHERE DatabaseName NOT LIKE '%[%]%'
+  AND DatabaseName NOT IN (SELECT DatabaseName FROM @tmpDatabases)
+  IF @@ROWCOUNT > 0
+  BEGIN
+    SET @ErrorMessage = 'The following databases in the @FileGroups parameter do not exist: ' + LEFT(@ErrorMessage,LEN(@ErrorMessage)-1) + '.' + CHAR(13) + CHAR(10) + ' '
+    RAISERROR(@ErrorMessage,16,1) WITH NOWAIT
+    SET @Error = @@ERROR
+  END
+
+  SET @ErrorMessage = ''
+  SELECT @ErrorMessage = @ErrorMessage + QUOTENAME(DatabaseName) + ', '
+  FROM @SelectedObjects
+  WHERE DatabaseName NOT LIKE '%[%]%'
+  AND DatabaseName NOT IN (SELECT DatabaseName FROM @tmpDatabases)
+  IF @@ROWCOUNT > 0
+  BEGIN
+    SET @ErrorMessage = 'The following databases in the @Objects parameter do not exist: ' + LEFT(@ErrorMessage,LEN(@ErrorMessage)-1) + '.' + CHAR(13) + CHAR(10) + ' '
+    RAISERROR(@ErrorMessage,16,1) WITH NOWAIT
+    SET @Error = @@ERROR
+  END
+
+  SET @ErrorMessage = ''
+  SELECT @ErrorMessage = @ErrorMessage + QUOTENAME(AvailabilityGroupName) + ', '
+  FROM @SelectedAvailabilityGroups
+  WHERE AvailabilityGroupName NOT LIKE '%[%]%'
+  AND AvailabilityGroupName NOT IN (SELECT AvailabilityGroupName FROM @tmpAvailabilityGroups)
+  IF @@ROWCOUNT > 0
+  BEGIN
+    SET @ErrorMessage = 'The following availability groups do not exist: ' + LEFT(@ErrorMessage,LEN(@ErrorMessage)-1) + '.' + CHAR(13) + CHAR(10) + ' '
+    RAISERROR(@ErrorMessage,16,1) WITH NOWAIT
+    SET @Error = @@ERROR
+  END
+
+  SET @ErrorMessage = ''
+  SELECT @ErrorMessage = @ErrorMessage + QUOTENAME(DatabaseName) + ', '
+  FROM @SelectedFileGroups
+  WHERE DatabaseName NOT LIKE '%[%]%'
+  AND DatabaseName IN (SELECT DatabaseName FROM @tmpDatabases)
+  AND DatabaseName NOT IN (SELECT DatabaseName FROM @tmpDatabases WHERE Selected = 1)
+  IF @@ROWCOUNT > 0
+  BEGIN
+    SET @ErrorMessage = 'The following databases have been selected in the @FileGroups parameter, but not in the @Databases or @AvailabilityGroups parameters: ' + LEFT(@ErrorMessage,LEN(@ErrorMessage)-1) + '.' + CHAR(13) + CHAR(10) + ' '
+    RAISERROR(@ErrorMessage,16,1) WITH NOWAIT
+    SET @Error = @@ERROR
+  END
+
+  SET @ErrorMessage = ''
+  SELECT @ErrorMessage = @ErrorMessage + QUOTENAME(DatabaseName) + ', '
+  FROM @SelectedObjects
+  WHERE DatabaseName NOT LIKE '%[%]%'
+  AND DatabaseName IN (SELECT DatabaseName FROM @tmpDatabases)
+  AND DatabaseName NOT IN (SELECT DatabaseName FROM @tmpDatabases WHERE Selected = 1)
+  IF @@ROWCOUNT > 0
+  BEGIN
+    SET @ErrorMessage = 'The following databases have been selected in the @Objects parameter, but not in the @Databases or @AvailabilityGroups parameters: ' + LEFT(@ErrorMessage,LEN(@ErrorMessage)-1) + '.' + CHAR(13) + CHAR(10) + ' '
+    RAISERROR(@ErrorMessage,16,1) WITH NOWAIT
+    SET @Error = @@ERROR
+  END
+
+  ----------------------------------------------------------------------------------------------------
   --// Check Availability Group cluster name                                                      //--
   ----------------------------------------------------------------------------------------------------
 
@@ -785,6 +863,19 @@ BEGIN
           WHERE SelectedFileGroups.Selected = 0
         END
 
+        SET @ErrorMessage = ''
+        SELECT @ErrorMessage = @ErrorMessage + QUOTENAME(DatabaseName) + '.' + QUOTENAME(FileGroupName) + ', '
+        FROM @SelectedFileGroups SelectedFileGroups
+        WHERE DatabaseName = @CurrentDatabaseName
+        AND FileGroupName NOT LIKE '%[%]%'
+        AND NOT EXISTS (SELECT * FROM @tmpFileGroups WHERE FileGroupName = SelectedFileGroups.FileGroupName)
+        IF @@ROWCOUNT > 0
+        BEGIN
+          SET @ErrorMessage = 'The following file groups do not exist: ' + LEFT(@ErrorMessage,LEN(@ErrorMessage)-1) + '.' + CHAR(13) + CHAR(10) + ' '
+          RAISERROR(@ErrorMessage,16,1) WITH NOWAIT
+          SET @Error = @@ERROR
+        END
+
         WHILE EXISTS (SELECT * FROM @tmpFileGroups WHERE Selected = 1 AND Completed = 0)
         BEGIN
           SELECT TOP 1 @CurrentFGID = ID,
@@ -901,6 +992,20 @@ BEGIN
           INNER JOIN @SelectedObjects SelectedObjects
           ON @CurrentDatabaseName LIKE REPLACE(SelectedObjects.DatabaseName,'_','[_]') AND tmpObjects.SchemaName LIKE REPLACE(SelectedObjects.SchemaName,'_','[_]') AND tmpObjects.ObjectName LIKE REPLACE(SelectedObjects.ObjectName,'_','[_]')
           WHERE SelectedObjects.Selected = 0
+        END
+
+        SET @ErrorMessage = ''
+        SELECT @ErrorMessage = @ErrorMessage + QUOTENAME(DatabaseName) + '.' + QUOTENAME(SchemaName) + '.' + QUOTENAME(ObjectName) + ', '
+        FROM @SelectedObjects SelectedObjects
+        WHERE DatabaseName = @CurrentDatabaseName
+        AND SchemaName NOT LIKE '%[%]%'
+        AND ObjectName NOT LIKE '%[%]%'
+        AND NOT EXISTS (SELECT * FROM @tmpObjects WHERE SchemaName = SelectedObjects.SchemaName AND ObjectName = SelectedObjects.ObjectName)
+        IF @@ROWCOUNT > 0
+        BEGIN
+          SET @ErrorMessage = 'The following objects do not exist: ' + LEFT(@ErrorMessage,LEN(@ErrorMessage)-1) + '.' + CHAR(13) + CHAR(10) + ' '
+          RAISERROR(@ErrorMessage,16,1) WITH NOWAIT
+          SET @Error = @@ERROR
         END
 
         WHILE EXISTS (SELECT * FROM @tmpObjects WHERE Selected = 1 AND Completed = 0)
