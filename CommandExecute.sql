@@ -2,7 +2,12 @@
 GO
 SET QUOTED_IDENTIFIER ON
 GO
-CREATE PROCEDURE [dbo].[CommandExecute]
+IF OBJECT_ID('dbo.CommandExecute') IS NULL
+  EXEC ('CREATE PROCEDURE dbo.CommandExecute AS RETURN 0;')
+GO
+
+
+ALTER PROCEDURE [dbo].[CommandExecute]
 
 @Command nvarchar(max),
 @CommandType nvarchar(max),

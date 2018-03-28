@@ -2,7 +2,12 @@
 GO
 SET QUOTED_IDENTIFIER ON
 GO
-CREATE PROCEDURE [dbo].[DatabaseBackup]
+IF OBJECT_ID('dbo.DatabaseBackup') IS NULL
+  EXEC ('CREATE PROCEDURE dbo.DatabaseBackup AS RETURN 0;')
+GO
+
+
+ALTER PROCEDURE [dbo].[DatabaseBackup]
 
 @Databases nvarchar(max) = NULL,
 @Directory nvarchar(max) = NULL,

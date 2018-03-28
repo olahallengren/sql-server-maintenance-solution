@@ -4,6 +4,8 @@ SET QUOTED_IDENTIFIER ON
 GO
 SET ANSI_PADDING ON
 GO
+IF OBJECT_ID('[dbo].[CommandLog]') IS NULL
+BEGIN
 CREATE TABLE [dbo].[CommandLog](
 [ID] int IDENTITY(1,1) NOT NULL CONSTRAINT [PK_CommandLog] PRIMARY KEY CLUSTERED,
 [DatabaseName] sysname NULL,
@@ -22,5 +24,6 @@ CREATE TABLE [dbo].[CommandLog](
 [ErrorNumber] int NULL,
 [ErrorMessage] nvarchar(max) NULL
 )
+END
 GO
 

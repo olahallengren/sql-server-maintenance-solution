@@ -2,7 +2,12 @@
 GO
 SET QUOTED_IDENTIFIER ON
 GO
-CREATE PROCEDURE [dbo].[DatabaseIntegrityCheck]
+IF OBJECT_ID('dbo.DatabaseIntegrityCheck') IS NULL
+  EXEC ('CREATE PROCEDURE dbo.DatabaseIntegrityCheck AS RETURN 0;')
+GO
+
+
+ALTER PROCEDURE [dbo].[DatabaseIntegrityCheck]
 
 @Databases nvarchar(max) = NULL,
 @CheckCommands nvarchar(max) = 'CHECKDB',
