@@ -2,7 +2,12 @@
 GO
 SET QUOTED_IDENTIFIER ON
 GO
-CREATE PROCEDURE [dbo].[IndexOptimize]
+IF OBJECT_ID('dbo.IndexOptimize') IS NULL
+  EXEC ('CREATE PROCEDURE dbo.IndexOptimize AS RETURN 0;')
+GO
+
+
+ALTER PROCEDURE [dbo].[IndexOptimize]
 
 @Databases nvarchar(max) = NULL,
 @FragmentationLow nvarchar(max) = NULL,
