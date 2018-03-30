@@ -2,7 +2,12 @@
 GO
 SET QUOTED_IDENTIFIER ON
 GO
-CREATE PROCEDURE [dbo].[DatabaseBackup]
+IF NOT EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'[dbo].[DatabaseBackup]') AND type in (N'P', N'PC'))
+BEGIN
+EXEC dbo.sp_executesql @statement = N'CREATE PROCEDURE [dbo].[DatabaseBackup] AS'
+END
+GO
+ALTER PROCEDURE [dbo].[DatabaseBackup]
 
 @Databases nvarchar(max) = NULL,
 @Directory nvarchar(max) = NULL,
@@ -46,7 +51,7 @@ AS
 BEGIN
 
   ----------------------------------------------------------------------------------------------------
-  --// Source: https://ola.hallengren.com                                                          //--
+  --// Source: https://ola.hallengren.com                                                         //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -327,7 +332,7 @@ BEGIN
     SELECT [name] AS DatabaseName,
            LTRIM(RTRIM(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE([name],'\',''),'/',''),':',''),'*',''),'?',''),'"',''),'<',''),'>',''),'|',''))) AS DatabaseNameFS,
            CASE WHEN name IN('master','msdb','model') THEN 'S' ELSE 'U' END AS DatabaseType,
-           CASE WHEN name IN (SELECT availability_databases_cluster.database_name FROM sys.availability_databases_cluster availability_databases_cluster) THEN 1 ELSE 0 END AS AvailabilityGroup,
+           CASE WHEN name IN (SELECT availability_databases_cluster.database_name FROM sys.availability_databases_cluster availability_databases_cluster INNER JOIN sys.availability_groups availability_groups ON availability_databases_cluster.group_id = availability_groups.group_id) THEN 1 ELSE 0 END AS AvailabilityGroup,
            0 AS Selected,
            0 AS Completed
     FROM sys.databases

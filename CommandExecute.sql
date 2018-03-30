@@ -2,7 +2,12 @@
 GO
 SET QUOTED_IDENTIFIER ON
 GO
-CREATE PROCEDURE [dbo].[CommandExecute]
+IF NOT EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'[dbo].[CommandExecute]') AND type in (N'P', N'PC'))
+BEGIN
+EXEC dbo.sp_executesql @statement = N'CREATE PROCEDURE [dbo].[CommandExecute] AS'
+END
+GO
+ALTER PROCEDURE [dbo].[CommandExecute]
 
 @Command nvarchar(max),
 @CommandType nvarchar(max),
@@ -25,7 +30,7 @@ AS
 BEGIN
 
   ----------------------------------------------------------------------------------------------------
-  --// Source: https://ola.hallengren.com                                                          //--
+  --// Source: https://ola.hallengren.com                                                         //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON

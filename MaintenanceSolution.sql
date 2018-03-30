@@ -10,7 +10,7 @@ The solution is free: https://ola.hallengren.com/license.html
 
 You can contact me by e-mail at ola@hallengren.com.
 
-Last updated 28 March, 2018.
+Last updated 30 March, 2018.
 
 Ola Hallengren
 https://ola.hallengren.com
@@ -89,11 +89,6 @@ VALUES('DatabaseName', DB_NAME(DB_ID()))
 INSERT INTO #Config ([Name], [Value])
 VALUES('Error', CAST(@Error AS nvarchar))
 
-IF OBJECT_ID('[dbo].[DatabaseBackup]') IS NOT NULL DROP PROCEDURE [dbo].[DatabaseBackup]
-IF OBJECT_ID('[dbo].[DatabaseIntegrityCheck]') IS NOT NULL DROP PROCEDURE [dbo].[DatabaseIntegrityCheck]
-IF OBJECT_ID('[dbo].[IndexOptimize]') IS NOT NULL DROP PROCEDURE [dbo].[IndexOptimize]
-IF OBJECT_ID('[dbo].[CommandExecute]') IS NOT NULL DROP PROCEDURE [dbo].[CommandExecute]
-
 IF OBJECT_ID('[dbo].[CommandLog]') IS NULL AND OBJECT_ID('[dbo].[PK_CommandLog]') IS NULL
 BEGIN
 CREATE TABLE [dbo].[CommandLog](
@@ -120,7 +115,12 @@ SET ANSI_NULLS ON
 GO
 SET QUOTED_IDENTIFIER ON
 GO
-CREATE PROCEDURE [dbo].[CommandExecute]
+IF NOT EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'[dbo].[CommandExecute]') AND type in (N'P', N'PC'))
+BEGIN
+EXEC dbo.sp_executesql @statement = N'CREATE PROCEDURE [dbo].[CommandExecute] AS'
+END
+GO
+ALTER PROCEDURE [dbo].[CommandExecute]
 
 @Command nvarchar(max),
 @CommandType nvarchar(max),
@@ -143,7 +143,7 @@ AS
 BEGIN
 
   ----------------------------------------------------------------------------------------------------
-  --// Source: https://ola.hallengren.com                                                          //--
+  --// Source: https://ola.hallengren.com                                                         //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -311,7 +311,12 @@ SET ANSI_NULLS ON
 GO
 SET QUOTED_IDENTIFIER ON
 GO
-CREATE PROCEDURE [dbo].[DatabaseBackup]
+IF NOT EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'[dbo].[DatabaseBackup]') AND type in (N'P', N'PC'))
+BEGIN
+EXEC dbo.sp_executesql @statement = N'CREATE PROCEDURE [dbo].[DatabaseBackup] AS'
+END
+GO
+ALTER PROCEDURE [dbo].[DatabaseBackup]
 
 @Databases nvarchar(max) = NULL,
 @Directory nvarchar(max) = NULL,
@@ -355,7 +360,7 @@ AS
 BEGIN
 
   ----------------------------------------------------------------------------------------------------
-  --// Source: https://ola.hallengren.com                                                          //--
+  --// Source: https://ola.hallengren.com                                                         //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -636,7 +641,7 @@ BEGIN
     SELECT [name] AS DatabaseName,
            LTRIM(RTRIM(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE([name],'\',''),'/',''),':',''),'*',''),'?',''),'"',''),'<',''),'>',''),'|',''))) AS DatabaseNameFS,
            CASE WHEN name IN('master','msdb','model') THEN 'S' ELSE 'U' END AS DatabaseType,
-           CASE WHEN name IN (SELECT availability_databases_cluster.database_name FROM sys.availability_databases_cluster availability_databases_cluster) THEN 1 ELSE 0 END AS AvailabilityGroup,
+           CASE WHEN name IN (SELECT availability_databases_cluster.database_name FROM sys.availability_databases_cluster availability_databases_cluster INNER JOIN sys.availability_groups availability_groups ON availability_databases_cluster.group_id = availability_groups.group_id) THEN 1 ELSE 0 END AS AvailabilityGroup,
            0 AS Selected,
            0 AS Completed
     FROM sys.databases
@@ -2177,7 +2182,12 @@ SET ANSI_NULLS ON
 GO
 SET QUOTED_IDENTIFIER ON
 GO
-CREATE PROCEDURE [dbo].[DatabaseIntegrityCheck]
+IF NOT EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'[dbo].[DatabaseIntegrityCheck]') AND type in (N'P', N'PC'))
+BEGIN
+EXEC dbo.sp_executesql @statement = N'CREATE PROCEDURE [dbo].[DatabaseIntegrityCheck] AS'
+END
+GO
+ALTER PROCEDURE [dbo].[DatabaseIntegrityCheck]
 
 @Databases nvarchar(max) = NULL,
 @CheckCommands nvarchar(max) = 'CHECKDB',
@@ -2446,7 +2456,7 @@ BEGIN
     INSERT INTO @tmpDatabases (DatabaseName, DatabaseType, AvailabilityGroup, [Snapshot], Selected, Completed)
     SELECT [name] AS DatabaseName,
            CASE WHEN name IN('master','msdb','model') THEN 'S' ELSE 'U' END AS DatabaseType,
-           CASE WHEN name IN (SELECT availability_databases_cluster.database_name FROM sys.availability_databases_cluster availability_databases_cluster) THEN 1 ELSE 0 END AS AvailabilityGroup,
+           CASE WHEN name IN (SELECT availability_databases_cluster.database_name FROM sys.availability_databases_cluster availability_databases_cluster INNER JOIN sys.availability_groups availability_groups ON availability_databases_cluster.group_id = availability_groups.group_id) THEN 1 ELSE 0 END AS AvailabilityGroup,
            CASE WHEN source_database_id IS NOT NULL THEN 1 ELSE 0 END AS [Snapshot],
            0 AS Selected,
            0 AS Completed
@@ -3343,7 +3353,12 @@ SET ANSI_NULLS ON
 GO
 SET QUOTED_IDENTIFIER ON
 GO
-CREATE PROCEDURE [dbo].[IndexOptimize]
+IF NOT EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'[dbo].[IndexOptimize]') AND type in (N'P', N'PC'))
+BEGIN
+EXEC dbo.sp_executesql @statement = N'CREATE PROCEDURE [dbo].[IndexOptimize] AS'
+END
+GO
+ALTER PROCEDURE [dbo].[IndexOptimize]
 
 @Databases nvarchar(max) = NULL,
 @FragmentationLow nvarchar(max) = NULL,
@@ -3378,7 +3393,7 @@ AS
 BEGIN
 
   ----------------------------------------------------------------------------------------------------
-  --// Source: https://ola.hallengren.com                                                          //--
+  --// Source: https://ola.hallengren.com                                                         //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -3603,13 +3618,6 @@ BEGIN
     SET @Error = @@ERROR
   END
 
-  IF SERVERPROPERTY('EngineEdition') = 5 AND @Version < 12
-  BEGIN
-    SET @ErrorMessage = 'The stored procedure IndexOptimize is not supported on this version of Azure SQL Database.' + CHAR(13) + CHAR(10) + ' '
-    RAISERROR(@ErrorMessage,16,1) WITH NOWAIT
-    SET @Error = @@ERROR
-  END
-
   IF @Error <> 0
   BEGIN
     SET @ReturnCode = @Error
@@ -3676,7 +3684,7 @@ BEGIN
     INSERT INTO @tmpDatabases (DatabaseName, DatabaseType, AvailabilityGroup, Selected, Completed)
     SELECT [name] AS DatabaseName,
            CASE WHEN name IN('master','msdb','model') THEN 'S' ELSE 'U' END AS DatabaseType,
-           CASE WHEN name IN (SELECT availability_databases_cluster.database_name FROM sys.availability_databases_cluster availability_databases_cluster) THEN 1 ELSE 0 END AS AvailabilityGroup,
+           CASE WHEN name IN (SELECT availability_databases_cluster.database_name FROM sys.availability_databases_cluster availability_databases_cluster INNER JOIN sys.availability_groups availability_groups ON availability_databases_cluster.group_id = availability_groups.group_id) THEN 1 ELSE 0 END AS AvailabilityGroup,
            0 AS Selected,
            0 AS Completed
     FROM sys.databases

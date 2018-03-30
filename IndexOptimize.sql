@@ -2,7 +2,12 @@
 GO
 SET QUOTED_IDENTIFIER ON
 GO
-CREATE PROCEDURE [dbo].[IndexOptimize]
+IF NOT EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'[dbo].[IndexOptimize]') AND type in (N'P', N'PC'))
+BEGIN
+EXEC dbo.sp_executesql @statement = N'CREATE PROCEDURE [dbo].[IndexOptimize] AS'
+END
+GO
+ALTER PROCEDURE [dbo].[IndexOptimize]
 
 @Databases nvarchar(max) = NULL,
 @FragmentationLow nvarchar(max) = NULL,
@@ -37,7 +42,7 @@ AS
 BEGIN
 
   ----------------------------------------------------------------------------------------------------
-  --// Source: https://ola.hallengren.com                                                          //--
+  --// Source: https://ola.hallengren.com                                                         //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -262,13 +267,6 @@ BEGIN
     SET @Error = @@ERROR
   END
 
-  IF SERVERPROPERTY('EngineEdition') = 5 AND @Version < 12
-  BEGIN
-    SET @ErrorMessage = 'The stored procedure IndexOptimize is not supported on this version of Azure SQL Database.' + CHAR(13) + CHAR(10) + ' '
-    RAISERROR(@ErrorMessage,16,1) WITH NOWAIT
-    SET @Error = @@ERROR
-  END
-
   IF @Error <> 0
   BEGIN
     SET @ReturnCode = @Error
@@ -335,7 +333,7 @@ BEGIN
     INSERT INTO @tmpDatabases (DatabaseName, DatabaseType, AvailabilityGroup, Selected, Completed)
     SELECT [name] AS DatabaseName,
            CASE WHEN name IN('master','msdb','model') THEN 'S' ELSE 'U' END AS DatabaseType,
-           CASE WHEN name IN (SELECT availability_databases_cluster.database_name FROM sys.availability_databases_cluster availability_databases_cluster) THEN 1 ELSE 0 END AS AvailabilityGroup,
+           CASE WHEN name IN (SELECT availability_databases_cluster.database_name FROM sys.availability_databases_cluster availability_databases_cluster INNER JOIN sys.availability_groups availability_groups ON availability_databases_cluster.group_id = availability_groups.group_id) THEN 1 ELSE 0 END AS AvailabilityGroup,
            0 AS Selected,
            0 AS Completed
     FROM sys.databases
