@@ -10,7 +10,7 @@ The solution is free: https://ola.hallengren.com/license.html
 
 You can contact me by e-mail at ola@hallengren.com.
 
-Last updated 5 April, 2018.
+Last updated 9 April, 2018.
 
 Ola Hallengren
 https://ola.hallengren.com
@@ -26,8 +26,6 @@ DECLARE @BackupDirectory nvarchar(max)
 DECLARE @CleanupTime int
 DECLARE @OutputFileDirectory nvarchar(max)
 DECLARE @LogToTable nvarchar(max)
-DECLARE @Version numeric(18,10)
-DECLARE @Error int
 
 SET @CreateJobs          = 'Y'          -- Specify whether jobs should be created.
 SET @BackupDirectory     = N'C:\Backup' -- Specify the backup root directory.
@@ -35,14 +33,9 @@ SET @CleanupTime         = NULL         -- Time in hours, after which backup fil
 SET @OutputFileDirectory = NULL         -- Specify the output file directory. If no directory is specified, then the SQL Server error log directory is used.
 SET @LogToTable          = 'Y'          -- Log commands to a table.
 
-SET @Error = 0
-
-SET @Version = CAST(LEFT(CAST(SERVERPROPERTY('ProductVersion') AS nvarchar(max)),CHARINDEX('.',CAST(SERVERPROPERTY('ProductVersion') AS nvarchar(max))) - 1) + '.' + REPLACE(RIGHT(CAST(SERVERPROPERTY('ProductVersion') AS nvarchar(max)), LEN(CAST(SERVERPROPERTY('ProductVersion') AS nvarchar(max))) - CHARINDEX('.',CAST(SERVERPROPERTY('ProductVersion') AS nvarchar(max)))),'.','') AS numeric(18,10))
-
-IF IS_SRVROLEMEMBER('sysadmin') = 0
+IF IS_SRVROLEMEMBER('sysadmin') = 0 AND NOT (DB_ID('rdsadmin') IS NOT NULL AND SUSER_SNAME(0x01) = 'rdsa')
 BEGIN
-  RAISERROR('You need to be a member of the SysAdmin server role to install the solution.',16,1)
-  SET @Error = @@ERROR
+  RAISERROR('You need to be a member of the SysAdmin server role to install the SQL Server Maintenance Solution.',16,1)
 END
 
 IF OBJECT_ID('tempdb..#Config') IS NOT NULL DROP TABLE #Config
@@ -50,44 +43,12 @@ IF OBJECT_ID('tempdb..#Config') IS NOT NULL DROP TABLE #Config
 CREATE TABLE #Config ([Name] nvarchar(max),
                       [Value] nvarchar(max))
 
-IF @CreateJobs = 'Y' AND @OutputFileDirectory IS NULL AND SERVERPROPERTY('EngineEdition') <> 4 AND @Version < 12
-BEGIN
-  IF @Version >= 11
-  BEGIN
-    SELECT @OutputFileDirectory = [path]
-    FROM sys.dm_os_server_diagnostics_log_configurations
-  END
-  ELSE
-  BEGIN
-    SELECT @OutputFileDirectory = LEFT(CAST(SERVERPROPERTY('ErrorLogFileName') AS nvarchar(max)),LEN(CAST(SERVERPROPERTY('ErrorLogFileName') AS nvarchar(max))) - CHARINDEX('\',REVERSE(CAST(SERVERPROPERTY('ErrorLogFileName') AS nvarchar(max)))))
-  END
-END
-
-IF @CreateJobs = 'Y' AND RIGHT(@OutputFileDirectory,1) = '\' AND SERVERPROPERTY('EngineEdition') <> 4
-BEGIN
-  SET @OutputFileDirectory = LEFT(@OutputFileDirectory, LEN(@OutputFileDirectory) - 1)
-END
-
-INSERT INTO #Config ([Name], [Value])
-VALUES('CreateJobs', @CreateJobs)
-
-INSERT INTO #Config ([Name], [Value])
-VALUES('BackupDirectory', @BackupDirectory)
-
-INSERT INTO #Config ([Name], [Value])
-VALUES('CleanupTime', @CleanupTime)
-
-INSERT INTO #Config ([Name], [Value])
-VALUES('OutputFileDirectory', @OutputFileDirectory)
-
-INSERT INTO #Config ([Name], [Value])
-VALUES('LogToTable', @LogToTable)
-
-INSERT INTO #Config ([Name], [Value])
-VALUES('DatabaseName', DB_NAME(DB_ID()))
-
-INSERT INTO #Config ([Name], [Value])
-VALUES('Error', CAST(@Error AS nvarchar))
+INSERT INTO #Config ([Name], [Value]) VALUES('CreateJobs', @CreateJobs)
+INSERT INTO #Config ([Name], [Value]) VALUES('BackupDirectory', @BackupDirectory)
+INSERT INTO #Config ([Name], [Value]) VALUES('CleanupTime', @CleanupTime)
+INSERT INTO #Config ([Name], [Value]) VALUES('OutputFileDirectory', @OutputFileDirectory)
+INSERT INTO #Config ([Name], [Value]) VALUES('LogToTable', @LogToTable)
+INSERT INTO #Config ([Name], [Value]) VALUES('DatabaseName', DB_NAME(DB_ID()))
 GO
 SET ANSI_NULLS ON
 GO
@@ -5168,10 +5129,7 @@ BEGIN
 END
 
 GO
-
-IF (SELECT CAST([Value] AS int) FROM #Config WHERE Name = 'Error') = 0
-AND (SELECT [Value] FROM #Config WHERE Name = 'CreateJobs') = 'Y'
-AND SERVERPROPERTY('EngineEdition') <> 4
+IF (SELECT [Value] FROM #Config WHERE Name = 'CreateJobs') = 'Y' AND SERVERPROPERTY('EngineEdition') <> 4 AND (IS_SRVROLEMEMBER('sysadmin') = 1 OR (DB_ID('rdsadmin') IS NOT NULL AND SUSER_SNAME(0x01) = 'rdsa'))
 BEGIN
 
   DECLARE @BackupDirectory nvarchar(max)
@@ -5181,6 +5139,10 @@ BEGIN
   DECLARE @DatabaseName nvarchar(max)
 
   DECLARE @Version numeric(18,10)
+  DECLARE @HostPlatform nvarchar(max)
+  DECLARE @AmazonRDS bit
+  DECLARE @DirectorySeparator nvarchar(max)
+  DECLARE @LogDirectory nvarchar(max)
 
   DECLARE @TokenServer nvarchar(max)
   DECLARE @TokenJobID nvarchar(max)
@@ -5193,43 +5155,47 @@ BEGIN
   DECLARE @JobCategory nvarchar(max)
   DECLARE @JobOwner nvarchar(max)
 
-  DECLARE @JobName01 nvarchar(max)
-  DECLARE @JobName02 nvarchar(max)
-  DECLARE @JobName03 nvarchar(max)
-  DECLARE @JobName04 nvarchar(max)
-  DECLARE @JobName05 nvarchar(max)
-  DECLARE @JobName06 nvarchar(max)
-  DECLARE @JobName07 nvarchar(max)
-  DECLARE @JobName08 nvarchar(max)
-  DECLARE @JobName09 nvarchar(max)
-  DECLARE @JobName10 nvarchar(max)
-  DECLARE @JobName11 nvarchar(max)
+  DECLARE @Jobs TABLE (JobID int IDENTITY,
+                       [Name] nvarchar(max),
+                       CommandTSQL nvarchar(max),
+                       CommandCmdExec nvarchar(max),
+                       DatabaseName varchar(max),
+                       OutputFileNamePart01 nvarchar(max),
+                       OutputFileNamePart02 nvarchar(max),
+                       Selected bit DEFAULT 0,
+                       Completed bit DEFAULT 0)
 
-  DECLARE @JobCommand01 nvarchar(max)
-  DECLARE @JobCommand02 nvarchar(max)
-  DECLARE @JobCommand03 nvarchar(max)
-  DECLARE @JobCommand04 nvarchar(max)
-  DECLARE @JobCommand05 nvarchar(max)
-  DECLARE @JobCommand06 nvarchar(max)
-  DECLARE @JobCommand07 nvarchar(max)
-  DECLARE @JobCommand08 nvarchar(max)
-  DECLARE @JobCommand09 nvarchar(max)
-  DECLARE @JobCommand10 nvarchar(max)
-  DECLARE @JobCommand11 nvarchar(max)
+  DECLARE @CurrentJobID int
+  DECLARE @CurrentJobName nvarchar(max)
+  DECLARE @CurrentCommandTSQL nvarchar(max)
+  DECLARE @CurrentCommandCmdExec nvarchar(max)
+  DECLARE @CurrentDatabaseName nvarchar(max)
+  DECLARE @CurrentOutputFileNamePart01 nvarchar(max)
+  DECLARE @CurrentOutputFileNamePart02 nvarchar(max)
 
-  DECLARE @OutputFile01 nvarchar(max)
-  DECLARE @OutputFile02 nvarchar(max)
-  DECLARE @OutputFile03 nvarchar(max)
-  DECLARE @OutputFile04 nvarchar(max)
-  DECLARE @OutputFile05 nvarchar(max)
-  DECLARE @OutputFile06 nvarchar(max)
-  DECLARE @OutputFile07 nvarchar(max)
-  DECLARE @OutputFile08 nvarchar(max)
-  DECLARE @OutputFile09 nvarchar(max)
-  DECLARE @OutputFile10 nvarchar(max)
-  DECLARE @OutputFile11 nvarchar(max)
+  DECLARE @CurrentJobStepCommand nvarchar(max)
+  DECLARE @CurrentJobStepSubSystem nvarchar(max)
+  DECLARE @CurrentJobStepDatabaseName nvarchar(max)
+  DECLARE @CurrentOutputFileName nvarchar(max)
 
   SET @Version = CAST(LEFT(CAST(SERVERPROPERTY('ProductVersion') AS nvarchar(max)),CHARINDEX('.',CAST(SERVERPROPERTY('ProductVersion') AS nvarchar(max))) - 1) + '.' + REPLACE(RIGHT(CAST(SERVERPROPERTY('ProductVersion') AS nvarchar(max)), LEN(CAST(SERVERPROPERTY('ProductVersion') AS nvarchar(max))) - CHARINDEX('.',CAST(SERVERPROPERTY('ProductVersion') AS nvarchar(max)))),'.','') AS numeric(18,10))
+
+  SET @AmazonRDS = CASE WHEN DB_ID('rdsadmin') IS NOT NULL AND SUSER_SNAME(0x01) = 'rdsa' THEN 1 ELSE 0 END
+
+  IF @Version >= 14
+  BEGIN
+    SELECT @HostPlatform = host_platform
+    FROM sys.dm_os_host_info
+  END
+  ELSE
+  BEGIN
+    SET @HostPlatform = 'Windows'
+  END
+
+  SELECT @DirectorySeparator = CASE
+  WHEN @HostPlatform = 'Windows' THEN '\'
+  WHEN @HostPlatform = 'Linux' THEN '/'
+  END
 
   IF @Version >= 9.002047
   BEGIN
@@ -5248,7 +5214,7 @@ BEGIN
     SET @TokenTime = '$' + '(STRTTM)'
   END
 
-  IF @Version >= 12
+  IF @Version >= 12 AND @HostPlatform = 'Windows'
   BEGIN
     SET @TokenLogDirectory = '$' + '(ESCAPE_SQUOTE(SQLLOGDIR))'
   END
@@ -5257,9 +5223,12 @@ BEGIN
   FROM #Config
   WHERE [Name] = 'BackupDirectory'
 
-  SELECT @CleanupTime = Value
-  FROM #Config
-  WHERE [Name] = 'CleanupTime'
+  IF @HostPlatform = 'Windows'
+  BEGIN
+    SELECT @CleanupTime = Value
+    FROM #Config
+    WHERE [Name] = 'CleanupTime'
+  END
 
   SELECT @OutputFileDirectory = Value
   FROM #Config
@@ -5273,151 +5242,192 @@ BEGIN
   FROM #Config
   WHERE [Name] = 'DatabaseName'
 
+  IF @Version >= 11
+  BEGIN
+    SELECT @LogDirectory = [path]
+    FROM sys.dm_os_server_diagnostics_log_configurations
+  END
+  ELSE
+  BEGIN
+    SELECT @LogDirectory = LEFT(CAST(SERVERPROPERTY('ErrorLogFileName') AS nvarchar(max)),LEN(CAST(SERVERPROPERTY('ErrorLogFileName') AS nvarchar(max))) - CHARINDEX('\',REVERSE(CAST(SERVERPROPERTY('ErrorLogFileName') AS nvarchar(max)))))
+  END
+
+  IF @OutputFileDirectory IS NULL AND RIGHT(@OutputFileDirectory,1) = @DirectorySeparator
+  BEGIN
+    SET @OutputFileDirectory = LEFT(@OutputFileDirectory, LEN(@OutputFileDirectory) - 1)
+  END
+
+  IF @LogDirectory IS NOT NULL AND RIGHT(@LogDirectory,1) = @DirectorySeparator
+  BEGIN
+    SET @LogDirectory = LEFT(@LogDirectory, LEN(@LogDirectory) - 1)
+  END
+
   SET @JobDescription = 'Source: https://ola.hallengren.com'
   SET @JobCategory = 'Database Maintenance'
-  SET @JobOwner = SUSER_SNAME(0x01)
 
-  SET @JobName01 = 'DatabaseBackup - SYSTEM_DATABASES - FULL'
-  SET @JobCommand01 = 'sqlcmd -E -S ' + @TokenServer + ' -d ' + @DatabaseName + ' -Q "EXECUTE [dbo].[DatabaseBackup] @Databases = ''SYSTEM_DATABASES'', @Directory = ' + ISNULL('N''' + REPLACE(@BackupDirectory,'''','''''') + '''','NULL') + ', @BackupType = ''FULL'', @Verify = ''Y'', @CleanupTime = ' + ISNULL(CAST(@CleanupTime AS nvarchar),'NULL') + ', @CheckSum = ''Y''' + CASE WHEN @LogToTable = 'Y' THEN ', @LogToTable = ''Y''' ELSE '' END + '" -b'
-  SET @OutputFile01 = COALESCE(@OutputFileDirectory,@TokenLogDirectory) + '\' + 'DatabaseBackup_' + @TokenJobID + '_' + @TokenStepID + '_' + @TokenDate + '_' + @TokenTime + '.txt'
-  IF LEN(@OutputFile01) > 200 SET @OutputFile01 = COALESCE(@OutputFileDirectory,@TokenLogDirectory) + '\' + @TokenJobID + '_' + @TokenStepID + '_' + @TokenDate + '_' + @TokenTime + '.txt'
-  IF LEN(@OutputFile01) > 200 SET @OutputFile01 = NULL
-
-  SET @JobName02 = 'DatabaseBackup - USER_DATABASES - DIFF'
-  SET @JobCommand02 = 'sqlcmd -E -S ' + @TokenServer + ' -d ' + @DatabaseName + ' -Q "EXECUTE [dbo].[DatabaseBackup] @Databases = ''USER_DATABASES'', @Directory = ' + ISNULL('N''' + REPLACE(@BackupDirectory,'''','''''') + '''','NULL') + ', @BackupType = ''DIFF'', @Verify = ''Y'', @CleanupTime = ' + ISNULL(CAST(@CleanupTime AS nvarchar),'NULL') + ', @CheckSum = ''Y''' + CASE WHEN @LogToTable = 'Y' THEN ', @LogToTable = ''Y''' ELSE '' END + '" -b'
-  SET @OutputFile02 = COALESCE(@OutputFileDirectory,@TokenLogDirectory) + '\' + 'DatabaseBackup_' + @TokenJobID + '_' + @TokenStepID + '_' + @TokenDate + '_' + @TokenTime + '.txt'
-  IF LEN(@OutputFile02) > 200 SET @OutputFile02 = COALESCE(@OutputFileDirectory,@TokenLogDirectory) + '\' + @TokenJobID + '_' + @TokenStepID + '_' + @TokenDate + '_' + @TokenTime + '.txt'
-  IF LEN(@OutputFile02) > 200 SET @OutputFile02 = NULL
-
-  SET @JobName03 = 'DatabaseBackup - USER_DATABASES - FULL'
-  SET @JobCommand03 = 'sqlcmd -E -S ' + @TokenServer + ' -d ' + @DatabaseName + ' -Q "EXECUTE [dbo].[DatabaseBackup] @Databases = ''USER_DATABASES'', @Directory = ' + ISNULL('N''' + REPLACE(@BackupDirectory,'''','''''') + '''','NULL') + ', @BackupType = ''FULL'', @Verify = ''Y'', @CleanupTime = ' + ISNULL(CAST(@CleanupTime AS nvarchar),'NULL') + ', @CheckSum = ''Y''' + CASE WHEN @LogToTable = 'Y' THEN ', @LogToTable = ''Y''' ELSE '' END + '" -b'
-  SET @OutputFile03 = COALESCE(@OutputFileDirectory,@TokenLogDirectory) + '\' + 'DatabaseBackup_' + @TokenJobID + '_' + @TokenStepID + '_' + @TokenDate + '_' + @TokenTime + '.txt'
-  IF LEN(@OutputFile03) > 200 SET @OutputFile03 = COALESCE(@OutputFileDirectory,@TokenLogDirectory) + '\' + @TokenJobID + '_' + @TokenStepID + '_' + @TokenDate + '_' + @TokenTime + '.txt'
-  IF LEN(@OutputFile03) > 200 SET @OutputFile03 = NULL
-
-  SET @JobName04 = 'DatabaseBackup - USER_DATABASES - LOG'
-  SET @JobCommand04 = 'sqlcmd -E -S ' + @TokenServer + ' -d ' + @DatabaseName + ' -Q "EXECUTE [dbo].[DatabaseBackup] @Databases = ''USER_DATABASES'', @Directory = ' + ISNULL('N''' + REPLACE(@BackupDirectory,'''','''''') + '''','NULL') + ', @BackupType = ''LOG'', @Verify = ''Y'', @CleanupTime = ' + ISNULL(CAST(@CleanupTime AS nvarchar),'NULL') + ', @CheckSum = ''Y''' + CASE WHEN @LogToTable = 'Y' THEN ', @LogToTable = ''Y''' ELSE '' END + '" -b'
-  SET @OutputFile04 = COALESCE(@OutputFileDirectory,@TokenLogDirectory) + '\' + 'DatabaseBackup_' + @TokenJobID + '_' + @TokenStepID + '_' + @TokenDate + '_' + @TokenTime + '.txt'
-  IF LEN(@OutputFile04) > 200 SET @OutputFile04 = COALESCE(@OutputFileDirectory,@TokenLogDirectory) + '\' + @TokenJobID + '_' + @TokenStepID + '_' + @TokenDate + '_' + @TokenTime + '.txt'
-  IF LEN(@OutputFile04) > 200 SET @OutputFile04 = NULL
-
-  SET @JobName05 = 'DatabaseIntegrityCheck - SYSTEM_DATABASES'
-  SET @JobCommand05 = 'sqlcmd -E -S ' + @TokenServer + ' -d ' + @DatabaseName + ' -Q "EXECUTE [dbo].[DatabaseIntegrityCheck] @Databases = ''SYSTEM_DATABASES''' + CASE WHEN @LogToTable = 'Y' THEN ', @LogToTable = ''Y''' ELSE '' END + '" -b'
-  SET @OutputFile05 = COALESCE(@OutputFileDirectory,@TokenLogDirectory) + '\' + 'DatabaseIntegrityCheck_' + @TokenJobID + '_' + @TokenStepID + '_' + @TokenDate + '_' + @TokenTime + '.txt'
-  IF LEN(@OutputFile05) > 200 SET @OutputFile05 = COALESCE(@OutputFileDirectory,@TokenLogDirectory) + '\' + @TokenJobID + '_' + @TokenStepID + '_' + @TokenDate + '_' + @TokenTime + '.txt'
-  IF LEN(@OutputFile05) > 200 SET @OutputFile05 = NULL
-
-  SET @JobName06 = 'DatabaseIntegrityCheck - USER_DATABASES'
-  SET @JobCommand06 = 'sqlcmd -E -S ' + @TokenServer + ' -d ' + @DatabaseName + ' -Q "EXECUTE [dbo].[DatabaseIntegrityCheck] @Databases = ''USER_DATABASES''' + CASE WHEN @LogToTable = 'Y' THEN ', @LogToTable = ''Y''' ELSE '' END + '" -b'
-  SET @OutputFile06 = COALESCE(@OutputFileDirectory,@TokenLogDirectory) + '\' + 'DatabaseIntegrityCheck_' + @TokenJobID + '_' + @TokenStepID + '_' + @TokenDate + '_' + @TokenTime + '.txt'
-  IF LEN(@OutputFile06) > 200 SET @OutputFile06 = COALESCE(@OutputFileDirectory,@TokenLogDirectory) + '\' + @TokenJobID + '_' + @TokenStepID + '_' + @TokenDate + '_' + @TokenTime + '.txt'
-  IF LEN(@OutputFile06) > 200 SET @OutputFile06 = NULL
-
-  SET @JobName07 = 'IndexOptimize - USER_DATABASES'
-  SET @JobCommand07 = 'sqlcmd -E -S ' + @TokenServer + ' -d ' + @DatabaseName + ' -Q "EXECUTE [dbo].[IndexOptimize] @Databases = ''USER_DATABASES''' + CASE WHEN @LogToTable = 'Y' THEN ', @LogToTable = ''Y''' ELSE '' END + '" -b'
-  SET @OutputFile07 = COALESCE(@OutputFileDirectory,@TokenLogDirectory) + '\' + 'IndexOptimize_' + @TokenJobID + '_' + @TokenStepID + '_' + @TokenDate + '_' + @TokenTime + '.txt'
-  IF LEN(@OutputFile07) > 200 SET @OutputFile07 = COALESCE(@OutputFileDirectory,@TokenLogDirectory) + '\' + @TokenJobID + '_' + @TokenStepID + '_' + @TokenDate + '_' + @TokenTime + '.txt'
-  IF LEN(@OutputFile07) > 200 SET @OutputFile07 = NULL
-
-  SET @JobName08 = 'sp_delete_backuphistory'
-  SET @JobCommand08 = 'sqlcmd -E -S ' + @TokenServer + ' -d ' + 'msdb' + ' -Q "DECLARE @CleanupDate datetime SET @CleanupDate = DATEADD(dd,-30,GETDATE()) EXECUTE dbo.sp_delete_backuphistory @oldest_date = @CleanupDate" -b'
-  SET @OutputFile08 = COALESCE(@OutputFileDirectory,@TokenLogDirectory) + '\' + 'sp_delete_backuphistory_' + @TokenJobID + '_' + @TokenStepID + '_' + @TokenDate + '_' + @TokenTime + '.txt'
-  IF LEN(@OutputFile08) > 200 SET @OutputFile08 = COALESCE(@OutputFileDirectory,@TokenLogDirectory) + '\' + @TokenJobID + '_' + @TokenStepID + '_' + @TokenDate + '_' + @TokenTime + '.txt'
-  IF LEN(@OutputFile08) > 200 SET @OutputFile08 = NULL
-
-  SET @JobName09 = 'sp_purge_jobhistory'
-  SET @JobCommand09 = 'sqlcmd -E -S ' + @TokenServer + ' -d ' + 'msdb' + ' -Q "DECLARE @CleanupDate datetime SET @CleanupDate = DATEADD(dd,-30,GETDATE()) EXECUTE dbo.sp_purge_jobhistory @oldest_date = @CleanupDate" -b'
-  SET @OutputFile09 = COALESCE(@OutputFileDirectory,@TokenLogDirectory) + '\' + 'sp_purge_jobhistory_' + @TokenJobID + '_' + @TokenStepID + '_' + @TokenDate + '_' + @TokenTime + '.txt'
-  IF LEN(@OutputFile09) > 200 SET @OutputFile09 = COALESCE(@OutputFileDirectory,@TokenLogDirectory) + '\' + @TokenJobID + '_' + @TokenStepID + '_' + @TokenDate + '_' + @TokenTime + '.txt'
-  IF LEN(@OutputFile09) > 200 SET @OutputFile09 = NULL
-
-  SET @JobName10 = 'Output File Cleanup'
-  SET @JobCommand10 = 'cmd /q /c "For /F "tokens=1 delims=" %v In (''ForFiles /P "' + COALESCE(@OutputFileDirectory,@TokenLogDirectory) + '" /m *_*_*_*.txt /d -30 2^>^&1'') do if EXIST "' + COALESCE(@OutputFileDirectory,@TokenLogDirectory) + '"\%v echo del "' + COALESCE(@OutputFileDirectory,@TokenLogDirectory) + '"\%v& del "' + COALESCE(@OutputFileDirectory,@TokenLogDirectory) + '"\%v"'
-  SET @OutputFile10 = COALESCE(@OutputFileDirectory,@TokenLogDirectory) + '\' + 'OutputFileCleanup_' + @TokenJobID + '_' + @TokenStepID + '_' + @TokenDate + '_' + @TokenTime + '.txt'
-  IF LEN(@OutputFile10) > 200 SET @OutputFile10 = COALESCE(@OutputFileDirectory,@TokenLogDirectory) + '\' + @TokenJobID + '_' + @TokenStepID + '_' + @TokenDate + '_' + @TokenTime + '.txt'
-  IF LEN(@OutputFile10) > 200 SET @OutputFile10 = NULL
-
-  SET @JobName11 = 'CommandLog Cleanup'
-  SET @JobCommand11 = 'sqlcmd -E -S ' + @TokenServer + ' -d ' + @DatabaseName + ' -Q "DELETE FROM [dbo].[CommandLog] WHERE StartTime < DATEADD(dd,-30,GETDATE())" -b'
-  SET @OutputFile11 = COALESCE(@OutputFileDirectory,@TokenLogDirectory) + '\' + 'CommandLogCleanup_' + @TokenJobID + '_' + @TokenStepID + '_' + @TokenDate + '_' + @TokenTime + '.txt'
-  IF LEN(@OutputFile11) > 200 SET @OutputFile11 = COALESCE(@OutputFileDirectory,@TokenLogDirectory) + '\' + @TokenJobID + '_' + @TokenStepID + '_' + @TokenDate + '_' + @TokenTime + '.txt'
-  IF LEN(@OutputFile11) > 200 SET @OutputFile11 = NULL
-
-  IF NOT EXISTS (SELECT * FROM msdb.dbo.sysjobs WHERE [name] = @JobName01)
+  IF @AmazonRDS = 0
   BEGIN
-    EXECUTE msdb.dbo.sp_add_job @job_name = @JobName01, @description = @JobDescription, @category_name = @JobCategory, @owner_login_name = @JobOwner
-    EXECUTE msdb.dbo.sp_add_jobstep @job_name = @JobName01, @step_name = @JobName01, @subsystem = 'CMDEXEC', @command = @JobCommand01, @output_file_name = @OutputFile01
-    EXECUTE msdb.dbo.sp_add_jobserver @job_name = @JobName01
+    SET @JobOwner = SUSER_SNAME(0x01)
   END
 
-  IF NOT EXISTS (SELECT * FROM msdb.dbo.sysjobs WHERE [name] = @JobName02)
+  INSERT INTO @Jobs ([Name], CommandTSQL, DatabaseName, OutputFileNamePart01, OutputFileNamePart02)
+  SELECT 'DatabaseBackup - SYSTEM_DATABASES - FULL',
+         'EXECUTE [dbo].[DatabaseBackup]' + CHAR(13) + CHAR(10) + '@Databases = ''SYSTEM_DATABASES'',' + CHAR(13) + CHAR(10) + '@Directory = ' + ISNULL('N''' + REPLACE(@BackupDirectory,'''','''''') + '''','NULL') + ',' + CHAR(13) + CHAR(10) + '@BackupType = ''FULL'',' + CHAR(13) + CHAR(10) + '@Verify = ''Y'',' + CHAR(13) + CHAR(10) + '@CleanupTime = ' + ISNULL(CAST(@CleanupTime AS nvarchar),'NULL') + ',' + CHAR(13) + CHAR(10) + '@CheckSum = ''Y'',' + CHAR(13) + CHAR(10) + '@LogToTable = ''' + @LogToTable + '''',
+         @DatabaseName,
+         'DatabaseBackup',
+         'FULL'
+
+  INSERT INTO @Jobs ([Name], CommandTSQL, DatabaseName, OutputFileNamePart01, OutputFileNamePart02)
+  SELECT 'DatabaseBackup - USER_DATABASES - DIFF',
+         'EXECUTE [dbo].[DatabaseBackup]' + CHAR(13) + CHAR(10) + '@Databases = ''USER_DATABASES'',' + CHAR(13) + CHAR(10) + '@Directory = ' + ISNULL('N''' + REPLACE(@BackupDirectory,'''','''''') + '''','NULL') + ',' + CHAR(13) + CHAR(10) + '@BackupType = ''DIFF'',' + CHAR(13) + CHAR(10) + '@Verify = ''Y'',' + CHAR(13) + CHAR(10) + '@CleanupTime = ' + ISNULL(CAST(@CleanupTime AS nvarchar),'NULL') + ',' + CHAR(13) + CHAR(10) + '@CheckSum = ''Y'',' + CHAR(13) + CHAR(10) + '@LogToTable = ''' + @LogToTable + '''',
+          @DatabaseName,
+         'DatabaseBackup',
+         'DIFF'
+
+  INSERT INTO @Jobs ([Name], CommandTSQL, DatabaseName, OutputFileNamePart01, OutputFileNamePart02)
+  SELECT 'DatabaseBackup - USER_DATABASES - FULL',
+         'EXECUTE [dbo].[DatabaseBackup]' + CHAR(13) + CHAR(10) + '@Databases = ''USER_DATABASES'',' + CHAR(13) + CHAR(10) + '@Directory = ' + ISNULL('N''' + REPLACE(@BackupDirectory,'''','''''') + '''','NULL') + ',' + CHAR(13) + CHAR(10) + '@BackupType = ''FULL'',' + CHAR(13) + CHAR(10) + '@Verify = ''Y'',' + CHAR(13) + CHAR(10) + '@CleanupTime = ' + ISNULL(CAST(@CleanupTime AS nvarchar),'NULL') + ',' + CHAR(13) + CHAR(10) + '@CheckSum = ''Y'',' + CHAR(13) + CHAR(10) + '@LogToTable = ''' + @LogToTable + '''',
+         @DatabaseName,
+         'DatabaseBackup',
+         'FULL'
+
+  INSERT INTO @Jobs ([Name], CommandTSQL, DatabaseName, OutputFileNamePart01, OutputFileNamePart02)
+  SELECT 'DatabaseBackup - USER_DATABASES - LOG',
+         'EXECUTE [dbo].[DatabaseBackup]' + CHAR(13) + CHAR(10) + '@Databases = ''USER_DATABASES'',' + CHAR(13) + CHAR(10) + '@Directory = ' + ISNULL('N''' + REPLACE(@BackupDirectory,'''','''''') + '''','NULL') + ',' + CHAR(13) + CHAR(10) + '@BackupType = ''LOG'',' + CHAR(13) + CHAR(10) + '@Verify = ''Y'',' + CHAR(13) + CHAR(10) + '@CleanupTime = ' + ISNULL(CAST(@CleanupTime AS nvarchar),'NULL') + ',' + CHAR(13) + CHAR(10) + '@CheckSum = ''Y'',' + CHAR(13) + CHAR(10) + '@LogToTable = ''' + @LogToTable + '''',
+         @DatabaseName,
+         'DatabaseBackup',
+         'LOG'
+
+  INSERT INTO @Jobs ([Name], CommandTSQL, DatabaseName, OutputFileNamePart01)
+  SELECT 'DatabaseIntegrityCheck - SYSTEM_DATABASES',
+         'EXECUTE [dbo].[DatabaseIntegrityCheck]' + CHAR(13) + CHAR(10) + '@Databases = ''SYSTEM_DATABASES'',' + CHAR(13) + CHAR(10) + '@LogToTable = ''' + @LogToTable + '''',
+         @DatabaseName,
+         'DatabaseIntegrityCheck'
+
+  INSERT INTO @Jobs ([Name], CommandTSQL, DatabaseName, OutputFileNamePart01)
+  SELECT 'DatabaseIntegrityCheck - USER_DATABASES',
+         'EXECUTE [dbo].[DatabaseIntegrityCheck]' + CHAR(13) + CHAR(10) + '@Databases = ''USER_DATABASES' + CASE WHEN @AmazonRDS = 1 THEN ', -rdsadmin' ELSE '' END + ''',' + CHAR(13) + CHAR(10) + '@LogToTable = ''' + @LogToTable + '''',
+         @DatabaseName,
+         'DatabaseIntegrityCheck'
+
+  INSERT INTO @Jobs ([Name], CommandTSQL, DatabaseName, OutputFileNamePart01)
+  SELECT 'IndexOptimize - USER_DATABASES',
+         'EXECUTE [dbo].[IndexOptimize]' + CHAR(13) + CHAR(10) + '@Databases = ''USER_DATABASES'',' + CHAR(13) + CHAR(10) + '@LogToTable = ''' + @LogToTable + '''',
+         @DatabaseName,
+         'IndexOptimize'
+
+  INSERT INTO @Jobs ([Name], CommandTSQL, DatabaseName, OutputFileNamePart01)
+  SELECT 'sp_delete_backuphistory',
+         'DECLARE @CleanupDate datetime' + CHAR(13) + CHAR(10) + 'SET @CleanupDate = DATEADD(dd,-30,GETDATE())' + CHAR(13) + CHAR(10) + 'EXECUTE dbo.sp_delete_backuphistory @oldest_date = @CleanupDate',
+         'msdb',
+         'sp_delete_backuphistory'
+
+  INSERT INTO @Jobs ([Name], CommandTSQL, DatabaseName, OutputFileNamePart01)
+  SELECT 'sp_purge_jobhistory',
+         'DECLARE @CleanupDate datetime' + CHAR(13) + CHAR(10) + 'SET @CleanupDate = DATEADD(dd,-30,GETDATE())' + CHAR(13) + CHAR(10) + 'EXECUTE dbo.sp_purge_jobhistory @oldest_date = @CleanupDate',
+         'msdb',
+         'sp_purge_jobhistory'
+
+  INSERT INTO @Jobs ([Name], CommandTSQL, DatabaseName, OutputFileNamePart01)
+  SELECT 'CommandLog Cleanup',
+         'DELETE FROM [dbo].[CommandLog]' + CHAR(13) + CHAR(10) + 'WHERE StartTime < DATEADD(dd,-30,GETDATE())',
+         @DatabaseName,
+         'CommandLogCleanup'
+
+  INSERT INTO @Jobs ([Name], CommandCmdExec, OutputFileNamePart01)
+  SELECT 'Output File Cleanup',
+         'cmd /q /c "For /F "tokens=1 delims=" %v In (''ForFiles /P "' + COALESCE(@OutputFileDirectory,@TokenLogDirectory,@LogDirectory) + '" /m *_*_*_*.txt /d -30 2^>^&1'') do if EXIST "' + COALESCE(@OutputFileDirectory,@TokenLogDirectory,@LogDirectory) + '"\%v echo del "' + COALESCE(@OutputFileDirectory,@TokenLogDirectory,@LogDirectory) + '"\%v& del "' + COALESCE(@OutputFileDirectory,@TokenLogDirectory,@LogDirectory) + '"\%v"',
+         'OutputFileCleanup'
+
+  IF @AmazonRDS = 1
   BEGIN
-    EXECUTE msdb.dbo.sp_add_job @job_name = @JobName02, @description = @JobDescription, @category_name = @JobCategory, @owner_login_name = @JobOwner
-    EXECUTE msdb.dbo.sp_add_jobstep @job_name = @JobName02, @step_name = @JobName02, @subsystem = 'CMDEXEC', @command = @JobCommand02, @output_file_name = @OutputFile02
-    EXECUTE msdb.dbo.sp_add_jobserver @job_name = @JobName02
+   UPDATE @Jobs
+   SET Selected = 1
+   WHERE [Name] IN('DatabaseIntegrityCheck - USER_DATABASES','IndexOptimize - USER_DATABASES','CommandLog Cleanup')
+  END
+  ELSE IF @HostPlatform = 'Windows'
+  BEGIN
+   UPDATE @Jobs
+   SET Selected = 1
+  END
+  ELSE IF @HostPlatform = 'Linux'
+  BEGIN
+   UPDATE @Jobs
+   SET Selected = 1
+   WHERE CommandTSQL IS NOT NULL
   END
 
-  IF NOT EXISTS (SELECT * FROM msdb.dbo.sysjobs WHERE [name] = @JobName03)
+  WHILE EXISTS (SELECT * FROM @Jobs WHERE Completed = 0 AND Selected = 1)
   BEGIN
-    EXECUTE msdb.dbo.sp_add_job @job_name = @JobName03, @description = @JobDescription, @category_name = @JobCategory, @owner_login_name = @JobOwner
-    EXECUTE msdb.dbo.sp_add_jobstep @job_name = @JobName03, @step_name = @JobName03, @subsystem = 'CMDEXEC', @command = @JobCommand03, @output_file_name = @OutputFile03
-    EXECUTE msdb.dbo.sp_add_jobserver @job_name = @JobName03
-  END
+    SELECT @CurrentJobID = JobID,
+           @CurrentJobName = [Name],
+           @CurrentCommandTSQL = CommandTSQL,
+           @CurrentCommandCmdExec = CommandCmdExec,
+           @CurrentDatabaseName = DatabaseName,
+           @CurrentOutputFileNamePart01 = OutputFileNamePart01,
+           @CurrentOutputFileNamePart02 = OutputFileNamePart02
+    FROM @Jobs
+    WHERE Completed = 0
+    AND Selected = 1
+    ORDER BY JobID ASC
 
-  IF NOT EXISTS (SELECT * FROM msdb.dbo.sysjobs WHERE [name] = @JobName04)
-  BEGIN
-    EXECUTE msdb.dbo.sp_add_job @job_name = @JobName04, @description = @JobDescription, @category_name = @JobCategory, @owner_login_name = @JobOwner
-    EXECUTE msdb.dbo.sp_add_jobstep @job_name = @JobName04, @step_name = @JobName04, @subsystem = 'CMDEXEC', @command = @JobCommand04, @output_file_name = @OutputFile04
-    EXECUTE msdb.dbo.sp_add_jobserver @job_name = @JobName04
-  END
+    IF @CurrentCommandTSQL IS NOT NULL AND @AmazonRDS = 1
+    BEGIN
+      SET @CurrentJobStepSubSystem = 'TSQL'
+      SET @CurrentJobStepCommand = @CurrentCommandTSQL
+      SET @CurrentJobStepDatabaseName = @CurrentDatabaseName
+    END
+    ELSE IF @CurrentCommandTSQL IS NOT NULL AND @HostPlatform = 'Linux'
+    BEGIN
+      SET @CurrentJobStepSubSystem = 'TSQL'
+      SET @CurrentJobStepCommand = @CurrentCommandTSQL
+      SET @CurrentJobStepDatabaseName = @CurrentDatabaseName
+    END
+    ELSE IF @CurrentCommandTSQL IS NOT NULL AND @HostPlatform = 'Windows'
+    BEGIN
+      SET @CurrentJobStepSubSystem = 'CMDEXEC'
+      SET @CurrentJobStepCommand = 'sqlcmd -E -S ' + @TokenServer + ' -d ' + @CurrentDatabaseName + ' -Q "' + REPLACE(@CurrentCommandTSQL,(CHAR(13) + CHAR(10)),' ') + '" -b'
+      SET @CurrentJobStepDatabaseName = NULL
+    END
+    ELSE IF @CurrentCommandCmdExec IS NOT NULL AND @HostPlatform = 'Windows'
+    BEGIN
+      SET @CurrentJobStepSubSystem = 'CMDEXEC'
+      SET @CurrentJobStepCommand = @CurrentCommandCmdExec
+      SET @CurrentJobStepDatabaseName = NULL
+    END
 
-  IF NOT EXISTS (SELECT * FROM msdb.dbo.sysjobs WHERE [name] = @JobName05)
-  BEGIN
-    EXECUTE msdb.dbo.sp_add_job @job_name = @JobName05, @description = @JobDescription, @category_name = @JobCategory, @owner_login_name = @JobOwner
-    EXECUTE msdb.dbo.sp_add_jobstep @job_name = @JobName05, @step_name = @JobName05, @subsystem = 'CMDEXEC', @command = @JobCommand05, @output_file_name = @OutputFile05
-    EXECUTE msdb.dbo.sp_add_jobserver @job_name = @JobName05
-  END
+    IF @AmazonRDS = 0
+    BEGIN
+      SET @CurrentOutputFileName = COALESCE(@OutputFileDirectory,@TokenLogDirectory,@LogDirectory) + @DirectorySeparator + ISNULL(@CurrentOutputFileNamePart01 + '_','') + ISNULL(@CurrentOutputFileNamePart02 + '_','') + @TokenJobID + '_' + @TokenStepID + '_' + @TokenDate + '_' + @TokenTime + '.txt'
+      IF LEN(@CurrentOutputFileName) > 200 SET @CurrentOutputFileName = COALESCE(@OutputFileDirectory,@TokenLogDirectory,@LogDirectory) + @DirectorySeparator + ISNULL(@CurrentOutputFileNamePart01 + '_','') + @TokenJobID + '_' + @TokenStepID + '_' + @TokenDate + '_' + @TokenTime + '.txt'
+      IF LEN(@CurrentOutputFileName) > 200 SET @CurrentOutputFileName = COALESCE(@OutputFileDirectory,@TokenLogDirectory,@LogDirectory) + @DirectorySeparator + @TokenJobID + '_' + @TokenStepID + '_' + @TokenDate + '_' + @TokenTime + '.txt'
+      IF LEN(@CurrentOutputFileName) > 200 SET @CurrentOutputFileName = NULL
+    END
 
-  IF NOT EXISTS (SELECT * FROM msdb.dbo.sysjobs WHERE [name] = @JobName06)
-  BEGIN
-    EXECUTE msdb.dbo.sp_add_job @job_name = @JobName06, @description = @JobDescription, @category_name = @JobCategory, @owner_login_name = @JobOwner
-    EXECUTE msdb.dbo.sp_add_jobstep @job_name = @JobName06, @step_name = @JobName06, @subsystem = 'CMDEXEC', @command = @JobCommand06, @output_file_name = @OutputFile06
-    EXECUTE msdb.dbo.sp_add_jobserver @job_name = @JobName06
-  END
+    IF @CurrentJobStepSubSystem IS NOT NULL AND @CurrentJobStepCommand IS NOT NULL AND NOT EXISTS (SELECT * FROM msdb.dbo.sysjobs WHERE [name] = @CurrentJobName)
+    BEGIN
+      EXECUTE msdb.dbo.sp_add_job @job_name = @CurrentJobName, @description = @JobDescription, @category_name = @JobCategory, @owner_login_name = @JobOwner
+      EXECUTE msdb.dbo.sp_add_jobstep @job_name = @CurrentJobName, @step_name = @CurrentJobName, @subsystem = @CurrentJobStepSubSystem, @command = @CurrentJobStepCommand, @output_file_name = @CurrentOutputFileName, @database_name = @CurrentJobStepDatabaseName
+      EXECUTE msdb.dbo.sp_add_jobserver @job_name = @CurrentJobName
+    END
 
-  IF NOT EXISTS (SELECT * FROM msdb.dbo.sysjobs WHERE [name] = @JobName07)
-  BEGIN
-    EXECUTE msdb.dbo.sp_add_job @job_name = @JobName07, @description = @JobDescription, @category_name = @JobCategory, @owner_login_name = @JobOwner
-    EXECUTE msdb.dbo.sp_add_jobstep @job_name = @JobName07, @step_name = @JobName07, @subsystem = 'CMDEXEC', @command = @JobCommand07, @output_file_name = @OutputFile07
-    EXECUTE msdb.dbo.sp_add_jobserver @job_name = @JobName07
-  END
+    UPDATE Jobs
+    SET Completed = 1
+    FROM @Jobs Jobs
+    WHERE JobID = @CurrentJobID
 
-  IF NOT EXISTS (SELECT * FROM msdb.dbo.sysjobs WHERE [name] = @JobName08)
-  BEGIN
-    EXECUTE msdb.dbo.sp_add_job @job_name = @JobName08, @description = @JobDescription, @category_name = @JobCategory, @owner_login_name = @JobOwner
-    EXECUTE msdb.dbo.sp_add_jobstep @job_name = @JobName08, @step_name = @JobName08, @subsystem = 'CMDEXEC', @command = @JobCommand08, @output_file_name = @OutputFile08
-    EXECUTE msdb.dbo.sp_add_jobserver @job_name = @JobName08
-  END
+    SET @CurrentJobID = NULL
+    SET @CurrentJobName = NULL
+    SET @CurrentCommandTSQL = NULL
+    SET @CurrentCommandCmdExec = NULL
+    SET @CurrentDatabaseName = NULL
+    SET @CurrentOutputFileNamePart01 = NULL
+    SET @CurrentOutputFileNamePart02 = NULL
+    SET @CurrentJobStepCommand = NULL
+    SET @CurrentJobStepSubSystem = NULL
+    SET @CurrentJobStepDatabaseName = NULL
+    SET @CurrentOutputFileName = NULL
 
-  IF NOT EXISTS (SELECT * FROM msdb.dbo.sysjobs WHERE [name] = @JobName09)
-  BEGIN
-    EXECUTE msdb.dbo.sp_add_job @job_name = @JobName09, @description = @JobDescription, @category_name = @JobCategory, @owner_login_name = @JobOwner
-    EXECUTE msdb.dbo.sp_add_jobstep @job_name = @JobName09, @step_name = @JobName09, @subsystem = 'CMDEXEC', @command = @JobCommand09, @output_file_name = @OutputFile09
-    EXECUTE msdb.dbo.sp_add_jobserver @job_name = @JobName09
-  END
-
-  IF NOT EXISTS (SELECT * FROM msdb.dbo.sysjobs WHERE [name] = @JobName10)
-  BEGIN
-    EXECUTE msdb.dbo.sp_add_job @job_name = @JobName10, @description = @JobDescription, @category_name = @JobCategory, @owner_login_name = @JobOwner
-    EXECUTE msdb.dbo.sp_add_jobstep @job_name = @JobName10, @step_name = @JobName10, @subsystem = 'CMDEXEC', @command = @JobCommand10, @output_file_name = @OutputFile10
-    EXECUTE msdb.dbo.sp_add_jobserver @job_name = @JobName10
-  END
-
-  IF NOT EXISTS (SELECT * FROM msdb.dbo.sysjobs WHERE [name] = @JobName11)
-  BEGIN
-    EXECUTE msdb.dbo.sp_add_job @job_name = @JobName11, @description = @JobDescription, @category_name = @JobCategory, @owner_login_name = @JobOwner
-    EXECUTE msdb.dbo.sp_add_jobstep @job_name = @JobName11, @step_name = @JobName11, @subsystem = 'CMDEXEC', @command = @JobCommand11, @output_file_name = @OutputFile11
-    EXECUTE msdb.dbo.sp_add_jobserver @job_name = @JobName11
   END
 
 END
