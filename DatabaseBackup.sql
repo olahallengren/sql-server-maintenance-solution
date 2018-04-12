@@ -62,6 +62,11 @@ BEGIN
   DECLARE @DatabaseMessage nvarchar(max)
   DECLARE @ErrorMessage nvarchar(max)
 
+  DECLARE @StartTime datetime
+  DECLARE @SchemaName nvarchar(max)
+  DECLARE @ObjectName nvarchar(max)
+  DECLARE @Parameters nvarchar(max)
+
   DECLARE @Version numeric(18,10)
   DECLARE @HostPlatform nvarchar(max)
   DECLARE @DirectorySeparator nvarchar(max)
@@ -201,7 +206,49 @@ BEGIN
   --// Log initial information                                                                    //--
   ----------------------------------------------------------------------------------------------------
 
-  SET @StartMessage = 'Date and time: ' + CONVERT(nvarchar,GETDATE(),120)
+  SET @StartTime = GETDATE()
+  SET @SchemaName = (SELECT schemas.name FROM sys.schemas schemas INNER JOIN sys.objects objects ON schemas.[schema_id] = objects.[schema_id] WHERE [object_id] = @@PROCID)
+  SET @ObjectName = OBJECT_NAME(@@PROCID)
+
+  SET @Parameters = '@Databases = ' + ISNULL('''' + REPLACE(@Databases,'''','''''') + '''','NULL')
+  SET @Parameters = @Parameters + ', @Directory = ' + ISNULL('''' + REPLACE(@Directory,'''','''''') + '''','NULL')
+  SET @Parameters = @Parameters + ', @BackupType = ' + ISNULL('''' + REPLACE(@BackupType,'''','''''') + '''','NULL')
+  SET @Parameters = @Parameters + ', @Verify = ' + ISNULL('''' + REPLACE(@Verify,'''','''''') + '''','NULL')
+  SET @Parameters = @Parameters + ', @CleanupTime = ' + ISNULL(CAST(@CleanupTime AS nvarchar),'NULL')
+  SET @Parameters = @Parameters + ', @CleanupMode = ' + ISNULL('''' + REPLACE(@CleanupMode,'''','''''') + '''','NULL')
+  SET @Parameters = @Parameters + ', @Compress = ' + ISNULL('''' + REPLACE(@Compress,'''','''''') + '''','NULL')
+  SET @Parameters = @Parameters + ', @CopyOnly = ' + ISNULL('''' + REPLACE(@CopyOnly,'''','''''') + '''','NULL')
+  SET @Parameters = @Parameters + ', @ChangeBackupType = ' + ISNULL('''' + REPLACE(@ChangeBackupType,'''','''''') + '''','NULL')
+  SET @Parameters = @Parameters + ', @BackupSoftware = ' + ISNULL('''' + REPLACE(@BackupSoftware,'''','''''') + '''','NULL')
+  SET @Parameters = @Parameters + ', @CheckSum = ' + ISNULL('''' + REPLACE(@CheckSum,'''','''''') + '''','NULL')
+  SET @Parameters = @Parameters + ', @BlockSize = ' + ISNULL(CAST(@BlockSize AS nvarchar),'NULL')
+  SET @Parameters = @Parameters + ', @BufferCount = ' + ISNULL(CAST(@BufferCount AS nvarchar),'NULL')
+  SET @Parameters = @Parameters + ', @MaxTransferSize = ' + ISNULL(CAST(@MaxTransferSize AS nvarchar),'NULL')
+  SET @Parameters = @Parameters + ', @NumberOfFiles = ' + ISNULL(CAST(@NumberOfFiles AS nvarchar),'NULL')
+  SET @Parameters = @Parameters + ', @CompressionLevel = ' + ISNULL(CAST(@CompressionLevel AS nvarchar),'NULL')
+  SET @Parameters = @Parameters + ', @Description = ' + ISNULL('''' + REPLACE(@Description,'''','''''') + '''','NULL')
+  SET @Parameters = @Parameters + ', @Threads = ' + ISNULL(CAST(@Threads AS nvarchar),'NULL')
+  SET @Parameters = @Parameters + ', @Throttle = ' + ISNULL(CAST(@Throttle AS nvarchar),'NULL')
+  SET @Parameters = @Parameters + ', @Encrypt = ' + ISNULL('''' + REPLACE(@Encrypt,'''','''''') + '''','NULL')
+  SET @Parameters = @Parameters + ', @EncryptionAlgorithm = ' + ISNULL('''' + REPLACE(@EncryptionAlgorithm,'''','''''') + '''','NULL')
+  SET @Parameters = @Parameters + ', @ServerCertificate = ' + ISNULL('''' + REPLACE(@ServerCertificate,'''','''''') + '''','NULL')
+  SET @Parameters = @Parameters + ', @ServerAsymmetricKey = ' + ISNULL('''' + REPLACE(@ServerAsymmetricKey,'''','''''') + '''','NULL')
+  SET @Parameters = @Parameters + ', @EncryptionKey = ' + ISNULL('''' + REPLACE(@EncryptionKey,'''','''''') + '''','NULL')
+  SET @Parameters = @Parameters + ', @ReadWriteFileGroups = ' + ISNULL('''' + REPLACE(@ReadWriteFileGroups,'''','''''') + '''','NULL')
+  SET @Parameters = @Parameters + ', @OverrideBackupPreference = ' + ISNULL('''' + REPLACE(@OverrideBackupPreference,'''','''''') + '''','NULL')
+  SET @Parameters = @Parameters + ', @NoRecovery = ' + ISNULL('''' + REPLACE(@NoRecovery,'''','''''') + '''','NULL')
+  SET @Parameters = @Parameters + ', @URL = ' + ISNULL('''' + REPLACE(@URL,'''','''''') + '''','NULL')
+  SET @Parameters = @Parameters + ', @Credential = ' + ISNULL('''' + REPLACE(@Credential,'''','''''') + '''','NULL')
+  SET @Parameters = @Parameters + ', @MirrorDirectory = ' + ISNULL('''' + REPLACE(@MirrorDirectory,'''','''''') + '''','NULL')
+  SET @Parameters = @Parameters + ', @MirrorCleanupTime = ' + ISNULL(CAST(@MirrorCleanupTime AS nvarchar),'NULL')
+  SET @Parameters = @Parameters + ', @MirrorCleanupMode = ' + ISNULL('''' + REPLACE(@MirrorCleanupMode,'''','''''') + '''','NULL')
+  SET @Parameters = @Parameters + ', @AvailabilityGroups = ' + ISNULL('''' + REPLACE(@AvailabilityGroups,'''','''''') + '''','NULL')
+  SET @Parameters = @Parameters + ', @Updateability = ' + ISNULL('''' + REPLACE(@Updateability,'''','''''') + '''','NULL')
+  SET @Parameters = @Parameters + ', @AdaptiveCompression = ' + ISNULL('''' + REPLACE(@AdaptiveCompression,'''','''''') + '''','NULL')
+  SET @Parameters = @Parameters + ', @LogToTable = ' + ISNULL('''' + REPLACE(@LogToTable,'''','''''') + '''','NULL')
+  SET @Parameters = @Parameters + ', @Execute = ' + ISNULL('''' + REPLACE(@Execute,'''','''''') + '''','NULL')
+
+  SET @StartMessage = 'Date and time: ' + CONVERT(nvarchar,@StartTime,120)
   RAISERROR(@StartMessage,10,1) WITH NOWAIT
 
   SET @StartMessage = 'Server: ' + CAST(SERVERPROPERTY('ServerName') AS nvarchar(max))
@@ -216,46 +263,10 @@ BEGIN
   SET @StartMessage = 'Platform: ' + @HostPlatform
   RAISERROR(@StartMessage,10,1) WITH NOWAIT
 
-  SET @StartMessage = 'Procedure: ' + QUOTENAME(DB_NAME(DB_ID())) + '.' + (SELECT QUOTENAME(schemas.name) FROM sys.schemas schemas INNER JOIN sys.objects objects ON schemas.[schema_id] = objects.[schema_id] WHERE [object_id] = @@PROCID) + '.' + QUOTENAME(OBJECT_NAME(@@PROCID))
+  SET @StartMessage = 'Procedure: ' + QUOTENAME(DB_NAME(DB_ID())) + '.' + QUOTENAME(@SchemaName) + '.' + QUOTENAME(@ObjectName)
   RAISERROR(@StartMessage,10,1) WITH NOWAIT
 
-  SET @StartMessage = 'Parameters: @Databases = ' + ISNULL('''' + REPLACE(@Databases,'''','''''') + '''','NULL')
-  SET @StartMessage = @StartMessage + ', @Directory = ' + ISNULL('''' + REPLACE(@Directory,'''','''''') + '''','NULL')
-  SET @StartMessage = @StartMessage + ', @BackupType = ' + ISNULL('''' + REPLACE(@BackupType,'''','''''') + '''','NULL')
-  SET @StartMessage = @StartMessage + ', @Verify = ' + ISNULL('''' + REPLACE(@Verify,'''','''''') + '''','NULL')
-  SET @StartMessage = @StartMessage + ', @CleanupTime = ' + ISNULL(CAST(@CleanupTime AS nvarchar),'NULL')
-  SET @StartMessage = @StartMessage + ', @CleanupMode = ' + ISNULL('''' + REPLACE(@CleanupMode,'''','''''') + '''','NULL')
-  SET @StartMessage = @StartMessage + ', @Compress = ' + ISNULL('''' + REPLACE(@Compress,'''','''''') + '''','NULL')
-  SET @StartMessage = @StartMessage + ', @CopyOnly = ' + ISNULL('''' + REPLACE(@CopyOnly,'''','''''') + '''','NULL')
-  SET @StartMessage = @StartMessage + ', @ChangeBackupType = ' + ISNULL('''' + REPLACE(@ChangeBackupType,'''','''''') + '''','NULL')
-  SET @StartMessage = @StartMessage + ', @BackupSoftware = ' + ISNULL('''' + REPLACE(@BackupSoftware,'''','''''') + '''','NULL')
-  SET @StartMessage = @StartMessage + ', @CheckSum = ' + ISNULL('''' + REPLACE(@CheckSum,'''','''''') + '''','NULL')
-  SET @StartMessage = @StartMessage + ', @BlockSize = ' + ISNULL(CAST(@BlockSize AS nvarchar),'NULL')
-  SET @StartMessage = @StartMessage + ', @BufferCount = ' + ISNULL(CAST(@BufferCount AS nvarchar),'NULL')
-  SET @StartMessage = @StartMessage + ', @MaxTransferSize = ' + ISNULL(CAST(@MaxTransferSize AS nvarchar),'NULL')
-  SET @StartMessage = @StartMessage + ', @NumberOfFiles = ' + ISNULL(CAST(@NumberOfFiles AS nvarchar),'NULL')
-  SET @StartMessage = @StartMessage + ', @CompressionLevel = ' + ISNULL(CAST(@CompressionLevel AS nvarchar),'NULL')
-  SET @StartMessage = @StartMessage + ', @Description = ' + ISNULL('''' + REPLACE(@Description,'''','''''') + '''','NULL')
-  SET @StartMessage = @StartMessage + ', @Threads = ' + ISNULL(CAST(@Threads AS nvarchar),'NULL')
-  SET @StartMessage = @StartMessage + ', @Throttle = ' + ISNULL(CAST(@Throttle AS nvarchar),'NULL')
-  SET @StartMessage = @StartMessage + ', @Encrypt = ' + ISNULL('''' + REPLACE(@Encrypt,'''','''''') + '''','NULL')
-  SET @StartMessage = @StartMessage + ', @EncryptionAlgorithm = ' + ISNULL('''' + REPLACE(@EncryptionAlgorithm,'''','''''') + '''','NULL')
-  SET @StartMessage = @StartMessage + ', @ServerCertificate = ' + ISNULL('''' + REPLACE(@ServerCertificate,'''','''''') + '''','NULL')
-  SET @StartMessage = @StartMessage + ', @ServerAsymmetricKey = ' + ISNULL('''' + REPLACE(@ServerAsymmetricKey,'''','''''') + '''','NULL')
-  SET @StartMessage = @StartMessage + ', @EncryptionKey = ' + ISNULL('''' + REPLACE(@EncryptionKey,'''','''''') + '''','NULL')
-  SET @StartMessage = @StartMessage + ', @ReadWriteFileGroups = ' + ISNULL('''' + REPLACE(@ReadWriteFileGroups,'''','''''') + '''','NULL')
-  SET @StartMessage = @StartMessage + ', @OverrideBackupPreference = ' + ISNULL('''' + REPLACE(@OverrideBackupPreference,'''','''''') + '''','NULL')
-  SET @StartMessage = @StartMessage + ', @NoRecovery = ' + ISNULL('''' + REPLACE(@NoRecovery,'''','''''') + '''','NULL')
-  SET @StartMessage = @StartMessage + ', @URL = ' + ISNULL('''' + REPLACE(@URL,'''','''''') + '''','NULL')
-  SET @StartMessage = @StartMessage + ', @Credential = ' + ISNULL('''' + REPLACE(@Credential,'''','''''') + '''','NULL')
-  SET @StartMessage = @StartMessage + ', @MirrorDirectory = ' + ISNULL('''' + REPLACE(@MirrorDirectory,'''','''''') + '''','NULL')
-  SET @StartMessage = @StartMessage + ', @MirrorCleanupTime = ' + ISNULL(CAST(@MirrorCleanupTime AS nvarchar),'NULL')
-  SET @StartMessage = @StartMessage + ', @MirrorCleanupMode = ' + ISNULL('''' + REPLACE(@MirrorCleanupMode,'''','''''') + '''','NULL')
-  SET @StartMessage = @StartMessage + ', @AvailabilityGroups = ' + ISNULL('''' + REPLACE(@AvailabilityGroups,'''','''''') + '''','NULL')
-  SET @StartMessage = @StartMessage + ', @Updateability = ' + ISNULL('''' + REPLACE(@Updateability,'''','''''') + '''','NULL')
-  SET @StartMessage = @StartMessage + ', @AdaptiveCompression = ' + ISNULL('''' + REPLACE(@AdaptiveCompression,'''','''''') + '''','NULL')
-  SET @StartMessage = @StartMessage + ', @LogToTable = ' + ISNULL('''' + REPLACE(@LogToTable,'''','''''') + '''','NULL')
-  SET @StartMessage = @StartMessage + ', @Execute = ' + ISNULL('''' + REPLACE(@Execute,'''','''''') + '''','NULL')
+  SET @StartMessage = 'Parameters: ' + @Parameters
   SET @StartMessage = REPLACE(@StartMessage,'%','%%')
   RAISERROR(@StartMessage,10,1) WITH NOWAIT
 
@@ -647,13 +658,18 @@ BEGIN
 
   IF @DirectoryCheck = 1
   BEGIN
-    WHILE EXISTS(SELECT * FROM @Directories WHERE Completed = 0)
+    WHILE (1 = 1)
     BEGIN
       SELECT TOP 1 @CurrentRootDirectoryID = ID,
                    @CurrentRootDirectoryPath = DirectoryPath
       FROM @Directories
       WHERE Completed = 0
       ORDER BY ID ASC
+
+      IF @@ROWCOUNT = 0
+      BEGIN
+        BREAK
+      END
 
       INSERT INTO @DirectoryInfo (FileExists, FileIsADirectory, ParentDirectoryExists)
       EXECUTE [master].dbo.xp_fileexist @CurrentRootDirectoryPath
@@ -1016,7 +1032,7 @@ BEGIN
   --// Execute backup commands                                                                    //--
   ----------------------------------------------------------------------------------------------------
 
-  WHILE EXISTS (SELECT * FROM @tmpDatabases WHERE Selected = 1 AND Completed = 0)
+  WHILE (1 = 1)
   BEGIN
 
     SELECT TOP 1 @CurrentDBID = ID,
@@ -1026,6 +1042,11 @@ BEGIN
     WHERE Selected = 1
     AND Completed = 0
     ORDER BY ID ASC
+
+    IF @@ROWCOUNT = 0
+    BEGIN
+      BREAK
+    END
 
     SET @CurrentDatabaseID = DB_ID(@CurrentDatabaseName)
 
@@ -1365,34 +1386,42 @@ BEGIN
       END
 
       -- Create directory
-      WHILE EXISTS (SELECT * FROM @CurrentDirectories WHERE CreateCompleted = 0) AND @HostPlatform = 'Windows'
+      IF @HostPlatform = 'Windows'
       BEGIN
-        SELECT TOP 1 @CurrentDirectoryID = ID,
-                     @CurrentDirectoryPath = DirectoryPath
-        FROM @CurrentDirectories
-        WHERE CreateCompleted = 0
-        ORDER BY ID ASC
+        WHILE (1 = 1)
+        BEGIN
+          SELECT TOP 1 @CurrentDirectoryID = ID,
+                       @CurrentDirectoryPath = DirectoryPath
+          FROM @CurrentDirectories
+          WHERE CreateCompleted = 0
+          ORDER BY ID ASC
 
-        SET @CurrentCommandType01 = 'xp_create_subdir'
-        SET @CurrentCommand01 = 'DECLARE @ReturnCode int EXECUTE @ReturnCode = [master].dbo.xp_create_subdir N''' + REPLACE(@CurrentDirectoryPath,'''','''''') + ''' IF @ReturnCode <> 0 RAISERROR(''Error creating directory.'', 16, 1)'
-        EXECUTE @CurrentCommandOutput01 = [dbo].[CommandExecute] @Command = @CurrentCommand01, @CommandType = @CurrentCommandType01, @Mode = 1, @DatabaseName = @CurrentDatabaseName, @LogToTable = @LogToTable, @Execute = @Execute
-        SET @Error = @@ERROR
-        IF @Error <> 0 SET @CurrentCommandOutput01 = @Error
-        IF @CurrentCommandOutput01 <> 0 SET @ReturnCode = @CurrentCommandOutput01
+          IF @@ROWCOUNT = 0
+          BEGIN
+            BREAK
+          END
 
-        UPDATE @CurrentDirectories
-        SET CreateCompleted = 1,
-            CreateOutput = @CurrentCommandOutput01
-        WHERE ID = @CurrentDirectoryID
+          SET @CurrentCommandType01 = 'xp_create_subdir'
+          SET @CurrentCommand01 = 'DECLARE @ReturnCode int EXECUTE @ReturnCode = [master].dbo.xp_create_subdir N''' + REPLACE(@CurrentDirectoryPath,'''','''''') + ''' IF @ReturnCode <> 0 RAISERROR(''Error creating directory.'', 16, 1)'
+          EXECUTE @CurrentCommandOutput01 = [dbo].[CommandExecute] @Command = @CurrentCommand01, @CommandType = @CurrentCommandType01, @Mode = 1, @DatabaseName = @CurrentDatabaseName, @LogToTable = @LogToTable, @Execute = @Execute
+          SET @Error = @@ERROR
+          IF @Error <> 0 SET @CurrentCommandOutput01 = @Error
+          IF @CurrentCommandOutput01 <> 0 SET @ReturnCode = @CurrentCommandOutput01
 
-        SET @CurrentDirectoryID = NULL
-        SET @CurrentDirectoryPath = NULL
+          UPDATE @CurrentDirectories
+          SET CreateCompleted = 1,
+              CreateOutput = @CurrentCommandOutput01
+          WHERE ID = @CurrentDirectoryID
 
-        SET @CurrentCommand01 = NULL
+          SET @CurrentDirectoryID = NULL
+          SET @CurrentDirectoryPath = NULL
 
-        SET @CurrentCommandOutput01 = NULL
+          SET @CurrentCommand01 = NULL
 
-        SET @CurrentCommandType01 = NULL
+          SET @CurrentCommandOutput01 = NULL
+
+          SET @CurrentCommandType01 = NULL
+        END
       END
 
       IF @CleanupMode = 'BEFORE_BACKUP'
@@ -1432,15 +1461,21 @@ BEGIN
       AND @HostPlatform = 'Windows'
       AND @CurrentBackupType = @BackupType
       BEGIN
-        WHILE EXISTS (SELECT * FROM @CurrentDirectories WHERE CleanupDate IS NOT NULL AND CleanupMode = 'BEFORE_BACKUP' AND CleanupCompleted = 0)
+        WHILE (1 = 1)
         BEGIN
           SELECT TOP 1 @CurrentDirectoryID = ID,
                        @CurrentDirectoryPath = DirectoryPath,
                        @CurrentCleanupDate = CleanupDate
           FROM @CurrentDirectories
           WHERE CleanupDate IS NOT NULL
+          AND CleanupMode = 'BEFORE_BACKUP'
           AND CleanupCompleted = 0
           ORDER BY ID ASC
+
+          IF @@ROWCOUNT = 0
+          BEGIN
+            BREAK
+          END
 
           IF @BackupSoftware IS NULL
           BEGIN
@@ -1700,13 +1735,18 @@ BEGIN
       -- Verify the backup
       IF @CurrentCommandOutput03 = 0 AND @Verify = 'Y'
       BEGIN
-      WHILE EXISTS (SELECT * FROM @CurrentBackupSet WHERE VerifyCompleted = 0)
+        WHILE (1 = 1)
         BEGIN
           SELECT TOP 1 @CurrentBackupSetID = ID,
                        @CurrentIsMirror = Mirror
           FROM @CurrentBackupSet
           WHERE VerifyCompleted = 0
           ORDER BY ID ASC
+
+          IF @@ROWCOUNT = 0
+          BEGIN
+            BREAK
+          END
 
           IF @BackupSoftware IS NULL
           BEGIN
@@ -1837,15 +1877,21 @@ BEGIN
       AND @HostPlatform = 'Windows'
       AND @CurrentBackupType = @BackupType
       BEGIN
-        WHILE EXISTS (SELECT * FROM @CurrentDirectories WHERE CleanupDate IS NOT NULL AND CleanupMode = 'AFTER_BACKUP' AND CleanupCompleted = 0)
+        WHILE (1 = 1)
         BEGIN
           SELECT TOP 1 @CurrentDirectoryID = ID,
                        @CurrentDirectoryPath = DirectoryPath,
                        @CurrentCleanupDate = CleanupDate
           FROM @CurrentDirectories
           WHERE CleanupDate IS NOT NULL
+          AND CleanupMode = 'AFTER_BACKUP'
           AND CleanupCompleted = 0
           ORDER BY ID ASC
+
+          IF @@ROWCOUNT = 0
+          BEGIN
+            BREAK
+          END
 
           IF @BackupSoftware IS NULL
           BEGIN
