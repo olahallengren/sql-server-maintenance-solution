@@ -33,7 +33,7 @@ SET @BackupDirectory     = N'C:\Backup' -- Specify the backup root directory.
 SET @CleanupTime         = NULL         -- Time in hours, after which backup files are deleted. If no time is specified, then no backup files are deleted.
 SET @OutputFileDirectory = NULL         -- Specify the output file directory. If no directory is specified, then the SQL Server error log directory is used.
 SET @LogToTable          = 'Y'          -- Log commands to a table.
-SET @LogCleanupDays      = 30          	-- Number of days to keep logs/history (job history, maintenance logs, etc)
+SET @LogCleanupDays      = 30           -- Number of days to keep logs/history (job history, maintenance logs, etc)
 
 IF IS_SRVROLEMEMBER('sysadmin') = 0 AND NOT (DB_ID('rdsadmin') IS NOT NULL AND SUSER_SNAME(0x01) = 'rdsa')
 BEGIN
