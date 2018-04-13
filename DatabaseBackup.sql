@@ -44,6 +44,9 @@ ALTER PROCEDURE [dbo].[DatabaseBackup]
 @AvailabilityGroups nvarchar(max) = NULL,
 @Updateability nvarchar(max) = 'ALL',
 @AdaptiveCompression nvarchar(max) = NULL,
+@ModificationLevel int = NULL,
+@LogSizeSinceLastLogBackup int = NULL,
+@TimeSinceLastLogBackup int = NULL,
 @LogToTable nvarchar(max) = 'N',
 @Execute nvarchar(max) = 'Y'
 
@@ -106,6 +109,10 @@ BEGIN
   DECLARE @CurrentIsReadOnly bit
   DECLARE @CurrentBackupSetID int
   DECLARE @CurrentIsMirror bit
+  DECLARE @CurrentLastLogBackup datetime
+  DECLARE @CurrentLogSizeSinceLastLogBackup float
+  DECLARE @CurrentAllocatedExtentPageCount bigint
+  DECLARE @CurrentModifiedExtentPageCount bigint
 
   DECLARE @CurrentCommand01 nvarchar(max)
   DECLARE @CurrentCommand02 nvarchar(max)
@@ -113,6 +120,7 @@ BEGIN
   DECLARE @CurrentCommand04 nvarchar(max)
   DECLARE @CurrentCommand05 nvarchar(max)
   DECLARE @CurrentCommand06 nvarchar(max)
+  DECLARE @CurrentCommand07 nvarchar(max)
 
   DECLARE @CurrentCommandOutput01 int
   DECLARE @CurrentCommandOutput02 int
@@ -245,6 +253,9 @@ BEGIN
   SET @Parameters = @Parameters + ', @AvailabilityGroups = ' + ISNULL('''' + REPLACE(@AvailabilityGroups,'''','''''') + '''','NULL')
   SET @Parameters = @Parameters + ', @Updateability = ' + ISNULL('''' + REPLACE(@Updateability,'''','''''') + '''','NULL')
   SET @Parameters = @Parameters + ', @AdaptiveCompression = ' + ISNULL('''' + REPLACE(@AdaptiveCompression,'''','''''') + '''','NULL')
+  SET @Parameters = @Parameters + ', @ModificationLevel = ' + ISNULL(CAST(@ModificationLevel AS nvarchar),'NULL')
+  SET @Parameters = @Parameters + ', @LogSizeSinceLastLogBackup = ' + ISNULL(CAST(@LogSizeSinceLastLogBackup AS nvarchar),'NULL')
+  SET @Parameters = @Parameters + ', @TimeSinceLastLogBackup = ' + ISNULL(CAST(@TimeSinceLastLogBackup AS nvarchar),'NULL')
   SET @Parameters = @Parameters + ', @LogToTable = ' + ISNULL('''' + REPLACE(@LogToTable,'''','''''') + '''','NULL')
   SET @Parameters = @Parameters + ', @Execute = ' + ISNULL('''' + REPLACE(@Execute,'''','''''') + '''','NULL')
 
@@ -957,6 +968,27 @@ BEGIN
     SET @Error = @@ERROR
   END
 
+  IF (@ModificationLevel IS NOT NULL AND NOT (@Version >= 14)) OR (@ModificationLevel IS NOT NULL AND @ChangeBackupType = 'N') OR (@ModificationLevel IS NOT NULL AND @BackupType <> 'DIFF')
+  BEGIN
+    SET @ErrorMessage = 'The value for the parameter @ModificationLevel is not supported.' + CHAR(13) + CHAR(10) + ' '
+    RAISERROR(@ErrorMessage,16,1) WITH NOWAIT
+    SET @Error = @@ERROR
+  END
+
+  IF (@LogSizeSinceLastLogBackup IS NOT NULL AND NOT (@Version >= 14)) OR (@LogSizeSinceLastLogBackup IS NOT NULL AND @TimeSinceLastLogBackup IS NULL) OR (@LogSizeSinceLastLogBackup IS NULL AND @TimeSinceLastLogBackup IS NOT NULL) OR (@LogSizeSinceLastLogBackup IS NOT NULL AND @BackupType <> 'LOG')
+  BEGIN
+    SET @ErrorMessage = 'The value for the parameter @LogSizeSinceLastLogBackup is not supported.' + CHAR(13) + CHAR(10) + ' '
+    RAISERROR(@ErrorMessage,16,1) WITH NOWAIT
+    SET @Error = @@ERROR
+  END
+
+  IF (@TimeSinceLastLogBackup IS NOT NULL AND NOT (@Version >= 14)) OR (@TimeSinceLastLogBackup IS NOT NULL AND @LogSizeSinceLastLogBackup IS NULL) OR (@TimeSinceLastLogBackup IS NULL AND @LogSizeSinceLastLogBackup IS NOT NULL) OR (@TimeSinceLastLogBackup IS NOT NULL AND @BackupType <> 'LOG')
+  BEGIN
+    SET @ErrorMessage = 'The value for the parameter @TimeSinceLastLogBackup is not supported.' + CHAR(13) + CHAR(10) + ' '
+    RAISERROR(@ErrorMessage,16,1) WITH NOWAIT
+    SET @Error = @@ERROR
+  END
+
   IF @LogToTable NOT IN('Y','N') OR @LogToTable IS NULL
   BEGIN
     SET @ErrorMessage = 'The value for the parameter @LogToTable is not supported.' + CHAR(13) + CHAR(10) + ' '
@@ -1082,6 +1114,13 @@ BEGIN
       WHERE database_id = @CurrentDatabaseID
     END
 
+    IF DATABASEPROPERTYEX(@CurrentDatabaseName,'Status') = 'ONLINE' AND @Version >= 14
+    BEGIN
+      SET @CurrentCommand07 = 'SELECT @ParamAllocatedExtentPageCount = SUM(allocated_extent_page_count), @ParamModifiedExtentPageCount = SUM(modified_extent_page_count) FROM ' + QUOTENAME(@CurrentDatabaseName) + '.sys.dm_db_file_space_usage'
+
+      EXECUTE sp_executesql @statement = @CurrentCommand07, @params = N'@ParamAllocatedExtentPageCount bigint OUTPUT, @ParamModifiedExtentPageCount bigint OUTPUT', @ParamAllocatedExtentPageCount = @CurrentAllocatedExtentPageCount OUTPUT, @ParamModifiedExtentPageCount = @CurrentModifiedExtentPageCount OUTPUT
+    END
+
     SET @CurrentBackupType = @BackupType
 
     IF @ChangeBackupType = 'Y'
@@ -1090,20 +1129,17 @@ BEGIN
       BEGIN
         SET @CurrentBackupType = 'DIFF'
       END
-      IF @CurrentBackupType = 'DIFF' AND @CurrentDifferentialBaseLSN IS NULL AND @CurrentDatabaseName <> 'master'
+      IF @CurrentBackupType = 'DIFF' AND @CurrentDatabaseName <> 'master' AND (@CurrentDifferentialBaseLSN IS NULL OR (@CurrentModifiedExtentPageCount * 1. / @CurrentAllocatedExtentPageCount * 100 >= @ModificationLevel))
       BEGIN
         SET @CurrentBackupType = 'FULL'
       END
     END
 
-    IF @CurrentBackupType = 'LOG' AND (@CleanupTime IS NOT NULL OR @MirrorCleanupTime IS NOT NULL)
+    IF DATABASEPROPERTYEX(@CurrentDatabaseName,'Status') = 'ONLINE' AND @Version >= 14
     BEGIN
-      SELECT @CurrentLatestBackup = MAX(backup_finish_date)
-      FROM msdb.dbo.backupset
-      WHERE ([type] IN('D','I')
-      OR database_backup_lsn < @CurrentDifferentialBaseLSN)
-      AND is_damaged = 0
-      AND database_name = @CurrentDatabaseName
+      SELECT @CurrentLastLogBackup = log_backup_time,
+             @CurrentLogSizeSinceLastLogBackup = log_since_last_log_backup_mb
+      FROM sys.dm_db_log_stats (@CurrentDatabaseID)
     END
 
     IF @CurrentBackupType = 'DIFF'
@@ -1226,6 +1262,24 @@ BEGIN
     SET @DatabaseMessage = 'Last log backup LSN: ' + ISNULL(CAST(@CurrentLogLSN AS nvarchar),'N/A')
     RAISERROR(@DatabaseMessage,10,1) WITH NOWAIT
 
+    IF @CurrentBackupType IN('DIFF','FULL') AND @Version >= 14
+    BEGIN
+      SET @DatabaseMessage = 'Allocated extent page count: ' + ISNULL(CAST(@CurrentAllocatedExtentPageCount AS nvarchar),'N/A')
+      RAISERROR(@DatabaseMessage,10,1) WITH NOWAIT
+
+      SET @DatabaseMessage = 'Modified extent page count: ' + ISNULL(CAST(@CurrentModifiedExtentPageCount AS nvarchar),'N/A')
+      RAISERROR(@DatabaseMessage,10,1) WITH NOWAIT
+    END
+
+    IF @CurrentBackupType = 'LOG' AND @Version >= 14
+    BEGIN
+      SET @DatabaseMessage = 'Last log backup: ' + ISNULL(CONVERT(nvarchar(19),@CurrentLastLogBackup,120),'N/A')
+      RAISERROR(@DatabaseMessage,10,1) WITH NOWAIT
+
+      SET @DatabaseMessage = 'Log size since last log backup (MB): ' + ISNULL(CAST(@CurrentLogSizeSinceLastLogBackup AS nvarchar),'N/A')
+      RAISERROR(@DatabaseMessage,10,1) WITH NOWAIT
+    END
+
     RAISERROR('',10,1) WITH NOWAIT
 
     IF DATABASEPROPERTYEX(@CurrentDatabaseName,'Status') = 'ONLINE'
@@ -1242,9 +1296,19 @@ BEGIN
     AND NOT ((@CurrentLogShippingRole = 'PRIMARY' AND @CurrentLogShippingRole IS NOT NULL) AND @CurrentBackupType = 'LOG')
     AND NOT (@CurrentIsReadOnly = 1 AND @Updateability = 'READ_WRITE')
     AND NOT (@CurrentIsReadOnly = 0 AND @Updateability = 'READ_ONLY')
+    AND NOT (@CurrentBackupType = 'LOG' AND @LogSizeSinceLastLogBackup IS NOT NULL AND @TimeSinceLastLogBackup IS NOT NULL AND NOT(@CurrentLogSizeSinceLastLogBackup >= @LogSizeSinceLastLogBackup OR @CurrentLogSizeSinceLastLogBackup IS NULL OR DATEDIFF(SECOND,@CurrentLastLogBackup,GETDATE()) >= @TimeSinceLastLogBackup OR @CurrentLastLogBackup IS NULL))
     BEGIN
 
-      -- Set variables
+      IF @CurrentBackupType = 'LOG' AND (@CleanupTime IS NOT NULL OR @MirrorCleanupTime IS NOT NULL)
+      BEGIN
+        SELECT @CurrentLatestBackup = MAX(backup_finish_date)
+        FROM msdb.dbo.backupset
+        WHERE ([type] IN('D','I')
+        OR database_backup_lsn < @CurrentDifferentialBaseLSN)
+        AND is_damaged = 0
+        AND database_name = @CurrentDatabaseName
+      END
+
       SET @CurrentDate = GETDATE()
 
       INSERT INTO @CurrentCleanupDates (CleanupDate)
@@ -1981,9 +2045,14 @@ BEGIN
     SET @CurrentLogShippingRole = NULL
     SET @CurrentIsEncrypted = NULL
     SET @CurrentIsReadOnly = NULL
+    SET @CurrentLastLogBackup = NULL
+    SET @CurrentLogSizeSinceLastLogBackup = NULL
+    SET @CurrentAllocatedExtentPageCount = NULL
+    SET @CurrentModifiedExtentPageCount = NULL
 
     SET @CurrentCommand03 = NULL
     SET @CurrentCommand06 = NULL
+    SET @CurrentCommand07 = NULL
 
     SET @CurrentCommandOutput03 = NULL
 
