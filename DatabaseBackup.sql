@@ -788,14 +788,14 @@ BEGIN
 
   IF @BackupSoftware = 'LITESPEED' AND NOT EXISTS (SELECT * FROM [master].sys.objects WHERE [type] = 'X' AND [name] = 'xp_backup_database')
   BEGIN
-    SET @ErrorMessage = 'LiteSpeed for SQL Server is not installed. Download http://software.dell.com/products/litespeed-for-sql-server/.' + CHAR(13) + CHAR(10) + ' '
+    SET @ErrorMessage = 'LiteSpeed for SQL Server is not installed. Download https://www.quest.com/products/litespeed-for-sql-server/.' + CHAR(13) + CHAR(10) + ' '
     RAISERROR(@ErrorMessage,16,1) WITH NOWAIT
     SET @Error = @@ERROR
   END
 
   IF @BackupSoftware = 'SQLBACKUP' AND NOT EXISTS (SELECT * FROM [master].sys.objects WHERE [type] = 'X' AND [name] = 'sqlbackup')
   BEGIN
-    SET @ErrorMessage = 'Red Gate SQL Backup Pro is not installed. Download http://www.red-gate.com/products/dba/sql-backup/.' + CHAR(13) + CHAR(10) + ' '
+    SET @ErrorMessage = 'Red Gate SQL Backup Pro is not installed. Download https://www.red-gate.com/products/dba/sql-backup/.' + CHAR(13) + CHAR(10) + ' '
     RAISERROR(@ErrorMessage,16,1) WITH NOWAIT
     SET @Error = @@ERROR
   END
@@ -1094,6 +1094,23 @@ BEGIN
       END
     END
 
+    IF @Version >= 11 AND @Cluster IS NOT NULL
+    BEGIN
+      SELECT @CurrentAvailabilityGroup = availability_groups.name,
+             @CurrentAvailabilityGroupRole = dm_hadr_availability_replica_states.role_desc,
+             @CurrentAvailabilityGroupBackupPreference = UPPER(availability_groups.automated_backup_preference_desc)
+      FROM sys.databases databases
+      INNER JOIN sys.availability_databases_cluster availability_databases_cluster ON databases.group_database_id = availability_databases_cluster.group_database_id
+      INNER JOIN sys.availability_groups availability_groups ON availability_databases_cluster.group_id = availability_groups.group_id
+      INNER JOIN sys.dm_hadr_availability_replica_states dm_hadr_availability_replica_states ON availability_groups.group_id = dm_hadr_availability_replica_states.group_id AND databases.replica_id = dm_hadr_availability_replica_states.replica_id
+      WHERE databases.name = @CurrentDatabaseName
+    END
+
+    IF @Version >= 11 AND @Cluster IS NOT NULL AND @CurrentAvailabilityGroup IS NOT NULL
+    BEGIN
+      SELECT @CurrentIsPreferredBackupReplica = sys.fn_hadr_backup_is_preferred_replica(@CurrentDatabaseName)
+    END
+
     SELECT @CurrentDifferentialBaseLSN = differential_base_lsn
     FROM sys.master_files
     WHERE database_id = @CurrentDatabaseID
@@ -1114,7 +1131,7 @@ BEGIN
       WHERE database_id = @CurrentDatabaseID
     END
 
-    IF DATABASEPROPERTYEX(@CurrentDatabaseName,'Status') = 'ONLINE' AND @Version >= 14
+    IF DATABASEPROPERTYEX(@CurrentDatabaseName,'Status') = 'ONLINE' AND @Version >= 14 AND (@CurrentAvailabilityGroupRole = 'PRIMARY' OR @CurrentAvailabilityGroupRole IS NULL)
     BEGIN
       SET @CurrentCommand07 = 'SELECT @ParamAllocatedExtentPageCount = SUM(allocated_extent_page_count), @ParamModifiedExtentPageCount = SUM(modified_extent_page_count) FROM ' + QUOTENAME(@CurrentDatabaseName) + '.sys.dm_db_file_space_usage'
 
@@ -1149,23 +1166,6 @@ BEGIN
       WHERE database_name = @CurrentDatabaseName
       AND [type] = 'D'
       AND checkpoint_lsn = @CurrentDifferentialBaseLSN
-    END
-
-    IF @Version >= 11 AND @Cluster IS NOT NULL
-    BEGIN
-      SELECT @CurrentAvailabilityGroup = availability_groups.name,
-             @CurrentAvailabilityGroupRole = dm_hadr_availability_replica_states.role_desc,
-             @CurrentAvailabilityGroupBackupPreference = UPPER(availability_groups.automated_backup_preference_desc)
-      FROM sys.databases databases
-      INNER JOIN sys.availability_databases_cluster availability_databases_cluster ON databases.group_database_id = availability_databases_cluster.group_database_id
-      INNER JOIN sys.availability_groups availability_groups ON availability_databases_cluster.group_id = availability_groups.group_id
-      INNER JOIN sys.dm_hadr_availability_replica_states dm_hadr_availability_replica_states ON availability_groups.group_id = dm_hadr_availability_replica_states.group_id AND databases.replica_id = dm_hadr_availability_replica_states.replica_id
-      WHERE databases.name = @CurrentDatabaseName
-    END
-
-    IF @Version >= 11 AND @Cluster IS NOT NULL AND @CurrentAvailabilityGroup IS NOT NULL
-    BEGIN
-      SELECT @CurrentIsPreferredBackupReplica = sys.fn_hadr_backup_is_preferred_replica(@CurrentDatabaseName)
     END
 
     SELECT @CurrentDatabaseMirroringRole = UPPER(mirroring_role_desc)
