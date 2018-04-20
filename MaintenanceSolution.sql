@@ -5615,7 +5615,13 @@ BEGIN
       SET @CurrentJobStepCommand = @CurrentCommandTSQL
       SET @CurrentJobStepDatabaseName = @CurrentDatabaseName
     END
-    ELSE IF @CurrentCommandTSQL IS NOT NULL AND @HostPlatform = 'Windows'
+    ELSE IF @CurrentCommandTSQL IS NOT NULL AND @HostPlatform = 'Windows' AND @Version >= 11
+    BEGIN
+      SET @CurrentJobStepSubSystem = 'TSQL'
+      SET @CurrentJobStepCommand = @CurrentCommandTSQL
+      SET @CurrentJobStepDatabaseName = @CurrentDatabaseName
+    END
+    ELSE IF @CurrentCommandTSQL IS NOT NULL AND @HostPlatform = 'Windows' AND @Version < 11
     BEGIN
       SET @CurrentJobStepSubSystem = 'CMDEXEC'
       SET @CurrentJobStepCommand = 'sqlcmd -E -S ' + @TokenServer + ' -d ' + @CurrentDatabaseName + ' -Q "' + REPLACE(@CurrentCommandTSQL,(CHAR(13) + CHAR(10)),' ') + '" -b'
