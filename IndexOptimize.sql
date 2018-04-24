@@ -694,7 +694,7 @@ BEGIN
     SET @Error = @@ERROR
   END
 
-  IF @MaxDOP < 0 OR @MaxDOP > 64 OR (@MaxDOP > 1 AND SERVERPROPERTY('EngineEdition') NOT IN (3,5))
+  IF @MaxDOP < 0 OR @MaxDOP > 64
   BEGIN
     SET @ErrorMessage = 'The value for the parameter @MaxDOP is not supported.' + CHAR(13) + CHAR(10) + ' '
     RAISERROR(@ErrorMessage,16,1) WITH NOWAIT
@@ -1586,7 +1586,7 @@ BEGIN
             SELECT 'NORECOMPUTE'
           END
 
-          IF @CurrentMaxDOP IS NOT NULL AND @Version >= 14.030154
+          IF @CurrentMaxDOP IS NOT NULL AND ((@Version >= 13.05026 AND @Version < 14) OR @Version >= 14.030154)
           BEGIN
             INSERT INTO @CurrentUpdateStatisticsWithClauseArguments (Argument)
             SELECT 'MAXDOP = ' + CAST(@CurrentMaxDOP AS nvarchar)
