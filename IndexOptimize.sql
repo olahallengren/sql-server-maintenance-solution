@@ -366,32 +366,33 @@ BEGIN
   FROM Databases4
   OPTION (MAXRECURSION 0)
 
-  IF @Version >= 11 AND SERVERPROPERTY('EngineEdition') <> 5
+  IF @Version >= 11
   BEGIN
-    INSERT INTO @tmpDatabases (DatabaseName, DatabaseType, AvailabilityGroup, Selected, Completed)
-    SELECT [name] AS DatabaseName,
-           CASE WHEN name IN('master','msdb','model') THEN 'S' ELSE 'U' END AS DatabaseType,
-           CASE WHEN name IN (SELECT availability_databases_cluster.database_name FROM sys.availability_databases_cluster availability_databases_cluster INNER JOIN sys.availability_groups availability_groups ON availability_databases_cluster.group_id = availability_groups.group_id) THEN 1 ELSE 0 END AS AvailabilityGroup,
-           0 AS Selected,
-           0 AS Completed
-    FROM sys.databases
-    WHERE [name] <> 'tempdb'
-    AND source_database_id IS NULL
-    ORDER BY [name] ASC
+    INSERT INTO @tmpAvailabilityGroups (AvailabilityGroupName, Selected)
+    SELECT name AS AvailabilityGroupName,
+            0 AS Selected
+    FROM sys.availability_groups
+
+    INSERT INTO @tmpDatabasesAvailabilityGroups (DatabaseName, AvailabilityGroupName)
+    SELECT availability_databases_cluster.database_name, availability_groups.name
+    FROM sys.availability_databases_cluster availability_databases_cluster
+    INNER JOIN sys.availability_groups availability_groups ON availability_databases_cluster.group_id = availability_groups.group_id
   END
-  ELSE
-  BEGIN
-    INSERT INTO @tmpDatabases (DatabaseName, DatabaseType, AvailabilityGroup, Selected, Completed)
-    SELECT [name] AS DatabaseName,
-           CASE WHEN name IN('master','msdb','model') THEN 'S' ELSE 'U' END AS DatabaseType,
-           NULL AS AvailabilityGroup,
-           0 AS Selected,
-           0 AS Completed
-    FROM sys.databases
-    WHERE [name] <> 'tempdb'
-    AND source_database_id IS NULL
-    ORDER BY [name] ASC
-  END
+
+  INSERT INTO @tmpDatabases (DatabaseName, DatabaseType, AvailabilityGroup, Selected, Completed)
+  SELECT [name] AS DatabaseName,
+          CASE WHEN name IN('master','msdb','model') THEN 'S' ELSE 'U' END AS DatabaseType,
+          NULL AS AvailabilityGroup,
+          0 AS Selected,
+          0 AS Completed
+  FROM sys.databases
+  WHERE [name] <> 'tempdb'
+  AND source_database_id IS NULL
+  ORDER BY [name] ASC
+
+  UPDATE tmpDatabases
+  SET AvailabilityGroup = CASE WHEN EXISTS (SELECT * FROM @tmpDatabasesAvailabilityGroups WHERE DatabaseName = tmpDatabases.DatabaseName) THEN 1 ELSE 0 END
+  FROM @tmpDatabases tmpDatabases
 
   UPDATE tmpDatabases
   SET tmpDatabases.Selected = SelectedDatabases.Selected
@@ -469,11 +470,6 @@ BEGIN
     FROM AvailabilityGroups4
     OPTION (MAXRECURSION 0)
 
-    INSERT INTO @tmpAvailabilityGroups (AvailabilityGroupName, Selected)
-    SELECT name AS AvailabilityGroupName,
-           0 AS Selected
-    FROM sys.availability_groups
-
     UPDATE tmpAvailabilityGroups
     SET tmpAvailabilityGroups.Selected = SelectedAvailabilityGroups.Selected
     FROM @tmpAvailabilityGroups tmpAvailabilityGroups
@@ -487,11 +483,6 @@ BEGIN
     INNER JOIN @SelectedAvailabilityGroups SelectedAvailabilityGroups
     ON tmpAvailabilityGroups.AvailabilityGroupName LIKE REPLACE(SelectedAvailabilityGroups.AvailabilityGroupName,'_','[_]')
     WHERE SelectedAvailabilityGroups.Selected = 0
-
-    INSERT INTO @tmpDatabasesAvailabilityGroups (DatabaseName, AvailabilityGroupName)
-    SELECT availability_databases_cluster.database_name, availability_groups.name
-    FROM sys.availability_databases_cluster availability_databases_cluster
-    INNER JOIN sys.availability_groups availability_groups ON availability_databases_cluster.group_id = availability_groups.group_id
 
     UPDATE tmpDatabases
     SET Selected = 1
@@ -1417,7 +1408,7 @@ BEGIN
           OR (@CurrentIndexType = 1 AND @CurrentIsImageText = 0 AND @CurrentIsFileStream = 0 AND @Version >= 11)
           OR (@CurrentIndexType = 2 AND @Version >= 11))
           AND (@CurrentIsColumnStore = 0 OR @Version < 11)
-          AND SERVERPROPERTY('EngineEdition') IN (3,5)
+          AND SERVERPROPERTY('EngineEdition') IN (3,5,8)
           BEGIN
             INSERT INTO @CurrentActionsAllowed ([Action])
             VALUES ('INDEX_REBUILD_ONLINE')
