@@ -10,7 +10,7 @@ The solution is free: https://ola.hallengren.com/license.html
 
 You can contact me by e-mail at ola@hallengren.com.
 
-Last updated 9 May, 2018.
+Last updated 10 May, 2018.
 
 Ola Hallengren
 https://ola.hallengren.com
@@ -1718,35 +1718,6 @@ BEGIN
         INSERT INTO @CurrentBackupSet (Mirror, VerifyCompleted)
         SELECT 0, 0
       END
-      ELSE
-
-      IF @URL IS NOT NULL
-      BEGIN
-        SET @CurrentFileNumber = 0
-
-        WHILE @CurrentFileNumber < @NumberOfFiles
-        BEGIN
-          SET @CurrentFileNumber = @CurrentFileNumber + 1
-
-          SET @CurrentFilePath = @URL + CASE WHEN RIGHT(@URL,1) = @DirectorySeparator THEN '' ELSE @DirectorySeparator END + CASE WHEN @CurrentAvailabilityGroup IS NOT NULL THEN @Cluster + '$' + @CurrentAvailabilityGroup ELSE REPLACE(CAST(SERVERPROPERTY('servername') AS nvarchar(max)),'\','$') END + '_' + @CurrentDatabaseNameFS + '_' + UPPER(@CurrentBackupType) + CASE WHEN @ReadWriteFileGroups = 'Y' THEN '_PARTIAL' ELSE '' END + CASE WHEN @CopyOnly = 'Y' THEN '_COPY_ONLY' ELSE '' END + '_' + REPLACE(REPLACE(REPLACE((CONVERT(nvarchar,@CurrentDate,120)),'-',''),' ','_'),':','') + CASE WHEN @NumberOfFiles > 1 AND @NumberOfFiles <= 9 THEN '_' + CAST(@CurrentFileNumber AS nvarchar) WHEN @NumberOfFiles >= 10 THEN '_' + RIGHT('0' + CAST(@CurrentFileNumber AS nvarchar),2) ELSE '' END + '.' + @CurrentFileExtension
-
-          IF LEN(@CurrentFilePath) > 259
-          BEGIN
-            SET @CurrentFilePath = @URL + CASE WHEN RIGHT(@URL,1) = @DirectorySeparator THEN '' ELSE @DirectorySeparator END + @CurrentDatabaseNameFS + '_' + UPPER(@CurrentBackupType) + CASE WHEN @ReadWriteFileGroups = 'Y' THEN '_PARTIAL' ELSE '' END + CASE WHEN @CopyOnly = 'Y' THEN '_COPY_ONLY' ELSE '' END + '_' + REPLACE(REPLACE(REPLACE((CONVERT(nvarchar,@CurrentDate,120)),'-',''),' ','_'),':','') + CASE WHEN @NumberOfFiles > 1 AND @NumberOfFiles <= 9 THEN '_' + CAST(@CurrentFileNumber AS nvarchar) WHEN @NumberOfFiles >= 10 THEN '_' + RIGHT('0' + CAST(@CurrentFileNumber AS nvarchar),2) ELSE '' END + '.' + @CurrentFileExtension
-          END
-
-          IF LEN(@CurrentFilePath) > 259
-          BEGIN
-            SET @CurrentFilePath = @URL + CASE WHEN RIGHT(@URL,1) = @DirectorySeparator THEN '' ELSE @DirectorySeparator END + LEFT(@CurrentDatabaseNameFS,CASE WHEN (LEN(@CurrentDatabaseNameFS) + 259 - LEN(@CurrentFilePath) - 3) < 20 THEN 20 ELSE (LEN(@CurrentDatabaseNameFS) + 259 - LEN(@CurrentFilePath) - 3) END) + '...' + '_' + UPPER(@CurrentBackupType) + CASE WHEN @ReadWriteFileGroups = 'Y' THEN '_PARTIAL' ELSE '' END + CASE WHEN @CopyOnly = 'Y' THEN '_COPY_ONLY' ELSE '' END + '_' + REPLACE(REPLACE(REPLACE((CONVERT(nvarchar,@CurrentDate,120)),'-',''),' ','_'),':','') + CASE WHEN @NumberOfFiles > 1 AND @NumberOfFiles <= 9 THEN '_' + CAST(@CurrentFileNumber AS nvarchar) WHEN @NumberOfFiles >= 10 THEN '_' + RIGHT('0' + CAST(@CurrentFileNumber AS nvarchar),2) ELSE '' END + '.' + @CurrentFileExtension
-          END
-
-          INSERT INTO @CurrentFiles ([Type], FilePath, Mirror)
-          SELECT 'URL', @CurrentFilePath, 0
-        END
-
-        INSERT INTO @CurrentBackupSet (Mirror, VerifyCompleted)
-        SELECT 0, 0
-      END
 
       IF EXISTS (SELECT * FROM @CurrentDirectories WHERE Mirror = 1)
       BEGIN
@@ -1783,6 +1754,34 @@ BEGIN
 
         INSERT INTO @CurrentBackupSet (Mirror, VerifyCompleted)
         SELECT 1, 0
+      END
+
+      IF @URL IS NOT NULL
+      BEGIN
+        SET @CurrentFileNumber = 0
+
+        WHILE @CurrentFileNumber < @NumberOfFiles
+        BEGIN
+          SET @CurrentFileNumber = @CurrentFileNumber + 1
+
+          SET @CurrentFilePath = @URL + CASE WHEN RIGHT(@URL,1) = @DirectorySeparator THEN '' ELSE @DirectorySeparator END + CASE WHEN @CurrentAvailabilityGroup IS NOT NULL THEN @Cluster + '$' + @CurrentAvailabilityGroup ELSE REPLACE(CAST(SERVERPROPERTY('servername') AS nvarchar(max)),'\','$') END + '_' + @CurrentDatabaseNameFS + '_' + UPPER(@CurrentBackupType) + CASE WHEN @ReadWriteFileGroups = 'Y' THEN '_PARTIAL' ELSE '' END + CASE WHEN @CopyOnly = 'Y' THEN '_COPY_ONLY' ELSE '' END + '_' + REPLACE(REPLACE(REPLACE((CONVERT(nvarchar,@CurrentDate,120)),'-',''),' ','_'),':','') + CASE WHEN @NumberOfFiles > 1 AND @NumberOfFiles <= 9 THEN '_' + CAST(@CurrentFileNumber AS nvarchar) WHEN @NumberOfFiles >= 10 THEN '_' + RIGHT('0' + CAST(@CurrentFileNumber AS nvarchar),2) ELSE '' END + '.' + @CurrentFileExtension
+
+          IF LEN(@CurrentFilePath) > 259
+          BEGIN
+            SET @CurrentFilePath = @URL + CASE WHEN RIGHT(@URL,1) = @DirectorySeparator THEN '' ELSE @DirectorySeparator END + @CurrentDatabaseNameFS + '_' + UPPER(@CurrentBackupType) + CASE WHEN @ReadWriteFileGroups = 'Y' THEN '_PARTIAL' ELSE '' END + CASE WHEN @CopyOnly = 'Y' THEN '_COPY_ONLY' ELSE '' END + '_' + REPLACE(REPLACE(REPLACE((CONVERT(nvarchar,@CurrentDate,120)),'-',''),' ','_'),':','') + CASE WHEN @NumberOfFiles > 1 AND @NumberOfFiles <= 9 THEN '_' + CAST(@CurrentFileNumber AS nvarchar) WHEN @NumberOfFiles >= 10 THEN '_' + RIGHT('0' + CAST(@CurrentFileNumber AS nvarchar),2) ELSE '' END + '.' + @CurrentFileExtension
+          END
+
+          IF LEN(@CurrentFilePath) > 259
+          BEGIN
+            SET @CurrentFilePath = @URL + CASE WHEN RIGHT(@URL,1) = @DirectorySeparator THEN '' ELSE @DirectorySeparator END + LEFT(@CurrentDatabaseNameFS,CASE WHEN (LEN(@CurrentDatabaseNameFS) + 259 - LEN(@CurrentFilePath) - 3) < 20 THEN 20 ELSE (LEN(@CurrentDatabaseNameFS) + 259 - LEN(@CurrentFilePath) - 3) END) + '...' + '_' + UPPER(@CurrentBackupType) + CASE WHEN @ReadWriteFileGroups = 'Y' THEN '_PARTIAL' ELSE '' END + CASE WHEN @CopyOnly = 'Y' THEN '_COPY_ONLY' ELSE '' END + '_' + REPLACE(REPLACE(REPLACE((CONVERT(nvarchar,@CurrentDate,120)),'-',''),' ','_'),':','') + CASE WHEN @NumberOfFiles > 1 AND @NumberOfFiles <= 9 THEN '_' + CAST(@CurrentFileNumber AS nvarchar) WHEN @NumberOfFiles >= 10 THEN '_' + RIGHT('0' + CAST(@CurrentFileNumber AS nvarchar),2) ELSE '' END + '.' + @CurrentFileExtension
+          END
+
+          INSERT INTO @CurrentFiles ([Type], FilePath, Mirror)
+          SELECT 'URL', @CurrentFilePath, 0
+        END
+
+        INSERT INTO @CurrentBackupSet (Mirror, VerifyCompleted)
+        SELECT 0, 0
       END
 
       -- Create directory
