@@ -10,7 +10,7 @@ The solution is free: https://ola.hallengren.com/license.html
 
 You can contact me by e-mail at ola@hallengren.com.
 
-Last updated 10 May, 2018.
+Last updated 13 May, 2018.
 
 Ola Hallengren
 https://ola.hallengren.com
