@@ -100,22 +100,28 @@ BEGIN
                                DatabaseType nvarchar(max),
                                AvailabilityGroup bit,
                                [Snapshot] bit,
+                               StartPosition int,
+                               [Order] int,
                                Selected bit,
                                Completed bit,
-                               PRIMARY KEY(Selected, Completed, ID))
+                               PRIMARY KEY(Selected, Completed, [Order], ID))
 
   DECLARE @tmpAvailabilityGroups TABLE (ID int IDENTITY PRIMARY KEY,
                                         AvailabilityGroupName nvarchar(max),
+                                        StartPosition int,
                                         Selected bit)
 
-  DECLARE @tmpDatabasesAvailabilityGroups TABLE (DatabaseName nvarchar(max), AvailabilityGroupName nvarchar(max))
+  DECLARE @tmpDatabasesAvailabilityGroups TABLE (DatabaseName nvarchar(max),
+                                                 AvailabilityGroupName nvarchar(max))
 
   DECLARE @tmpFileGroups TABLE (ID int IDENTITY,
                                 FileGroupID int,
                                 FileGroupName nvarchar(max),
+                                StartPosition int,
+                                [Order] int,
                                 Selected bit,
                                 Completed bit,
-                                PRIMARY KEY(Selected, Completed, ID))
+                                PRIMARY KEY(Selected, Completed, [Order], ID))
 
   DECLARE @tmpObjects TABLE (ID int IDENTITY,
                              SchemaID int,
@@ -123,25 +129,31 @@ BEGIN
                              ObjectID int,
                              ObjectName nvarchar(max),
                              ObjectType nvarchar(max),
+                             StartPosition int,
+                             [Order] int,
                              Selected bit,
                              Completed bit,
-                             PRIMARY KEY(Selected, Completed, ID))
+                             PRIMARY KEY(Selected, Completed, [Order], ID))
 
   DECLARE @SelectedDatabases TABLE (DatabaseName nvarchar(max),
                                     DatabaseType nvarchar(max),
                                     AvailabilityGroup nvarchar(max),
+                                    StartPosition int,
                                     Selected bit)
 
   DECLARE @SelectedAvailabilityGroups TABLE (AvailabilityGroupName nvarchar(max),
+                                             StartPosition int,
                                              Selected bit)
 
   DECLARE @SelectedFileGroups TABLE (DatabaseName nvarchar(max),
                                      FileGroupName nvarchar(max),
+                                     StartPosition int,
                                      Selected bit)
 
   DECLARE @SelectedObjects TABLE (DatabaseName nvarchar(max),
                                   SchemaName nvarchar(max),
                                   ObjectName nvarchar(max),
+                                  StartPosition int,
                                   Selected bit)
 
   DECLARE @SelectedCheckCommands TABLE (CheckCommand nvarchar(max))
@@ -271,32 +283,36 @@ BEGIN
   FROM Databases1
   WHERE EndPosition < LEN(@Databases) + 1
   ),
-  Databases2 (DatabaseItem, Selected) AS
+  Databases2 (DatabaseItem, StartPosition, Selected) AS
   (
   SELECT CASE WHEN DatabaseItem LIKE '-%' THEN RIGHT(DatabaseItem,LEN(DatabaseItem) - 1) ELSE DatabaseItem END AS DatabaseItem,
+         StartPosition,
          CASE WHEN DatabaseItem LIKE '-%' THEN 0 ELSE 1 END AS Selected
   FROM Databases1
   ),
-  Databases3 (DatabaseItem, DatabaseType, AvailabilityGroup, Selected) AS
+  Databases3 (DatabaseItem, DatabaseType, AvailabilityGroup, StartPosition, Selected) AS
   (
   SELECT CASE WHEN DatabaseItem IN('ALL_DATABASES','SYSTEM_DATABASES','USER_DATABASES','AVAILABILITY_GROUP_DATABASES') THEN '%' ELSE DatabaseItem END AS DatabaseItem,
          CASE WHEN DatabaseItem = 'SYSTEM_DATABASES' THEN 'S' WHEN DatabaseItem = 'USER_DATABASES' THEN 'U' ELSE NULL END AS DatabaseType,
          CASE WHEN DatabaseItem = 'AVAILABILITY_GROUP_DATABASES' THEN 1 ELSE NULL END AvailabilityGroup,
+         StartPosition,
          Selected
   FROM Databases2
   ),
-  Databases4 (DatabaseName, DatabaseType, AvailabilityGroup, Selected) AS
+  Databases4 (DatabaseName, DatabaseType, AvailabilityGroup, StartPosition, Selected) AS
   (
   SELECT CASE WHEN LEFT(DatabaseItem,1) = '[' AND RIGHT(DatabaseItem,1) = ']' THEN PARSENAME(DatabaseItem,1) ELSE DatabaseItem END AS DatabaseItem,
          DatabaseType,
          AvailabilityGroup,
+         StartPosition,
          Selected
   FROM Databases3
   )
-  INSERT INTO @SelectedDatabases (DatabaseName, DatabaseType, AvailabilityGroup, Selected)
+  INSERT INTO @SelectedDatabases (DatabaseName, DatabaseType, AvailabilityGroup, StartPosition, Selected)
   SELECT DatabaseName,
          DatabaseType,
          AvailabilityGroup,
+         StartPosition,
          Selected
   FROM Databases4
   OPTION (MAXRECURSION 0)
@@ -314,11 +330,12 @@ BEGIN
     INNER JOIN sys.availability_groups availability_groups ON availability_databases_cluster.group_id = availability_groups.group_id
   END
 
-  INSERT INTO @tmpDatabases (DatabaseName, DatabaseType, AvailabilityGroup, [Snapshot], Selected, Completed)
+  INSERT INTO @tmpDatabases (DatabaseName, DatabaseType, AvailabilityGroup, [Snapshot], [Order], Selected, Completed)
   SELECT [name] AS DatabaseName,
           CASE WHEN name IN('master','msdb','model') THEN 'S' ELSE 'U' END AS DatabaseType,
           NULL AS AvailabilityGroup,
           CASE WHEN source_database_id IS NOT NULL THEN 1 ELSE 0 END AS [Snapshot],
+          0 AS [Order],
           0 AS Selected,
           0 AS Completed
   FROM sys.databases
@@ -347,6 +364,19 @@ BEGIN
   AND (tmpDatabases.AvailabilityGroup = SelectedDatabases.AvailabilityGroup OR SelectedDatabases.AvailabilityGroup IS NULL)
   AND NOT ((tmpDatabases.DatabaseName = 'tempdb' OR tmpDatabases.[Snapshot] = 1) AND tmpDatabases.DatabaseName <> SelectedDatabases.DatabaseName)
   WHERE SelectedDatabases.Selected = 0
+
+  UPDATE tmpDatabases
+  SET tmpDatabases.StartPosition = SelectedDatabases2.StartPosition
+  FROM @tmpDatabases tmpDatabases
+  INNER JOIN (SELECT tmpDatabases.DatabaseName, MIN(SelectedDatabases.StartPosition) AS StartPosition
+              FROM @tmpDatabases tmpDatabases
+              INNER JOIN @SelectedDatabases SelectedDatabases
+              ON tmpDatabases.DatabaseName LIKE REPLACE(SelectedDatabases.DatabaseName,'_','[_]')
+              AND (tmpDatabases.DatabaseType = SelectedDatabases.DatabaseType OR SelectedDatabases.DatabaseType IS NULL)
+              AND (tmpDatabases.AvailabilityGroup = SelectedDatabases.AvailabilityGroup OR SelectedDatabases.AvailabilityGroup IS NULL)
+              WHERE SelectedDatabases.Selected = 1
+              GROUP BY tmpDatabases.DatabaseName) SelectedDatabases2
+  ON tmpDatabases.DatabaseName = SelectedDatabases2.DatabaseName
 
   IF @Databases IS NOT NULL AND (NOT EXISTS(SELECT * FROM @SelectedDatabases) OR EXISTS(SELECT * FROM @SelectedDatabases WHERE DatabaseName IS NULL OR DatabaseName = ''))
   BEGIN
@@ -383,26 +413,29 @@ BEGIN
     FROM AvailabilityGroups1
     WHERE EndPosition < LEN(@AvailabilityGroups) + 1
     ),
-    AvailabilityGroups2 (AvailabilityGroupItem, Selected) AS
+    AvailabilityGroups2 (AvailabilityGroupItem, StartPosition, Selected) AS
     (
     SELECT CASE WHEN AvailabilityGroupItem LIKE '-%' THEN RIGHT(AvailabilityGroupItem,LEN(AvailabilityGroupItem) - 1) ELSE AvailabilityGroupItem END AS AvailabilityGroupItem,
+           StartPosition,
            CASE WHEN AvailabilityGroupItem LIKE '-%' THEN 0 ELSE 1 END AS Selected
     FROM AvailabilityGroups1
     ),
-    AvailabilityGroups3 (AvailabilityGroupItem, Selected) AS
+    AvailabilityGroups3 (AvailabilityGroupItem, StartPosition, Selected) AS
     (
     SELECT CASE WHEN AvailabilityGroupItem = 'ALL_AVAILABILITY_GROUPS' THEN '%' ELSE AvailabilityGroupItem END AS AvailabilityGroupItem,
+           StartPosition,
            Selected
     FROM AvailabilityGroups2
     ),
-    AvailabilityGroups4 (AvailabilityGroupName, Selected) AS
+    AvailabilityGroups4 (AvailabilityGroupName, StartPosition, Selected) AS
     (
     SELECT CASE WHEN LEFT(AvailabilityGroupItem,1) = '[' AND RIGHT(AvailabilityGroupItem,1) = ']' THEN PARSENAME(AvailabilityGroupItem,1) ELSE AvailabilityGroupItem END AS AvailabilityGroupItem,
+           StartPosition,
            Selected
     FROM AvailabilityGroups3
     )
-    INSERT INTO @SelectedAvailabilityGroups (AvailabilityGroupName, Selected)
-    SELECT AvailabilityGroupName, Selected
+    INSERT INTO @SelectedAvailabilityGroups (AvailabilityGroupName, StartPosition, Selected)
+    SELECT AvailabilityGroupName, StartPosition, Selected
     FROM AvailabilityGroups4
     OPTION (MAXRECURSION 0)
 
@@ -420,8 +453,20 @@ BEGIN
     ON tmpAvailabilityGroups.AvailabilityGroupName LIKE REPLACE(SelectedAvailabilityGroups.AvailabilityGroupName,'_','[_]')
     WHERE SelectedAvailabilityGroups.Selected = 0
 
+    UPDATE tmpAvailabilityGroups
+    SET tmpAvailabilityGroups.StartPosition = SelectedAvailabilityGroups2.StartPosition
+    FROM @tmpAvailabilityGroups tmpAvailabilityGroups
+    INNER JOIN (SELECT tmpAvailabilityGroups.AvailabilityGroupName, MIN(SelectedAvailabilityGroups.StartPosition) AS StartPosition
+                FROM @tmpAvailabilityGroups tmpAvailabilityGroups
+                INNER JOIN @SelectedAvailabilityGroups SelectedAvailabilityGroups
+                ON tmpAvailabilityGroups.AvailabilityGroupName LIKE REPLACE(SelectedAvailabilityGroups.AvailabilityGroupName,'_','[_]')
+                WHERE SelectedAvailabilityGroups.Selected = 1
+                GROUP BY tmpAvailabilityGroups.AvailabilityGroupName) SelectedAvailabilityGroups2
+    ON tmpAvailabilityGroups.AvailabilityGroupName = SelectedAvailabilityGroups2.AvailabilityGroupName
+
     UPDATE tmpDatabases
-    SET Selected = 1
+    SET tmpDatabases.StartPosition = tmpAvailabilityGroups.StartPosition,
+        tmpDatabases.Selected = 1
     FROM @tmpDatabases tmpDatabases
     INNER JOIN @tmpDatabasesAvailabilityGroups tmpDatabasesAvailabilityGroups ON tmpDatabases.DatabaseName = tmpDatabasesAvailabilityGroups.DatabaseName
     INNER JOIN @tmpAvailabilityGroups tmpAvailabilityGroups ON tmpDatabasesAvailabilityGroups.AvailabilityGroupName = tmpAvailabilityGroups.AvailabilityGroupName
@@ -448,7 +493,19 @@ BEGIN
     SET @ErrorMessage = 'You can only specify one of the parameters @Databases and @AvailabilityGroups.' + CHAR(13) + CHAR(10) + ' '
     RAISERROR(@ErrorMessage,16,1) WITH NOWAIT
     SET @Error = @@ERROR
-  END
+  END;
+
+  ----------------------------------------------------------------------------------------------------
+  --// Update database order                                                                      //--
+  ----------------------------------------------------------------------------------------------------
+
+  WITH tmpDatabases AS (
+  SELECT DatabaseName, [Order], ROW_NUMBER() OVER (ORDER BY StartPosition ASC, DatabaseName ASC) AS RowNumber
+  FROM @tmpDatabases tmpDatabases
+  WHERE Selected = 1
+  )
+  UPDATE tmpDatabases
+  SET [Order] = RowNumber
 
   ----------------------------------------------------------------------------------------------------
   --// Select filegroups                                                                          //--
@@ -475,27 +532,30 @@ BEGIN
   FROM FileGroups1
   WHERE EndPosition < LEN(@FileGroups) + 1
   ),
-  FileGroups2 (FileGroupItem, Selected) AS
+  FileGroups2 (FileGroupItem, StartPosition, Selected) AS
   (
   SELECT CASE WHEN FileGroupItem LIKE '-%' THEN RIGHT(FileGroupItem,LEN(FileGroupItem) - 1) ELSE FileGroupItem END AS FileGroupItem,
+         StartPosition,
          CASE WHEN FileGroupItem LIKE '-%' THEN 0 ELSE 1 END AS Selected
   FROM FileGroups1
   ),
-  FileGroups3 (FileGroupItem, Selected) AS
+  FileGroups3 (FileGroupItem, StartPosition, Selected) AS
   (
   SELECT CASE WHEN FileGroupItem = 'ALL_FILEGROUPS' THEN '%.%' ELSE FileGroupItem END AS FileGroupItem,
+         StartPosition,
          Selected
   FROM FileGroups2
   ),
-  FileGroups4 (DatabaseName, FileGroupName, Selected) AS
+  FileGroups4 (DatabaseName, FileGroupName, StartPosition, Selected) AS
   (
   SELECT CASE WHEN PARSENAME(FileGroupItem,4) IS NULL AND PARSENAME(FileGroupItem,3) IS NULL THEN PARSENAME(FileGroupItem,2) ELSE NULL END AS DatabaseName,
          CASE WHEN PARSENAME(FileGroupItem,4) IS NULL AND PARSENAME(FileGroupItem,3) IS NULL THEN PARSENAME(FileGroupItem,1) ELSE NULL END AS FileGroupName,
+         StartPosition,
          Selected
   FROM FileGroups3
   )
-  INSERT INTO @SelectedFileGroups (DatabaseName, FileGroupName, Selected)
-  SELECT DatabaseName, FileGroupName, Selected
+  INSERT INTO @SelectedFileGroups (DatabaseName, FileGroupName, StartPosition, Selected)
+  SELECT DatabaseName, FileGroupName, StartPosition, Selected
   FROM FileGroups4
   OPTION (MAXRECURSION 0)
 
@@ -524,28 +584,31 @@ BEGIN
   FROM Objects1
   WHERE EndPosition < LEN(@Objects) + 1
   ),
-  Objects2 (ObjectItem, Selected) AS
+  Objects2 (ObjectItem, StartPosition, Selected) AS
   (
   SELECT CASE WHEN ObjectItem LIKE '-%' THEN RIGHT(ObjectItem,LEN(ObjectItem) - 1) ELSE ObjectItem END AS ObjectItem,
+          StartPosition,
          CASE WHEN ObjectItem LIKE '-%' THEN 0 ELSE 1 END AS Selected
   FROM Objects1
   ),
-  Objects3 (ObjectItem, Selected) AS
+  Objects3 (ObjectItem, StartPosition, Selected) AS
   (
   SELECT CASE WHEN ObjectItem = 'ALL_OBJECTS' THEN '%.%.%' ELSE ObjectItem END AS ObjectItem,
+         StartPosition,
          Selected
   FROM Objects2
   ),
-  Objects4 (DatabaseName, SchemaName, ObjectName, Selected) AS
+  Objects4 (DatabaseName, SchemaName, ObjectName, StartPosition, Selected) AS
   (
   SELECT CASE WHEN PARSENAME(ObjectItem,4) IS NULL THEN PARSENAME(ObjectItem,3) ELSE NULL END AS DatabaseName,
          CASE WHEN PARSENAME(ObjectItem,4) IS NULL THEN PARSENAME(ObjectItem,2) ELSE NULL END AS SchemaName,
          CASE WHEN PARSENAME(ObjectItem,4) IS NULL THEN PARSENAME(ObjectItem,1) ELSE NULL END AS ObjectName,
+         StartPosition,
          Selected
   FROM Objects3
   )
-  INSERT INTO @SelectedObjects (DatabaseName, SchemaName, ObjectName, Selected)
-  SELECT DatabaseName, SchemaName, ObjectName, Selected
+  INSERT INTO @SelectedObjects (DatabaseName, SchemaName, ObjectName, StartPosition, Selected)
+  SELECT DatabaseName, SchemaName, ObjectName, StartPosition, Selected
   FROM Objects4
   OPTION (MAXRECURSION 0);
 
@@ -774,7 +837,7 @@ BEGIN
     FROM @tmpDatabases
     WHERE Selected = 1
     AND Completed = 0
-    ORDER BY ID ASC
+    ORDER BY [Order] ASC
 
     IF @@ROWCOUNT = 0
     BEGIN
@@ -894,9 +957,9 @@ BEGIN
       -- Check filegroups
       IF EXISTS(SELECT * FROM @SelectedCheckCommands WHERE CheckCommand = 'CHECKFILEGROUP')
       BEGIN
-        SET @CurrentCommand02 = 'SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED; SELECT data_space_id AS FileGroupID, name AS FileGroupName, 0 AS Selected, 0 AS Completed FROM ' + QUOTENAME(@CurrentDatabaseName) + '.sys.filegroups filegroups WHERE [type] <> ''FX'' ORDER BY CASE WHEN filegroups.name = ''PRIMARY'' THEN 1 ELSE 0 END DESC, filegroups.name ASC'
+        SET @CurrentCommand02 = 'SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED; SELECT data_space_id AS FileGroupID, name AS FileGroupName, 0 AS [Order], 0 AS Selected, 0 AS Completed FROM ' + QUOTENAME(@CurrentDatabaseName) + '.sys.filegroups filegroups WHERE [type] <> ''FX'' ORDER BY CASE WHEN filegroups.name = ''PRIMARY'' THEN 1 ELSE 0 END DESC, filegroups.name ASC'
 
-        INSERT INTO @tmpFileGroups (FileGroupID, FileGroupName, Selected, Completed)
+        INSERT INTO @tmpFileGroups (FileGroupID, FileGroupName, [Order], Selected, Completed)
         EXECUTE sp_executesql @statement = @CurrentCommand02
         SET @Error = @@ERROR
         IF @Error <> 0 SET @ReturnCode = @Error
@@ -922,6 +985,25 @@ BEGIN
           INNER JOIN @SelectedFileGroups SelectedFileGroups
           ON @CurrentDatabaseName LIKE REPLACE(SelectedFileGroups.DatabaseName,'_','[_]') AND tmpFileGroups.FileGroupName LIKE REPLACE(SelectedFileGroups.FileGroupName,'_','[_]')
           WHERE SelectedFileGroups.Selected = 0
+
+          UPDATE tmpFileGroups
+          SET tmpFileGroups.StartPosition = SelectedFileGroups2.StartPosition
+          FROM @tmpFileGroups tmpFileGroups
+          INNER JOIN (SELECT tmpFileGroups.FileGroupName, MIN(SelectedFileGroups.StartPosition) AS StartPosition
+                      FROM @tmpFileGroups tmpFileGroups
+                      INNER JOIN @SelectedFileGroups SelectedFileGroups
+                      ON @CurrentDatabaseName LIKE REPLACE(SelectedFileGroups.DatabaseName,'_','[_]') AND tmpFileGroups.FileGroupName LIKE REPLACE(SelectedFileGroups.FileGroupName,'_','[_]')
+                      WHERE SelectedFileGroups.Selected = 1
+                      GROUP BY tmpFileGroups.FileGroupName) SelectedFileGroups2
+          ON tmpFileGroups.FileGroupName = SelectedFileGroups2.FileGroupName;
+
+          WITH tmpFileGroups AS (
+          SELECT FileGroupName, [Order], ROW_NUMBER() OVER (ORDER BY StartPosition ASC, FileGroupName ASC) AS RowNumber
+          FROM @tmpFileGroups tmpFileGroups
+          WHERE Selected = 1
+          )
+          UPDATE tmpFileGroups
+          SET [Order] = RowNumber
         END
 
         SET @ErrorMessage = ''
@@ -945,7 +1027,7 @@ BEGIN
           FROM @tmpFileGroups
           WHERE Selected = 1
           AND Completed = 0
-          ORDER BY ID ASC
+          ORDER BY [Order] ASC
 
           IF @@ROWCOUNT = 0
           BEGIN
@@ -1030,9 +1112,9 @@ BEGIN
       -- Check objects
       IF EXISTS(SELECT * FROM @SelectedCheckCommands WHERE CheckCommand = 'CHECKTABLE')
       BEGIN
-        SET @CurrentCommand06 = 'SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED; SELECT schemas.[schema_id] AS SchemaID, schemas.[name] AS SchemaName, objects.[object_id] AS ObjectID, objects.[name] AS ObjectName, RTRIM(objects.[type]) AS ObjectType, 0 AS Selected, 0 AS Completed FROM ' + QUOTENAME(@CurrentDatabaseName) + '.sys.objects objects INNER JOIN ' + QUOTENAME(@CurrentDatabaseName) + '.sys.schemas schemas ON objects.schema_id = schemas.schema_id LEFT OUTER JOIN ' + QUOTENAME(@CurrentDatabaseName) + '.sys.tables tables ON objects.object_id = tables.object_id WHERE objects.[type] IN(''U'',''V'') AND EXISTS(SELECT * FROM ' + QUOTENAME(@CurrentDatabaseName) + '.sys.indexes indexes WHERE indexes.object_id = objects.object_id)' + CASE WHEN @Version >= 12 THEN ' AND (tables.is_memory_optimized = 0 OR is_memory_optimized IS NULL)' ELSE '' END + ' ORDER BY schemas.name ASC, objects.name ASC'
+        SET @CurrentCommand06 = 'SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED; SELECT schemas.[schema_id] AS SchemaID, schemas.[name] AS SchemaName, objects.[object_id] AS ObjectID, objects.[name] AS ObjectName, RTRIM(objects.[type]) AS ObjectType, 0 AS [Order], 0 AS Selected, 0 AS Completed FROM ' + QUOTENAME(@CurrentDatabaseName) + '.sys.objects objects INNER JOIN ' + QUOTENAME(@CurrentDatabaseName) + '.sys.schemas schemas ON objects.schema_id = schemas.schema_id LEFT OUTER JOIN ' + QUOTENAME(@CurrentDatabaseName) + '.sys.tables tables ON objects.object_id = tables.object_id WHERE objects.[type] IN(''U'',''V'') AND EXISTS(SELECT * FROM ' + QUOTENAME(@CurrentDatabaseName) + '.sys.indexes indexes WHERE indexes.object_id = objects.object_id)' + CASE WHEN @Version >= 12 THEN ' AND (tables.is_memory_optimized = 0 OR is_memory_optimized IS NULL)' ELSE '' END + ' ORDER BY schemas.name ASC, objects.name ASC'
 
-        INSERT INTO @tmpObjects (SchemaID, SchemaName, ObjectID, ObjectName, ObjectType, Selected, Completed)
+        INSERT INTO @tmpObjects (SchemaID, SchemaName, ObjectID, ObjectName, ObjectType, [Order], Selected, Completed)
         EXECUTE sp_executesql @statement = @CurrentCommand06
         SET @Error = @@ERROR
         IF @Error <> 0 SET @ReturnCode = @Error
@@ -1058,6 +1140,25 @@ BEGIN
           INNER JOIN @SelectedObjects SelectedObjects
           ON @CurrentDatabaseName LIKE REPLACE(SelectedObjects.DatabaseName,'_','[_]') AND tmpObjects.SchemaName LIKE REPLACE(SelectedObjects.SchemaName,'_','[_]') AND tmpObjects.ObjectName LIKE REPLACE(SelectedObjects.ObjectName,'_','[_]')
           WHERE SelectedObjects.Selected = 0
+
+          UPDATE tmpObjects
+          SET tmpObjects.StartPosition = SelectedObjects2.StartPosition
+          FROM @tmpObjects tmpObjects
+          INNER JOIN (SELECT tmpObjects.SchemaName, tmpObjects.ObjectName, MIN(SelectedObjects.StartPosition) AS StartPosition
+                      FROM @tmpObjects tmpObjects
+                      INNER JOIN @SelectedObjects SelectedObjects
+                      ON @CurrentDatabaseName LIKE REPLACE(SelectedObjects.DatabaseName,'_','[_]') AND tmpObjects.SchemaName LIKE REPLACE(SelectedObjects.SchemaName,'_','[_]') AND tmpObjects.ObjectName LIKE REPLACE(SelectedObjects.ObjectName,'_','[_]')
+                      WHERE SelectedObjects.Selected = 1
+                      GROUP BY tmpObjects.SchemaName, tmpObjects.ObjectName) SelectedObjects2
+          ON tmpObjects.SchemaName = SelectedObjects2.SchemaName AND tmpObjects.ObjectName = SelectedObjects2.ObjectName;
+
+          WITH tmpObjects AS (
+          SELECT SchemaName, ObjectName, [Order], ROW_NUMBER() OVER (ORDER BY StartPosition ASC, SchemaName ASC, ObjectName ASC) AS RowNumber
+          FROM @tmpObjects tmpObjects
+          WHERE Selected = 1
+          )
+          UPDATE tmpObjects
+          SET [Order] = RowNumber
         END
 
         SET @ErrorMessage = ''
@@ -1085,7 +1186,7 @@ BEGIN
           FROM @tmpObjects
           WHERE Selected = 1
           AND Completed = 0
-          ORDER BY ID ASC
+          ORDER BY [Order] ASC
 
           IF @@ROWCOUNT = 0
           BEGIN

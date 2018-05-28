@@ -139,15 +139,19 @@ BEGIN
                                DatabaseName nvarchar(max),
                                DatabaseType nvarchar(max),
                                AvailabilityGroup bit,
+                               StartPosition int,
+                               [Order] int,
                                Selected bit,
                                Completed bit,
-                               PRIMARY KEY(Selected, Completed, ID))
+                               PRIMARY KEY(Selected, Completed, [Order], ID))
 
   DECLARE @tmpAvailabilityGroups TABLE (ID int IDENTITY PRIMARY KEY,
                                         AvailabilityGroupName nvarchar(max),
+                                        StartPosition int,
                                         Selected bit)
 
-  DECLARE @tmpDatabasesAvailabilityGroups TABLE (DatabaseName nvarchar(max), AvailabilityGroupName nvarchar(max))
+  DECLARE @tmpDatabasesAvailabilityGroups TABLE (DatabaseName nvarchar(max),
+                                                 AvailabilityGroupName nvarchar(max))
 
   DECLARE @tmpIndexesStatistics TABLE (ID int IDENTITY,
                                        SchemaID int,
@@ -164,22 +168,27 @@ BEGIN
                                        PartitionID bigint,
                                        PartitionNumber int,
                                        PartitionCount int,
+                                       StartPosition int,
+                                       [Order] int,
                                        Selected bit,
                                        Completed bit,
-                                       PRIMARY KEY(Selected, Completed, ID))
+                                       PRIMARY KEY(Selected, Completed, [Order], ID))
 
   DECLARE @SelectedDatabases TABLE (DatabaseName nvarchar(max),
                                     DatabaseType nvarchar(max),
                                     AvailabilityGroup nvarchar(max),
+                                    StartPosition int,
                                     Selected bit)
 
   DECLARE @SelectedAvailabilityGroups TABLE (AvailabilityGroupName nvarchar(max),
+                                             StartPosition int,
                                              Selected bit)
 
   DECLARE @SelectedIndexes TABLE (DatabaseName nvarchar(max),
                                   SchemaName nvarchar(max),
                                   ObjectName nvarchar(max),
                                   IndexName nvarchar(max),
+                                  StartPosition int,
                                   Selected bit)
 
   DECLARE @Actions TABLE ([Action] nvarchar(max))
@@ -336,32 +345,36 @@ BEGIN
   FROM Databases1
   WHERE EndPosition < LEN(@Databases) + 1
   ),
-  Databases2 (DatabaseItem, Selected) AS
+  Databases2 (DatabaseItem, StartPosition, Selected) AS
   (
   SELECT CASE WHEN DatabaseItem LIKE '-%' THEN RIGHT(DatabaseItem,LEN(DatabaseItem) - 1) ELSE DatabaseItem END AS DatabaseItem,
+         StartPosition,
          CASE WHEN DatabaseItem LIKE '-%' THEN 0 ELSE 1 END AS Selected
   FROM Databases1
   ),
-  Databases3 (DatabaseItem, DatabaseType, AvailabilityGroup, Selected) AS
+  Databases3 (DatabaseItem, DatabaseType, AvailabilityGroup, StartPosition, Selected) AS
   (
   SELECT CASE WHEN DatabaseItem IN('ALL_DATABASES','SYSTEM_DATABASES','USER_DATABASES','AVAILABILITY_GROUP_DATABASES') THEN '%' ELSE DatabaseItem END AS DatabaseItem,
          CASE WHEN DatabaseItem = 'SYSTEM_DATABASES' THEN 'S' WHEN DatabaseItem = 'USER_DATABASES' THEN 'U' ELSE NULL END AS DatabaseType,
          CASE WHEN DatabaseItem = 'AVAILABILITY_GROUP_DATABASES' THEN 1 ELSE NULL END AvailabilityGroup,
+         StartPosition,
          Selected
   FROM Databases2
   ),
-  Databases4 (DatabaseName, DatabaseType, AvailabilityGroup, Selected) AS
+  Databases4 (DatabaseName, DatabaseType, AvailabilityGroup, StartPosition, Selected) AS
   (
   SELECT CASE WHEN LEFT(DatabaseItem,1) = '[' AND RIGHT(DatabaseItem,1) = ']' THEN PARSENAME(DatabaseItem,1) ELSE DatabaseItem END AS DatabaseItem,
          DatabaseType,
          AvailabilityGroup,
+         StartPosition,
          Selected
   FROM Databases3
   )
-  INSERT INTO @SelectedDatabases (DatabaseName, DatabaseType, AvailabilityGroup, Selected)
+  INSERT INTO @SelectedDatabases (DatabaseName, DatabaseType, AvailabilityGroup, StartPosition, Selected)
   SELECT DatabaseName,
          DatabaseType,
          AvailabilityGroup,
+         StartPosition,
          Selected
   FROM Databases4
   OPTION (MAXRECURSION 0)
@@ -379,10 +392,11 @@ BEGIN
     INNER JOIN sys.availability_groups availability_groups ON availability_databases_cluster.group_id = availability_groups.group_id
   END
 
-  INSERT INTO @tmpDatabases (DatabaseName, DatabaseType, AvailabilityGroup, Selected, Completed)
+  INSERT INTO @tmpDatabases (DatabaseName, DatabaseType, AvailabilityGroup, [Order], Selected, Completed)
   SELECT [name] AS DatabaseName,
           CASE WHEN name IN('master','msdb','model') THEN 'S' ELSE 'U' END AS DatabaseType,
           NULL AS AvailabilityGroup,
+          0 AS [Order],
           0 AS Selected,
           0 AS Completed
   FROM sys.databases
@@ -411,6 +425,19 @@ BEGIN
   AND (tmpDatabases.DatabaseType = SelectedDatabases.DatabaseType OR SelectedDatabases.DatabaseType IS NULL)
   AND (tmpDatabases.AvailabilityGroup = SelectedDatabases.AvailabilityGroup OR SelectedDatabases.AvailabilityGroup IS NULL)
   WHERE SelectedDatabases.Selected = 0
+
+  UPDATE tmpDatabases
+  SET tmpDatabases.StartPosition = SelectedDatabases2.StartPosition
+  FROM @tmpDatabases tmpDatabases
+  INNER JOIN (SELECT tmpDatabases.DatabaseName, MIN(SelectedDatabases.StartPosition) AS StartPosition
+              FROM @tmpDatabases tmpDatabases
+              INNER JOIN @SelectedDatabases SelectedDatabases
+              ON tmpDatabases.DatabaseName LIKE REPLACE(SelectedDatabases.DatabaseName,'_','[_]')
+              AND (tmpDatabases.DatabaseType = SelectedDatabases.DatabaseType OR SelectedDatabases.DatabaseType IS NULL)
+              AND (tmpDatabases.AvailabilityGroup = SelectedDatabases.AvailabilityGroup OR SelectedDatabases.AvailabilityGroup IS NULL)
+              WHERE SelectedDatabases.Selected = 1
+              GROUP BY tmpDatabases.DatabaseName) SelectedDatabases2
+  ON tmpDatabases.DatabaseName = SelectedDatabases2.DatabaseName
 
   IF @Databases IS NOT NULL AND (NOT EXISTS(SELECT * FROM @SelectedDatabases) OR EXISTS(SELECT * FROM @SelectedDatabases WHERE DatabaseName IS NULL OR DatabaseName = ''))
   BEGIN
@@ -447,26 +474,29 @@ BEGIN
     FROM AvailabilityGroups1
     WHERE EndPosition < LEN(@AvailabilityGroups) + 1
     ),
-    AvailabilityGroups2 (AvailabilityGroupItem, Selected) AS
+    AvailabilityGroups2 (AvailabilityGroupItem, StartPosition, Selected) AS
     (
     SELECT CASE WHEN AvailabilityGroupItem LIKE '-%' THEN RIGHT(AvailabilityGroupItem,LEN(AvailabilityGroupItem) - 1) ELSE AvailabilityGroupItem END AS AvailabilityGroupItem,
+           StartPosition,
            CASE WHEN AvailabilityGroupItem LIKE '-%' THEN 0 ELSE 1 END AS Selected
     FROM AvailabilityGroups1
     ),
-    AvailabilityGroups3 (AvailabilityGroupItem, Selected) AS
+    AvailabilityGroups3 (AvailabilityGroupItem, StartPosition, Selected) AS
     (
     SELECT CASE WHEN AvailabilityGroupItem = 'ALL_AVAILABILITY_GROUPS' THEN '%' ELSE AvailabilityGroupItem END AS AvailabilityGroupItem,
+           StartPosition,
            Selected
     FROM AvailabilityGroups2
     ),
-    AvailabilityGroups4 (AvailabilityGroupName, Selected) AS
+    AvailabilityGroups4 (AvailabilityGroupName, StartPosition, Selected) AS
     (
     SELECT CASE WHEN LEFT(AvailabilityGroupItem,1) = '[' AND RIGHT(AvailabilityGroupItem,1) = ']' THEN PARSENAME(AvailabilityGroupItem,1) ELSE AvailabilityGroupItem END AS AvailabilityGroupItem,
+           StartPosition,
            Selected
     FROM AvailabilityGroups3
     )
-    INSERT INTO @SelectedAvailabilityGroups (AvailabilityGroupName, Selected)
-    SELECT AvailabilityGroupName, Selected
+    INSERT INTO @SelectedAvailabilityGroups (AvailabilityGroupName, StartPosition, Selected)
+    SELECT AvailabilityGroupName, StartPosition, Selected
     FROM AvailabilityGroups4
     OPTION (MAXRECURSION 0)
 
@@ -484,8 +514,20 @@ BEGIN
     ON tmpAvailabilityGroups.AvailabilityGroupName LIKE REPLACE(SelectedAvailabilityGroups.AvailabilityGroupName,'_','[_]')
     WHERE SelectedAvailabilityGroups.Selected = 0
 
+    UPDATE tmpAvailabilityGroups
+    SET tmpAvailabilityGroups.StartPosition = SelectedAvailabilityGroups2.StartPosition
+    FROM @tmpAvailabilityGroups tmpAvailabilityGroups
+    INNER JOIN (SELECT tmpAvailabilityGroups.AvailabilityGroupName, MIN(SelectedAvailabilityGroups.StartPosition) AS StartPosition
+                FROM @tmpAvailabilityGroups tmpAvailabilityGroups
+                INNER JOIN @SelectedAvailabilityGroups SelectedAvailabilityGroups
+                ON tmpAvailabilityGroups.AvailabilityGroupName LIKE REPLACE(SelectedAvailabilityGroups.AvailabilityGroupName,'_','[_]')
+                WHERE SelectedAvailabilityGroups.Selected = 1
+                GROUP BY tmpAvailabilityGroups.AvailabilityGroupName) SelectedAvailabilityGroups2
+    ON tmpAvailabilityGroups.AvailabilityGroupName = SelectedAvailabilityGroups2.AvailabilityGroupName
+
     UPDATE tmpDatabases
-    SET Selected = 1
+    SET tmpDatabases.StartPosition = tmpAvailabilityGroups.StartPosition,
+        tmpDatabases.Selected = 1
     FROM @tmpDatabases tmpDatabases
     INNER JOIN @tmpDatabasesAvailabilityGroups tmpDatabasesAvailabilityGroups ON tmpDatabases.DatabaseName = tmpDatabasesAvailabilityGroups.DatabaseName
     INNER JOIN @tmpAvailabilityGroups tmpAvailabilityGroups ON tmpDatabasesAvailabilityGroups.AvailabilityGroupName = tmpAvailabilityGroups.AvailabilityGroupName
@@ -512,7 +554,19 @@ BEGIN
     SET @ErrorMessage = 'You can only specify one of the parameters @Databases and @AvailabilityGroups.' + CHAR(13) + CHAR(10) + ' '
     RAISERROR(@ErrorMessage,16,1) WITH NOWAIT
     SET @Error = @@ERROR
-  END
+  END;
+
+  ----------------------------------------------------------------------------------------------------
+  --// Update database order                                                                      //--
+  ----------------------------------------------------------------------------------------------------
+
+  WITH tmpDatabases AS (
+  SELECT DatabaseName, [Order], ROW_NUMBER() OVER (ORDER BY StartPosition ASC, DatabaseName ASC) AS RowNumber
+  FROM @tmpDatabases tmpDatabases
+  WHERE Selected = 1
+  )
+  UPDATE tmpDatabases
+  SET [Order] = RowNumber
 
   ----------------------------------------------------------------------------------------------------
   --// Select indexes                                                                             //--
@@ -539,29 +593,32 @@ BEGIN
   FROM Indexes1
   WHERE EndPosition < LEN(@Indexes) + 1
   ),
-  Indexes2 (IndexItem, Selected) AS
+  Indexes2 (IndexItem, StartPosition, Selected) AS
   (
   SELECT CASE WHEN IndexItem LIKE '-%' THEN RIGHT(IndexItem,LEN(IndexItem) - 1) ELSE IndexItem END AS IndexItem,
+         StartPosition,
          CASE WHEN IndexItem LIKE '-%' THEN 0 ELSE 1 END AS Selected
   FROM Indexes1
   ),
-  Indexes3 (IndexItem, Selected) AS
+  Indexes3 (IndexItem, StartPosition, Selected) AS
   (
   SELECT CASE WHEN IndexItem = 'ALL_INDEXES' THEN '%.%.%.%' ELSE IndexItem END AS IndexItem,
+         StartPosition,
          Selected
   FROM Indexes2
   ),
-  Indexes4 (DatabaseName, SchemaName, ObjectName, IndexName, Selected) AS
+  Indexes4 (DatabaseName, SchemaName, ObjectName, IndexName, StartPosition, Selected) AS
   (
   SELECT CASE WHEN PARSENAME(IndexItem,4) IS NULL THEN PARSENAME(IndexItem,3) ELSE PARSENAME(IndexItem,4) END AS DatabaseName,
          CASE WHEN PARSENAME(IndexItem,4) IS NULL THEN PARSENAME(IndexItem,2) ELSE PARSENAME(IndexItem,3) END AS SchemaName,
          CASE WHEN PARSENAME(IndexItem,4) IS NULL THEN PARSENAME(IndexItem,1) ELSE PARSENAME(IndexItem,2) END AS ObjectName,
          CASE WHEN PARSENAME(IndexItem,4) IS NULL THEN '%' ELSE PARSENAME(IndexItem,1) END AS IndexName,
+         StartPosition,
          Selected
   FROM Indexes3
   )
-  INSERT INTO @SelectedIndexes (DatabaseName, SchemaName, ObjectName, IndexName, Selected)
-  SELECT DatabaseName, SchemaName, ObjectName, IndexName, Selected
+  INSERT INTO @SelectedIndexes (DatabaseName, SchemaName, ObjectName, IndexName, StartPosition, Selected)
+  SELECT DatabaseName, SchemaName, ObjectName, IndexName, StartPosition, Selected
   FROM Indexes4
   OPTION (MAXRECURSION 0);
 
@@ -894,7 +951,7 @@ BEGIN
     FROM @tmpDatabases
     WHERE Selected = 1
     AND Completed = 0
-    ORDER BY ID ASC
+    ORDER BY [Order] ASC
 
     IF @@ROWCOUNT = 0
     BEGIN
@@ -989,15 +1046,15 @@ BEGIN
       -- Select indexes in the current database
       IF (EXISTS(SELECT * FROM @ActionsPreferred) OR @UpdateStatistics IS NOT NULL) AND (GETDATE() < DATEADD(ss,@TimeLimit,@StartTime) OR @TimeLimit IS NULL)
       BEGIN
-        SET @CurrentCommand01 = 'SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED; SELECT SchemaID, SchemaName, ObjectID, ObjectName, ObjectType, IsMemoryOptimized, IndexID, IndexName, IndexType, StatisticsID, StatisticsName, PartitionID, PartitionNumber, PartitionCount, Selected, Completed FROM ('
+        SET @CurrentCommand01 = 'SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED; SELECT SchemaID, SchemaName, ObjectID, ObjectName, ObjectType, IsMemoryOptimized, IndexID, IndexName, IndexType, StatisticsID, StatisticsName, PartitionID, PartitionNumber, PartitionCount, [Order], Selected, Completed FROM ('
 
         IF EXISTS(SELECT * FROM @ActionsPreferred) OR @UpdateStatistics IN('ALL','INDEX')
         BEGIN
           SET @CurrentCommand01 = @CurrentCommand01 + 'SELECT schemas.[schema_id] AS SchemaID, schemas.[name] AS SchemaName, objects.[object_id] AS ObjectID, objects.[name] AS ObjectName, RTRIM(objects.[type]) AS ObjectType, ' + CASE WHEN @Version >= 12 THEN 'tables.is_memory_optimized' ELSE 'NULL' END + ' AS IsMemoryOptimized, indexes.index_id AS IndexID, indexes.[name] AS IndexName, indexes.[type] AS IndexType, stats.stats_id AS StatisticsID, stats.name AS StatisticsName'
           IF @PartitionLevel = 'Y' SET @CurrentCommand01 = @CurrentCommand01 + ', partitions.partition_id AS PartitionID, partitions.partition_number AS PartitionNumber, IndexPartitions.partition_count AS PartitionCount'
           IF @PartitionLevel = 'N' SET @CurrentCommand01 = @CurrentCommand01 + ', NULL AS PartitionID, NULL AS PartitionNumber, NULL AS PartitionCount'
-          SET @CurrentCommand01 = @CurrentCommand01 + ', 0 AS Selected, 0 AS Completed FROM ' + QUOTENAME(@CurrentDatabaseName) + '.sys.indexes indexes INNER JOIN ' + QUOTENAME(@CurrentDatabaseName) + '.sys.objects objects ON indexes.[object_id] = objects.[object_id] INNER JOIN ' + QUOTENAME(@CurrentDatabaseName) + '.sys.schemas schemas ON objects.[schema_id] = schemas.[schema_id] LEFT OUTER JOIN ' + QUOTENAME(@CurrentDatabaseName) + '.sys.tables tables ON objects.[object_id] = tables.[object_id] LEFT OUTER JOIN ' + QUOTENAME(@CurrentDatabaseName) + '.sys.stats stats ON indexes.[object_id] = stats.[object_id] AND indexes.[index_id] = stats.[stats_id]'
-          IF @PartitionLevel = 'Y' SET @CurrentCommand01 = @CurrentCommand01 + ' LEFT OUTER JOIN ' + QUOTENAME(@CurrentDatabaseName) + '.sys.partitions partitions ON indexes.[object_id] = partitions.[object_id] AND indexes.index_id = partitions.index_id LEFT OUTER JOIN (SELECT partitions.[object_id], partitions.index_id, COUNT(*) AS partition_count FROM ' + QUOTENAME(@CurrentDatabaseName) + '.sys.partitions partitions GROUP BY partitions.[object_id], partitions.index_id) IndexPartitions ON partitions.[object_id] = IndexPartitions.[object_id] AND partitions.[index_id] = IndexPartitions.[index_id]'
+          SET @CurrentCommand01 = @CurrentCommand01 + ', 0 AS [Order], 0 AS Selected, 0 AS Completed FROM ' + QUOTENAME(@CurrentDatabaseName) + '.sys.indexes indexes INNER JOIN ' + QUOTENAME(@CurrentDatabaseName) + '.sys.objects objects ON indexes.[object_id] = objects.[object_id] INNER JOIN ' + QUOTENAME(@CurrentDatabaseName) + '.sys.schemas schemas ON objects.[schema_id] = schemas.[schema_id] LEFT OUTER JOIN ' + QUOTENAME(@CurrentDatabaseName) + '.sys.tables tables ON objects.[object_id] = tables.[object_id] LEFT OUTER JOIN ' + QUOTENAME(@CurrentDatabaseName) + '.sys.stats stats ON indexes.[object_id] = stats.[object_id] AND indexes.[index_id] = stats.[stats_id]'
+          IF @PartitionLevel = 'Y' SET @CurrentCommand01 = @CurrentCommand01 + ' LEFT OUTER JOIN ' + QUOTENAME(@CurrentDatabaseName) + '.sys.partitions partitions ON indexes.[object_id] = partitions.[object_id] AND indexes.index_id = partitions.index_id LEFT OUTER JOIN (SELECT partitions.[object_id], partitions.index_id, COUNT(DISTINCT partitions.partition_number) AS partition_count FROM ' + QUOTENAME(@CurrentDatabaseName) + '.sys.partitions partitions GROUP BY partitions.[object_id], partitions.index_id) IndexPartitions ON partitions.[object_id] = IndexPartitions.[object_id] AND partitions.[index_id] = IndexPartitions.[index_id]'
           IF @PartitionLevel = 'Y' SET @CurrentCommand01 = @CurrentCommand01 + ' LEFT OUTER JOIN ' + QUOTENAME(@CurrentDatabaseName) + '.sys.dm_db_partition_stats dm_db_partition_stats ON indexes.[object_id] = dm_db_partition_stats.[object_id] AND indexes.[index_id] = dm_db_partition_stats.[index_id] AND partitions.partition_id = dm_db_partition_stats.partition_id'
           IF @PartitionLevel = 'N' SET @CurrentCommand01 = @CurrentCommand01 + ' LEFT OUTER JOIN (SELECT dm_db_partition_stats.[object_id], dm_db_partition_stats.[index_id], SUM(dm_db_partition_stats.in_row_data_page_count) AS in_row_data_page_count FROM ' + QUOTENAME(@CurrentDatabaseName) + '.sys.dm_db_partition_stats dm_db_partition_stats GROUP BY dm_db_partition_stats.[object_id], dm_db_partition_stats.[index_id]) dm_db_partition_stats ON indexes.[object_id] = dm_db_partition_stats.[object_id] AND indexes.[index_id] = dm_db_partition_stats.[index_id]'
           SET @CurrentCommand01 = @CurrentCommand01 + ' WHERE objects.[type] IN(''U'',''V'')' + CASE WHEN @MSShippedObjects = 'N' THEN ' AND objects.is_ms_shipped = 0' ELSE '' END + ' AND indexes.[type] IN(1,2,3,4,5,6,7) AND indexes.is_disabled = 0 AND indexes.is_hypothetical = 0'
@@ -1006,15 +1063,11 @@ BEGIN
 
         IF (EXISTS(SELECT * FROM @ActionsPreferred) AND @UpdateStatistics = 'COLUMNS') OR @UpdateStatistics = 'ALL' SET @CurrentCommand01 = @CurrentCommand01 + ' UNION '
 
-        IF @UpdateStatistics IN('ALL','COLUMNS') SET @CurrentCommand01 = @CurrentCommand01 + 'SELECT schemas.[schema_id] AS SchemaID, schemas.[name] AS SchemaName, objects.[object_id] AS ObjectID, objects.[name] AS ObjectName, RTRIM(objects.[type]) AS ObjectType, ' + CASE WHEN @Version >= 12 THEN 'tables.is_memory_optimized' ELSE 'NULL' END + ' AS IsMemoryOptimized, NULL AS IndexID, NULL AS IndexName, NULL AS IndexType, stats.stats_id AS StatisticsID, stats.name AS StatisticsName, NULL AS PartitionID, NULL AS PartitionNumber, NULL AS PartitionCount, 0 AS Selected, 0 AS Completed FROM ' + QUOTENAME(@CurrentDatabaseName) + '.sys.stats stats INNER JOIN ' + QUOTENAME(@CurrentDatabaseName) + '.sys.objects objects ON stats.[object_id] = objects.[object_id] INNER JOIN ' + QUOTENAME(@CurrentDatabaseName) + '.sys.schemas schemas ON objects.[schema_id] = schemas.[schema_id] LEFT OUTER JOIN ' + QUOTENAME(@CurrentDatabaseName) + '.sys.tables tables ON objects.[object_id] = tables.[object_id] WHERE objects.[type] IN(''U'',''V'')' + CASE WHEN @MSShippedObjects = 'N' THEN ' AND objects.is_ms_shipped = 0' ELSE '' END + ' AND NOT EXISTS(SELECT * FROM ' + QUOTENAME(@CurrentDatabaseName) + '.sys.indexes indexes WHERE indexes.[object_id] = stats.[object_id] AND indexes.index_id = stats.stats_id)'
+        IF @UpdateStatistics IN('ALL','COLUMNS') SET @CurrentCommand01 = @CurrentCommand01 + 'SELECT schemas.[schema_id] AS SchemaID, schemas.[name] AS SchemaName, objects.[object_id] AS ObjectID, objects.[name] AS ObjectName, RTRIM(objects.[type]) AS ObjectType, ' + CASE WHEN @Version >= 12 THEN 'tables.is_memory_optimized' ELSE 'NULL' END + ' AS IsMemoryOptimized, NULL AS IndexID, NULL AS IndexName, NULL AS IndexType, stats.stats_id AS StatisticsID, stats.name AS StatisticsName, NULL AS PartitionID, NULL AS PartitionNumber, NULL AS PartitionCount, 0 AS [Order], 0 AS Selected, 0 AS Completed FROM ' + QUOTENAME(@CurrentDatabaseName) + '.sys.stats stats INNER JOIN ' + QUOTENAME(@CurrentDatabaseName) + '.sys.objects objects ON stats.[object_id] = objects.[object_id] INNER JOIN ' + QUOTENAME(@CurrentDatabaseName) + '.sys.schemas schemas ON objects.[schema_id] = schemas.[schema_id] LEFT OUTER JOIN ' + QUOTENAME(@CurrentDatabaseName) + '.sys.tables tables ON objects.[object_id] = tables.[object_id] WHERE objects.[type] IN(''U'',''V'')' + CASE WHEN @MSShippedObjects = 'N' THEN ' AND objects.is_ms_shipped = 0' ELSE '' END + ' AND NOT EXISTS(SELECT * FROM ' + QUOTENAME(@CurrentDatabaseName) + '.sys.indexes indexes WHERE indexes.[object_id] = stats.[object_id] AND indexes.index_id = stats.stats_id)'
 
-        SET @CurrentCommand01 = @CurrentCommand01 + ') IndexesStatistics ORDER BY SchemaName ASC, ObjectName ASC'
-        IF (EXISTS(SELECT * FROM @ActionsPreferred) AND @UpdateStatistics = 'COLUMNS') OR @UpdateStatistics = 'ALL' SET @CurrentCommand01 = @CurrentCommand01 + ', CASE WHEN IndexType IS NULL THEN 1 ELSE 0 END ASC'
-        IF EXISTS(SELECT * FROM @ActionsPreferred) OR @UpdateStatistics IN('ALL','INDEX') SET @CurrentCommand01 = @CurrentCommand01 + ', IndexType ASC, IndexName ASC'
-        IF @UpdateStatistics IN('ALL','COLUMNS') SET @CurrentCommand01 = @CurrentCommand01 + ', StatisticsName ASC'
-        IF @PartitionLevel = 'Y' SET @CurrentCommand01 = @CurrentCommand01 + ', PartitionNumber ASC'
+        SET @CurrentCommand01 = @CurrentCommand01 + ') IndexesStatistics'
 
-        INSERT INTO @tmpIndexesStatistics (SchemaID, SchemaName, ObjectID, ObjectName, ObjectType, IsMemoryOptimized, IndexID, IndexName, IndexType, StatisticsID, StatisticsName, PartitionID, PartitionNumber, PartitionCount, Selected, Completed)
+        INSERT INTO @tmpIndexesStatistics (SchemaID, SchemaName, ObjectID, ObjectName, ObjectType, IsMemoryOptimized, IndexID, IndexName, IndexType, StatisticsID, StatisticsName, PartitionID, PartitionNumber, PartitionCount, [Order], Selected, Completed)
         EXECUTE sp_executesql @statement = @CurrentCommand01
         SET @Error = @@ERROR
         IF @Error <> 0
@@ -1044,6 +1097,28 @@ BEGIN
         INNER JOIN @SelectedIndexes SelectedIndexes
         ON @CurrentDatabaseName LIKE REPLACE(SelectedIndexes.DatabaseName,'_','[_]') AND tmpIndexesStatistics.SchemaName LIKE REPLACE(SelectedIndexes.SchemaName,'_','[_]') AND tmpIndexesStatistics.ObjectName LIKE REPLACE(SelectedIndexes.ObjectName,'_','[_]') AND COALESCE(tmpIndexesStatistics.IndexName,tmpIndexesStatistics.StatisticsName) LIKE REPLACE(SelectedIndexes.IndexName,'_','[_]')
         WHERE SelectedIndexes.Selected = 0
+
+        UPDATE tmpIndexesStatistics
+        SET tmpIndexesStatistics.StartPosition = SelectedIndexes2.StartPosition
+        FROM @tmpIndexesStatistics tmpIndexesStatistics
+        INNER JOIN (SELECT tmpIndexesStatistics.SchemaName, tmpIndexesStatistics.ObjectName, tmpIndexesStatistics.IndexName, tmpIndexesStatistics.StatisticsName, MIN(SelectedIndexes.StartPosition) AS StartPosition
+                    FROM @tmpIndexesStatistics tmpIndexesStatistics
+                    INNER JOIN @SelectedIndexes SelectedIndexes
+                    ON @CurrentDatabaseName LIKE REPLACE(SelectedIndexes.DatabaseName,'_','[_]') AND tmpIndexesStatistics.SchemaName LIKE REPLACE(SelectedIndexes.SchemaName,'_','[_]') AND tmpIndexesStatistics.ObjectName LIKE REPLACE(SelectedIndexes.ObjectName,'_','[_]') AND COALESCE(tmpIndexesStatistics.IndexName,tmpIndexesStatistics.StatisticsName) LIKE REPLACE(SelectedIndexes.IndexName,'_','[_]')
+                    WHERE SelectedIndexes.Selected = 1
+                    GROUP BY tmpIndexesStatistics.SchemaName, tmpIndexesStatistics.ObjectName, tmpIndexesStatistics.IndexName, tmpIndexesStatistics.StatisticsName) SelectedIndexes2
+        ON tmpIndexesStatistics.SchemaName = SelectedIndexes2.SchemaName
+        AND tmpIndexesStatistics.ObjectName = SelectedIndexes2.ObjectName
+        AND (tmpIndexesStatistics.IndexName = SelectedIndexes2.IndexName OR tmpIndexesStatistics.IndexName IS NULL)
+        AND (tmpIndexesStatistics.StatisticsName = SelectedIndexes2.StatisticsName OR tmpIndexesStatistics.StatisticsName IS NULL);
+
+        WITH tmpIndexesStatistics AS (
+        SELECT SchemaName, ObjectName, [Order], ROW_NUMBER() OVER (ORDER BY StartPosition ASC, SchemaName ASC, ObjectName ASC, CASE WHEN IndexType IS NULL THEN 1 ELSE 0 END ASC, IndexType ASC, IndexName ASC, StatisticsName ASC, PartitionNumber ASC) AS RowNumber
+        FROM @tmpIndexesStatistics tmpIndexesStatistics
+        WHERE Selected = 1
+        )
+        UPDATE tmpIndexesStatistics
+        SET [Order] = RowNumber
       END
 
       SET @ErrorMessage = ''
@@ -1097,7 +1172,7 @@ BEGIN
         FROM @tmpIndexesStatistics
         WHERE Selected = 1
         AND Completed = 0
-        ORDER BY ID ASC
+        ORDER BY [Order] ASC
 
         IF @@ROWCOUNT = 0
         BEGIN

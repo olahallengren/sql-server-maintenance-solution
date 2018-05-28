@@ -165,22 +165,28 @@ BEGIN
                                DatabaseNameFS nvarchar(max),
                                DatabaseType nvarchar(max),
                                AvailabilityGroup bit,
+                               StartPosition int,
+                               [Order] int,
                                Selected bit,
                                Completed bit,
-                               PRIMARY KEY(Selected, Completed, ID))
+                               PRIMARY KEY(Selected, Completed, [Order], ID))
 
   DECLARE @tmpAvailabilityGroups TABLE (ID int IDENTITY PRIMARY KEY,
                                         AvailabilityGroupName nvarchar(max),
+                                        StartPosition int,
                                         Selected bit)
 
-  DECLARE @tmpDatabasesAvailabilityGroups TABLE (DatabaseName nvarchar(max), AvailabilityGroupName nvarchar(max))
+  DECLARE @tmpDatabasesAvailabilityGroups TABLE (DatabaseName nvarchar(max),
+                                                 AvailabilityGroupName nvarchar(max))
 
   DECLARE @SelectedDatabases TABLE (DatabaseName nvarchar(max),
                                     DatabaseType nvarchar(max),
                                     AvailabilityGroup nvarchar(max),
+                                    StartPosition int,
                                     Selected bit)
 
   DECLARE @SelectedAvailabilityGroups TABLE (AvailabilityGroupName nvarchar(max),
+                                             StartPosition int,
                                              Selected bit)
 
   DECLARE @CurrentBackupSet TABLE (ID int IDENTITY PRIMARY KEY,
@@ -375,32 +381,36 @@ BEGIN
   FROM Databases1
   WHERE EndPosition < LEN(@Databases) + 1
   ),
-  Databases2 (DatabaseItem, Selected) AS
+  Databases2 (DatabaseItem, StartPosition, Selected) AS
   (
   SELECT CASE WHEN DatabaseItem LIKE '-%' THEN RIGHT(DatabaseItem,LEN(DatabaseItem) - 1) ELSE DatabaseItem END AS DatabaseItem,
+         StartPosition,
          CASE WHEN DatabaseItem LIKE '-%' THEN 0 ELSE 1 END AS Selected
   FROM Databases1
   ),
-  Databases3 (DatabaseItem, DatabaseType, AvailabilityGroup, Selected) AS
+  Databases3 (DatabaseItem, DatabaseType, AvailabilityGroup, StartPosition, Selected) AS
   (
   SELECT CASE WHEN DatabaseItem IN('ALL_DATABASES','SYSTEM_DATABASES','USER_DATABASES','AVAILABILITY_GROUP_DATABASES') THEN '%' ELSE DatabaseItem END AS DatabaseItem,
          CASE WHEN DatabaseItem = 'SYSTEM_DATABASES' THEN 'S' WHEN DatabaseItem = 'USER_DATABASES' THEN 'U' ELSE NULL END AS DatabaseType,
          CASE WHEN DatabaseItem = 'AVAILABILITY_GROUP_DATABASES' THEN 1 ELSE NULL END AvailabilityGroup,
+         StartPosition,
          Selected
   FROM Databases2
   ),
-  Databases4 (DatabaseName, DatabaseType, AvailabilityGroup, Selected) AS
+  Databases4 (DatabaseName, DatabaseType, AvailabilityGroup, StartPosition, Selected) AS
   (
   SELECT CASE WHEN LEFT(DatabaseItem,1) = '[' AND RIGHT(DatabaseItem,1) = ']' THEN PARSENAME(DatabaseItem,1) ELSE DatabaseItem END AS DatabaseItem,
          DatabaseType,
          AvailabilityGroup,
+         StartPosition,
          Selected
   FROM Databases3
   )
-  INSERT INTO @SelectedDatabases (DatabaseName, DatabaseType, AvailabilityGroup, Selected)
+  INSERT INTO @SelectedDatabases (DatabaseName, DatabaseType, AvailabilityGroup, StartPosition, Selected)
   SELECT DatabaseName,
          DatabaseType,
          AvailabilityGroup,
+         StartPosition,
          Selected
   FROM Databases4
   OPTION (MAXRECURSION 0)
@@ -418,11 +428,12 @@ BEGIN
     INNER JOIN sys.availability_groups availability_groups ON availability_databases_cluster.group_id = availability_groups.group_id
   END
 
-  INSERT INTO @tmpDatabases (DatabaseName, DatabaseNameFS, DatabaseType, AvailabilityGroup, Selected, Completed)
+  INSERT INTO @tmpDatabases (DatabaseName, DatabaseNameFS, DatabaseType, AvailabilityGroup, [Order], Selected, Completed)
   SELECT [name] AS DatabaseName,
           LTRIM(RTRIM(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE([name],'\',''),'/',''),':',''),'*',''),'?',''),'"',''),'<',''),'>',''),'|',''))) AS DatabaseNameFS,
           CASE WHEN name IN('master','msdb','model') THEN 'S' ELSE 'U' END AS DatabaseType,
           NULL AS AvailabilityGroup,
+          0 AS [Order],
           0 AS Selected,
           0 AS Completed
   FROM sys.databases
@@ -451,6 +462,19 @@ BEGIN
   AND (tmpDatabases.DatabaseType = SelectedDatabases.DatabaseType OR SelectedDatabases.DatabaseType IS NULL)
   AND (tmpDatabases.AvailabilityGroup = SelectedDatabases.AvailabilityGroup OR SelectedDatabases.AvailabilityGroup IS NULL)
   WHERE SelectedDatabases.Selected = 0
+
+  UPDATE tmpDatabases
+  SET tmpDatabases.StartPosition = SelectedDatabases2.StartPosition
+  FROM @tmpDatabases tmpDatabases
+  INNER JOIN (SELECT tmpDatabases.DatabaseName, MIN(SelectedDatabases.StartPosition) AS StartPosition
+              FROM @tmpDatabases tmpDatabases
+              INNER JOIN @SelectedDatabases SelectedDatabases
+              ON tmpDatabases.DatabaseName LIKE REPLACE(SelectedDatabases.DatabaseName,'_','[_]')
+              AND (tmpDatabases.DatabaseType = SelectedDatabases.DatabaseType OR SelectedDatabases.DatabaseType IS NULL)
+              AND (tmpDatabases.AvailabilityGroup = SelectedDatabases.AvailabilityGroup OR SelectedDatabases.AvailabilityGroup IS NULL)
+              WHERE SelectedDatabases.Selected = 1
+              GROUP BY tmpDatabases.DatabaseName) SelectedDatabases2
+  ON tmpDatabases.DatabaseName = SelectedDatabases2.DatabaseName
 
   IF @Databases IS NOT NULL AND (NOT EXISTS(SELECT * FROM @SelectedDatabases) OR EXISTS(SELECT * FROM @SelectedDatabases WHERE DatabaseName IS NULL OR DatabaseName = ''))
   BEGIN
@@ -487,26 +511,29 @@ BEGIN
     FROM AvailabilityGroups1
     WHERE EndPosition < LEN(@AvailabilityGroups) + 1
     ),
-    AvailabilityGroups2 (AvailabilityGroupItem, Selected) AS
+    AvailabilityGroups2 (AvailabilityGroupItem, StartPosition, Selected) AS
     (
     SELECT CASE WHEN AvailabilityGroupItem LIKE '-%' THEN RIGHT(AvailabilityGroupItem,LEN(AvailabilityGroupItem) - 1) ELSE AvailabilityGroupItem END AS AvailabilityGroupItem,
+           StartPosition,
            CASE WHEN AvailabilityGroupItem LIKE '-%' THEN 0 ELSE 1 END AS Selected
     FROM AvailabilityGroups1
     ),
-    AvailabilityGroups3 (AvailabilityGroupItem, Selected) AS
+    AvailabilityGroups3 (AvailabilityGroupItem, StartPosition, Selected) AS
     (
     SELECT CASE WHEN AvailabilityGroupItem = 'ALL_AVAILABILITY_GROUPS' THEN '%' ELSE AvailabilityGroupItem END AS AvailabilityGroupItem,
+           StartPosition,
            Selected
     FROM AvailabilityGroups2
     ),
-    AvailabilityGroups4 (AvailabilityGroupName, Selected) AS
+    AvailabilityGroups4 (AvailabilityGroupName, StartPosition, Selected) AS
     (
     SELECT CASE WHEN LEFT(AvailabilityGroupItem,1) = '[' AND RIGHT(AvailabilityGroupItem,1) = ']' THEN PARSENAME(AvailabilityGroupItem,1) ELSE AvailabilityGroupItem END AS AvailabilityGroupItem,
+           StartPosition,
            Selected
     FROM AvailabilityGroups3
     )
-    INSERT INTO @SelectedAvailabilityGroups (AvailabilityGroupName, Selected)
-    SELECT AvailabilityGroupName, Selected
+    INSERT INTO @SelectedAvailabilityGroups (AvailabilityGroupName, StartPosition, Selected)
+    SELECT AvailabilityGroupName, StartPosition, Selected
     FROM AvailabilityGroups4
     OPTION (MAXRECURSION 0)
 
@@ -524,8 +551,20 @@ BEGIN
     ON tmpAvailabilityGroups.AvailabilityGroupName LIKE REPLACE(SelectedAvailabilityGroups.AvailabilityGroupName,'_','[_]')
     WHERE SelectedAvailabilityGroups.Selected = 0
 
+    UPDATE tmpAvailabilityGroups
+    SET tmpAvailabilityGroups.StartPosition = SelectedAvailabilityGroups2.StartPosition
+    FROM @tmpAvailabilityGroups tmpAvailabilityGroups
+    INNER JOIN (SELECT tmpAvailabilityGroups.AvailabilityGroupName, MIN(SelectedAvailabilityGroups.StartPosition) AS StartPosition
+                FROM @tmpAvailabilityGroups tmpAvailabilityGroups
+                INNER JOIN @SelectedAvailabilityGroups SelectedAvailabilityGroups
+                ON tmpAvailabilityGroups.AvailabilityGroupName LIKE REPLACE(SelectedAvailabilityGroups.AvailabilityGroupName,'_','[_]')
+                WHERE SelectedAvailabilityGroups.Selected = 1
+                GROUP BY tmpAvailabilityGroups.AvailabilityGroupName) SelectedAvailabilityGroups2
+    ON tmpAvailabilityGroups.AvailabilityGroupName = SelectedAvailabilityGroups2.AvailabilityGroupName
+
     UPDATE tmpDatabases
-    SET Selected = 1
+    SET tmpDatabases.StartPosition = tmpAvailabilityGroups.StartPosition,
+        tmpDatabases.Selected = 1
     FROM @tmpDatabases tmpDatabases
     INNER JOIN @tmpDatabasesAvailabilityGroups tmpDatabasesAvailabilityGroups ON tmpDatabases.DatabaseName = tmpDatabasesAvailabilityGroups.DatabaseName
     INNER JOIN @tmpAvailabilityGroups tmpAvailabilityGroups ON tmpDatabasesAvailabilityGroups.AvailabilityGroupName = tmpAvailabilityGroups.AvailabilityGroupName
@@ -552,7 +591,19 @@ BEGIN
     SET @ErrorMessage = 'You can only specify one of the parameters @Databases and @AvailabilityGroups.' + CHAR(13) + CHAR(10) + ' '
     RAISERROR(@ErrorMessage,16,1) WITH NOWAIT
     SET @Error = @@ERROR
-  END
+  END;
+
+  ----------------------------------------------------------------------------------------------------
+  --// Update database order                                                                      //--
+  ----------------------------------------------------------------------------------------------------
+
+  WITH tmpDatabases AS (
+  SELECT DatabaseName, [Order], ROW_NUMBER() OVER (ORDER BY StartPosition ASC, DatabaseName ASC) AS RowNumber
+  FROM @tmpDatabases tmpDatabases
+  WHERE Selected = 1
+  )
+  UPDATE tmpDatabases
+  SET [Order] = RowNumber
 
   ----------------------------------------------------------------------------------------------------
   --// Check database names                                                                       //--
@@ -1309,7 +1360,7 @@ BEGIN
     FROM @tmpDatabases
     WHERE Selected = 1
     AND Completed = 0
-    ORDER BY ID ASC
+    ORDER BY [Order] ASC
 
     IF @@ROWCOUNT = 0
     BEGIN
