@@ -49,8 +49,6 @@ BEGIN
   DECLARE @HostPlatform nvarchar(max)
   DECLARE @AmazonRDS bit
 
-  DECLARE @Cluster nvarchar(max)
-
   DECLARE @CurrentDBID int
   DECLARE @CurrentDatabaseID int
   DECLARE @CurrentDatabaseName nvarchar(max)
@@ -816,16 +814,6 @@ BEGIN
   END
 
   ----------------------------------------------------------------------------------------------------
-  --// Check Availability Group cluster name                                                      //--
-  ----------------------------------------------------------------------------------------------------
-
-  IF @Version >= 11 AND SERVERPROPERTY('EngineEdition') <> 5
-  BEGIN
-    SELECT @Cluster = cluster_name
-    FROM sys.dm_hadr_cluster
-  END
-
-  ----------------------------------------------------------------------------------------------------
   --// Execute commands                                                                           //--
   ----------------------------------------------------------------------------------------------------
 
@@ -858,7 +846,7 @@ BEGIN
       END
     END
 
-    IF @Version >= 11 AND @Cluster IS NOT NULL
+    IF @Version >= 11 AND SERVERPROPERTY('IsHadrEnabled') = 1
     BEGIN
       SELECT @CurrentAvailabilityGroup = availability_groups.name,
              @CurrentAvailabilityGroupRole = dm_hadr_availability_replica_states.role_desc

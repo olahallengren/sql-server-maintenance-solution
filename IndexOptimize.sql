@@ -15,7 +15,8 @@ ALTER PROCEDURE [dbo].[IndexOptimize]
 @FragmentationHigh nvarchar(max) = 'INDEX_REBUILD_ONLINE,INDEX_REBUILD_OFFLINE',
 @FragmentationLevel1 int = 5,
 @FragmentationLevel2 int = 30,
-@PageCountLevel int = 1000,
+@MinNumberOfPages int = 1000,
+@MaxNumberOfPages int = NULL,
 @SortInTempdb nvarchar(max) = 'N',
 @MaxDOP int = NULL,
 @FillFactor int = NULL,
@@ -64,8 +65,6 @@ BEGIN
   DECLARE @Version numeric(18,10)
   DECLARE @HostPlatform nvarchar(max)
   DECLARE @AmazonRDS bit
-
-  DECLARE @Cluster nvarchar(max)
 
   DECLARE @CurrentDBID int
   DECLARE @CurrentDatabaseID int
@@ -242,7 +241,8 @@ BEGIN
   SET @Parameters = @Parameters + ', @FragmentationHigh = ' + ISNULL('''' + REPLACE(@FragmentationHigh,'''','''''') + '''','NULL')
   SET @Parameters = @Parameters + ', @FragmentationLevel1 = ' + ISNULL(CAST(@FragmentationLevel1 AS nvarchar),'NULL')
   SET @Parameters = @Parameters + ', @FragmentationLevel2 = ' + ISNULL(CAST(@FragmentationLevel2 AS nvarchar),'NULL')
-  SET @Parameters = @Parameters + ', @PageCountLevel = ' + ISNULL(CAST(@PageCountLevel AS nvarchar),'NULL')
+  SET @Parameters = @Parameters + ', @MinNumberOfPages = ' + ISNULL(CAST(@MinNumberOfPages AS nvarchar),'NULL')
+  SET @Parameters = @Parameters + ', @MaxNumberOfPages = ' + ISNULL(CAST(@MaxNumberOfPages AS nvarchar),'NULL')
   SET @Parameters = @Parameters + ', @SortInTempdb = ' + ISNULL('''' + REPLACE(@SortInTempdb,'''','''''') + '''','NULL')
   SET @Parameters = @Parameters + ', @MaxDOP = ' + ISNULL(CAST(@MaxDOP AS nvarchar),'NULL')
   SET @Parameters = @Parameters + ', @FillFactor = ' + ISNULL(CAST(@FillFactor AS nvarchar),'NULL')
@@ -728,9 +728,16 @@ BEGIN
     SET @Error = @@ERROR
   END
 
-  IF @PageCountLevel < 0 OR @PageCountLevel IS NULL
+  IF @MinNumberOfPages < 0 OR @MinNumberOfPages IS NULL
   BEGIN
-    SET @ErrorMessage = 'The value for the parameter @PageCountLevel is not supported.' + CHAR(13) + CHAR(10) + ' '
+    SET @ErrorMessage = 'The value for the parameter @MinNumberOfPages is not supported.' + CHAR(13) + CHAR(10) + ' '
+    RAISERROR(@ErrorMessage,16,1) WITH NOWAIT
+    SET @Error = @@ERROR
+  END
+
+  IF @MaxNumberOfPages < 0
+  BEGIN
+    SET @ErrorMessage = 'The value for the parameter @MaxNumberOfPages is not supported.' + CHAR(13) + CHAR(10) + ' '
     RAISERROR(@ErrorMessage,16,1) WITH NOWAIT
     SET @Error = @@ERROR
   END
@@ -930,16 +937,6 @@ BEGIN
   END
 
   ----------------------------------------------------------------------------------------------------
-  --// Check Availability Group cluster name                                                      //--
-  ----------------------------------------------------------------------------------------------------
-
-  IF @Version >= 11 AND SERVERPROPERTY('EngineEdition') <> 5
-  BEGIN
-    SELECT @Cluster = cluster_name
-    FROM sys.dm_hadr_cluster
-  END
-
-  ----------------------------------------------------------------------------------------------------
   --// Execute commands                                                                           //--
   ----------------------------------------------------------------------------------------------------
 
@@ -972,7 +969,7 @@ BEGIN
       END
     END
 
-    IF @Version >= 11 AND @Cluster IS NOT NULL
+    IF @Version >= 11 AND SERVERPROPERTY('IsHadrEnabled') = 1
     BEGIN
       SELECT @CurrentAvailabilityGroup = availability_groups.name,
              @CurrentAvailabilityGroupRole = dm_hadr_availability_replica_states.role_desc
@@ -1055,10 +1052,7 @@ BEGIN
           IF @PartitionLevel = 'N' SET @CurrentCommand01 = @CurrentCommand01 + ', NULL AS PartitionID, NULL AS PartitionNumber, NULL AS PartitionCount'
           SET @CurrentCommand01 = @CurrentCommand01 + ', 0 AS [Order], 0 AS Selected, 0 AS Completed FROM ' + QUOTENAME(@CurrentDatabaseName) + '.sys.indexes indexes INNER JOIN ' + QUOTENAME(@CurrentDatabaseName) + '.sys.objects objects ON indexes.[object_id] = objects.[object_id] INNER JOIN ' + QUOTENAME(@CurrentDatabaseName) + '.sys.schemas schemas ON objects.[schema_id] = schemas.[schema_id] LEFT OUTER JOIN ' + QUOTENAME(@CurrentDatabaseName) + '.sys.tables tables ON objects.[object_id] = tables.[object_id] LEFT OUTER JOIN ' + QUOTENAME(@CurrentDatabaseName) + '.sys.stats stats ON indexes.[object_id] = stats.[object_id] AND indexes.[index_id] = stats.[stats_id]'
           IF @PartitionLevel = 'Y' SET @CurrentCommand01 = @CurrentCommand01 + ' LEFT OUTER JOIN ' + QUOTENAME(@CurrentDatabaseName) + '.sys.partitions partitions ON indexes.[object_id] = partitions.[object_id] AND indexes.index_id = partitions.index_id LEFT OUTER JOIN (SELECT partitions.[object_id], partitions.index_id, COUNT(DISTINCT partitions.partition_number) AS partition_count FROM ' + QUOTENAME(@CurrentDatabaseName) + '.sys.partitions partitions GROUP BY partitions.[object_id], partitions.index_id) IndexPartitions ON partitions.[object_id] = IndexPartitions.[object_id] AND partitions.[index_id] = IndexPartitions.[index_id]'
-          IF @PartitionLevel = 'Y' SET @CurrentCommand01 = @CurrentCommand01 + ' LEFT OUTER JOIN ' + QUOTENAME(@CurrentDatabaseName) + '.sys.dm_db_partition_stats dm_db_partition_stats ON indexes.[object_id] = dm_db_partition_stats.[object_id] AND indexes.[index_id] = dm_db_partition_stats.[index_id] AND partitions.partition_id = dm_db_partition_stats.partition_id'
-          IF @PartitionLevel = 'N' SET @CurrentCommand01 = @CurrentCommand01 + ' LEFT OUTER JOIN (SELECT dm_db_partition_stats.[object_id], dm_db_partition_stats.[index_id], SUM(dm_db_partition_stats.in_row_data_page_count) AS in_row_data_page_count FROM ' + QUOTENAME(@CurrentDatabaseName) + '.sys.dm_db_partition_stats dm_db_partition_stats GROUP BY dm_db_partition_stats.[object_id], dm_db_partition_stats.[index_id]) dm_db_partition_stats ON indexes.[object_id] = dm_db_partition_stats.[object_id] AND indexes.[index_id] = dm_db_partition_stats.[index_id]'
           SET @CurrentCommand01 = @CurrentCommand01 + ' WHERE objects.[type] IN(''U'',''V'')' + CASE WHEN @MSShippedObjects = 'N' THEN ' AND objects.is_ms_shipped = 0' ELSE '' END + ' AND indexes.[type] IN(1,2,3,4,5,6,7) AND indexes.is_disabled = 0 AND indexes.is_hypothetical = 0'
-          IF NOT EXISTS(SELECT * FROM @ActionsPreferred) SET @CurrentCommand01 = @CurrentCommand01 + ' AND stats.stats_id IS NOT NULL'
         END
 
         IF (EXISTS(SELECT * FROM @ActionsPreferred) AND @UpdateStatistics = 'COLUMNS') OR @UpdateStatistics = 'ALL' SET @CurrentCommand01 = @CurrentCommand01 + ' UNION '
@@ -1431,7 +1425,7 @@ BEGIN
         IF @CurrentIndexID IS NOT NULL
         AND @CurrentOnReadOnlyFileGroup = 0
         AND EXISTS(SELECT * FROM @ActionsPreferred)
-        AND (EXISTS(SELECT [Priority], [Action], COUNT(*) FROM @ActionsPreferred GROUP BY [Priority], [Action] HAVING COUNT(*) <> 3) OR @PageCountLevel > 0)
+        AND (EXISTS(SELECT [Priority], [Action], COUNT(*) FROM @ActionsPreferred GROUP BY [Priority], [Action] HAVING COUNT(*) <> 3) OR @MinNumberOfPages > 0 OR @MaxNumberOfPages IS NOT NULL)
         BEGIN
           SET @CurrentCommand12 = ''
           IF @LockTimeout IS NOT NULL SET @CurrentCommand12 = 'SET LOCK_TIMEOUT ' + CAST(@LockTimeout * 1000 AS nvarchar) + '; '
@@ -1493,7 +1487,8 @@ BEGIN
         -- Decide action
         IF @CurrentIndexID IS NOT NULL
         AND EXISTS(SELECT * FROM @ActionsPreferred)
-        AND (@CurrentPageCount >= @PageCountLevel OR @PageCountLevel = 0)
+        AND (@CurrentPageCount >= @MinNumberOfPages OR @MinNumberOfPages = 0)
+        AND (@CurrentPageCount <= @MaxNumberOfPages OR @MaxNumberOfPages IS NULL)
         BEGIN
           IF EXISTS(SELECT [Priority], [Action], COUNT(*) FROM @ActionsPreferred GROUP BY [Priority], [Action] HAVING COUNT(*) <> 3)
           BEGIN
