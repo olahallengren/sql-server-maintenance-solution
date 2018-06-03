@@ -5415,8 +5415,8 @@ BEGIN
                                                     + ', stats.no_recompute AS NoRecompute'
                                                     + ', ' + CASE WHEN @Version >= 12 THEN 'stats.is_incremental' ELSE 'NULL' END + ' AS IsIncremental'
                                                     + ', ' + CASE WHEN @PartitionLevel = 'Y' THEN 'partitions.partition_id AS PartitionID' WHEN @PartitionLevel = 'N' THEN 'NULL AS PartitionID' END
-                                                    + ', ' + CASE WHEN @PartitionLevel = 'Y' THEN 'partitions.partition_number AS PartitionNumber' WHEN @PartitionLevel = 'N' THEN 'NULL AS PartitionNumber, NULL AS PartitionCount' END
-                                                    + ', ' + CASE WHEN @PartitionLevel = 'Y' THEN 'IndexPartitions.partition_count AS PartitionCount' WHEN @PartitionLevel = 'N' THEN ', NULL AS PartitionCount' END
+                                                    + ', ' + CASE WHEN @PartitionLevel = 'Y' THEN 'partitions.partition_number AS PartitionNumber' WHEN @PartitionLevel = 'N' THEN 'NULL AS PartitionNumber' END
+                                                    + ', ' + CASE WHEN @PartitionLevel = 'Y' THEN 'IndexPartitions.partition_count AS PartitionCount' WHEN @PartitionLevel = 'N' THEN 'NULL AS PartitionCount' END
                                                     + ', 0 AS [Order]'
                                                     + ', 0 AS Selected'
                                                     + ', 0 AS Completed'
