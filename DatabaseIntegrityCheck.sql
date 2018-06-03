@@ -30,7 +30,9 @@ AS
 BEGIN
 
   ----------------------------------------------------------------------------------------------------
-  --// Source: https://ola.hallengren.com                                                         //--
+  --// Source:  https://ola.hallengren.com                                                        //--
+  --// License: https://ola.hallengren.com/license.html                                           //--
+  --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -983,16 +985,16 @@ BEGIN
                       ON @CurrentDatabaseName LIKE REPLACE(SelectedFileGroups.DatabaseName,'_','[_]') AND tmpFileGroups.FileGroupName LIKE REPLACE(SelectedFileGroups.FileGroupName,'_','[_]')
                       WHERE SelectedFileGroups.Selected = 1
                       GROUP BY tmpFileGroups.FileGroupName) SelectedFileGroups2
-          ON tmpFileGroups.FileGroupName = SelectedFileGroups2.FileGroupName;
+          ON tmpFileGroups.FileGroupName = SelectedFileGroups2.FileGroupName
+        END;
 
-          WITH tmpFileGroups AS (
-          SELECT FileGroupName, [Order], ROW_NUMBER() OVER (ORDER BY StartPosition ASC, FileGroupName ASC) AS RowNumber
-          FROM @tmpFileGroups tmpFileGroups
-          WHERE Selected = 1
-          )
-          UPDATE tmpFileGroups
-          SET [Order] = RowNumber
-        END
+        WITH tmpFileGroups AS (
+        SELECT FileGroupName, [Order], ROW_NUMBER() OVER (ORDER BY StartPosition ASC, FileGroupName ASC) AS RowNumber
+        FROM @tmpFileGroups tmpFileGroups
+        WHERE Selected = 1
+        )
+        UPDATE tmpFileGroups
+        SET [Order] = RowNumber
 
         SET @ErrorMessage = ''
         SELECT @ErrorMessage = @ErrorMessage + QUOTENAME(DatabaseName) + '.' + QUOTENAME(FileGroupName) + ', '
@@ -1138,16 +1140,16 @@ BEGIN
                       ON @CurrentDatabaseName LIKE REPLACE(SelectedObjects.DatabaseName,'_','[_]') AND tmpObjects.SchemaName LIKE REPLACE(SelectedObjects.SchemaName,'_','[_]') AND tmpObjects.ObjectName LIKE REPLACE(SelectedObjects.ObjectName,'_','[_]')
                       WHERE SelectedObjects.Selected = 1
                       GROUP BY tmpObjects.SchemaName, tmpObjects.ObjectName) SelectedObjects2
-          ON tmpObjects.SchemaName = SelectedObjects2.SchemaName AND tmpObjects.ObjectName = SelectedObjects2.ObjectName;
+          ON tmpObjects.SchemaName = SelectedObjects2.SchemaName AND tmpObjects.ObjectName = SelectedObjects2.ObjectName
+        END;
 
-          WITH tmpObjects AS (
-          SELECT SchemaName, ObjectName, [Order], ROW_NUMBER() OVER (ORDER BY StartPosition ASC, SchemaName ASC, ObjectName ASC) AS RowNumber
-          FROM @tmpObjects tmpObjects
-          WHERE Selected = 1
-          )
-          UPDATE tmpObjects
-          SET [Order] = RowNumber
-        END
+        WITH tmpObjects AS (
+        SELECT SchemaName, ObjectName, [Order], ROW_NUMBER() OVER (ORDER BY StartPosition ASC, SchemaName ASC, ObjectName ASC) AS RowNumber
+        FROM @tmpObjects tmpObjects
+        WHERE Selected = 1
+        )
+        UPDATE tmpObjects
+        SET [Order] = RowNumber
 
         SET @ErrorMessage = ''
         SELECT @ErrorMessage = @ErrorMessage + QUOTENAME(DatabaseName) + '.' + QUOTENAME(SchemaName) + '.' + QUOTENAME(ObjectName) + ', '
