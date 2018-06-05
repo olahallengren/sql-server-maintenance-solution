@@ -1142,7 +1142,7 @@ BEGIN
                                                     + ', stats.no_recompute AS NoRecompute'
                                                     + ', ' + CASE WHEN @Version >= 12 THEN 'stats.is_incremental' ELSE '0' END + ' AS IsIncremental'
                                                     + ', NULL AS PartitionID'
-                                                    + ', NULL AS partition_number'
+                                                    + ', NULL AS PartitionNumber'
                                                     + ', NULL AS PartitionCount'
                                                     + ', 0 AS [Order]'
                                                     + ', 0 AS Selected'
