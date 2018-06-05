@@ -28,12 +28,14 @@ DECLARE @BackupDirectory nvarchar(max)
 DECLARE @CleanupTime int
 DECLARE @OutputFileDirectory nvarchar(max)
 DECLARE @LogToTable nvarchar(max)
+DECLARE @LogCleanupDays int
 
 SET @CreateJobs          = 'Y'          -- Specify whether jobs should be created.
 SET @BackupDirectory     = N'C:\Backup' -- Specify the backup root directory.
 SET @CleanupTime         = NULL         -- Time in hours, after which backup files are deleted. If no time is specified, then no backup files are deleted.
 SET @OutputFileDirectory = NULL         -- Specify the output file directory. If no directory is specified, then the SQL Server error log directory is used.
 SET @LogToTable          = 'Y'          -- Log commands to a table.
+SET @LogCleanupDays      = 30           -- Number of days to keep logs/history (job history, maintenance logs, etc)
 
 IF IS_SRVROLEMEMBER('sysadmin') = 0 AND NOT (DB_ID('rdsadmin') IS NOT NULL AND SUSER_SNAME(0x01) = 'rdsa')
 BEGIN
@@ -50,6 +52,7 @@ INSERT INTO #Config ([Name], [Value]) VALUES('BackupDirectory', @BackupDirectory
 INSERT INTO #Config ([Name], [Value]) VALUES('CleanupTime', @CleanupTime)
 INSERT INTO #Config ([Name], [Value]) VALUES('OutputFileDirectory', @OutputFileDirectory)
 INSERT INTO #Config ([Name], [Value]) VALUES('LogToTable', @LogToTable)
+INSERT INTO #Config ([Name], [Value]) VALUES('LogCleanupDays', @LogCleanupDays)
 INSERT INTO #Config ([Name], [Value]) VALUES('DatabaseName', DB_NAME(DB_ID()))
 GO
 SET ANSI_NULLS ON
@@ -6148,6 +6151,7 @@ BEGIN
   DECLARE @CleanupTime int
   DECLARE @OutputFileDirectory nvarchar(max)
   DECLARE @LogToTable nvarchar(max)
+  DECLARE @LogCleanupDays int
   DECLARE @DatabaseName nvarchar(max)
 
   DECLARE @Version numeric(18,10)
@@ -6250,6 +6254,10 @@ BEGIN
   FROM #Config
   WHERE [Name] = 'LogToTable'
 
+  SELECT @LogCleanupDays = Value
+  FROM #Config
+  WHERE [Name] = 'LogCleanupDays'
+
   SELECT @DatabaseName = Value
   FROM #Config
   WHERE [Name] = 'DatabaseName'
@@ -6330,25 +6338,25 @@ BEGIN
 
   INSERT INTO @Jobs ([Name], CommandTSQL, DatabaseName, OutputFileNamePart01)
   SELECT 'sp_delete_backuphistory',
-         'DECLARE @CleanupDate datetime' + CHAR(13) + CHAR(10) + 'SET @CleanupDate = DATEADD(dd,-30,GETDATE())' + CHAR(13) + CHAR(10) + 'EXECUTE dbo.sp_delete_backuphistory @oldest_date = @CleanupDate',
+         'DECLARE @CleanupDate datetime' + CHAR(13) + CHAR(10) + 'SET @CleanupDate = DATEADD(dd,-' + ISNULL(CAST(@LogCleanupDays AS nvarchar),'0') + ',GETDATE())' + CHAR(13) + CHAR(10) + 'EXECUTE dbo.sp_delete_backuphistory @oldest_date = @CleanupDate',
          'msdb',
          'sp_delete_backuphistory'
 
   INSERT INTO @Jobs ([Name], CommandTSQL, DatabaseName, OutputFileNamePart01)
   SELECT 'sp_purge_jobhistory',
-         'DECLARE @CleanupDate datetime' + CHAR(13) + CHAR(10) + 'SET @CleanupDate = DATEADD(dd,-30,GETDATE())' + CHAR(13) + CHAR(10) + 'EXECUTE dbo.sp_purge_jobhistory @oldest_date = @CleanupDate',
+         'DECLARE @CleanupDate datetime' + CHAR(13) + CHAR(10) + 'SET @CleanupDate = DATEADD(dd,-' + ISNULL(CAST(@LogCleanupDays AS nvarchar),'0') + ',GETDATE())' + CHAR(13) + CHAR(10) + 'EXECUTE dbo.sp_purge_jobhistory @oldest_date = @CleanupDate',
          'msdb',
          'sp_purge_jobhistory'
 
   INSERT INTO @Jobs ([Name], CommandTSQL, DatabaseName, OutputFileNamePart01)
   SELECT 'CommandLog Cleanup',
-         'DELETE FROM [dbo].[CommandLog]' + CHAR(13) + CHAR(10) + 'WHERE StartTime < DATEADD(dd,-30,GETDATE())',
+         'DELETE FROM [dbo].[CommandLog]' + CHAR(13) + CHAR(10) + 'WHERE StartTime < DATEADD(dd,-' + ISNULL(CAST(@LogCleanupDays AS nvarchar),'0') + ',GETDATE())',
          @DatabaseName,
          'CommandLogCleanup'
 
   INSERT INTO @Jobs ([Name], CommandCmdExec, OutputFileNamePart01)
   SELECT 'Output File Cleanup',
-         'cmd /q /c "For /F "tokens=1 delims=" %v In (''ForFiles /P "' + COALESCE(@OutputFileDirectory,@TokenLogDirectory,@LogDirectory) + '" /m *_*_*_*.txt /d -30 2^>^&1'') do if EXIST "' + COALESCE(@OutputFileDirectory,@TokenLogDirectory,@LogDirectory) + '"\%v echo del "' + COALESCE(@OutputFileDirectory,@TokenLogDirectory,@LogDirectory) + '"\%v& del "' + COALESCE(@OutputFileDirectory,@TokenLogDirectory,@LogDirectory) + '"\%v"',
+         'cmd /q /c "For /F "tokens=1 delims=" %v In (''ForFiles /P "' + COALESCE(@OutputFileDirectory,@TokenLogDirectory,@LogDirectory) + '" /m *_*_*_*.txt /d -' + ISNULL(CAST(@LogCleanupDays AS nvarchar),'0') + ' 2^>^&1'') do if EXIST "' + COALESCE(@OutputFileDirectory,@TokenLogDirectory,@LogDirectory) + '"\%v echo del "' + COALESCE(@OutputFileDirectory,@TokenLogDirectory,@LogDirectory) + '"\%v& del "' + COALESCE(@OutputFileDirectory,@TokenLogDirectory,@LogDirectory) + '"\%v"',
          'OutputFileCleanup'
 
   IF @AmazonRDS = 1
