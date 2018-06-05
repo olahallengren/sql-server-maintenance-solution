@@ -122,8 +122,8 @@ BEGIN
   DECLARE @CurrentAllowPageLocks bit
   DECLARE @CurrentNoRecompute bit
   DECLARE @CurrentIsIncremental bit
-  DECLARE @CurrentRowCount int
-  DECLARE @CurrentModificationCounter int
+  DECLARE @CurrentRowCount bigint
+  DECLARE @CurrentModificationCounter bigint
   DECLARE @CurrentOnReadOnlyFileGroup bit
   DECLARE @CurrentFragmentationLevel float
   DECLARE @CurrentPageCount bigint

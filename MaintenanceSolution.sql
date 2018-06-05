@@ -12,7 +12,7 @@ GitHub: https://github.com/olahallengren/sql-server-maintenance-solution
 
 You can contact me by e-mail at ola@hallengren.com.
 
-Last updated 4 June, 2018.
+Last updated 5 June, 2018.
 
 Ola Hallengren
 https://ola.hallengren.com
@@ -4447,8 +4447,8 @@ BEGIN
   DECLARE @CurrentAllowPageLocks bit
   DECLARE @CurrentNoRecompute bit
   DECLARE @CurrentIsIncremental bit
-  DECLARE @CurrentRowCount int
-  DECLARE @CurrentModificationCounter int
+  DECLARE @CurrentRowCount bigint
+  DECLARE @CurrentModificationCounter bigint
   DECLARE @CurrentOnReadOnlyFileGroup bit
   DECLARE @CurrentFragmentationLevel float
   DECLARE @CurrentPageCount bigint
