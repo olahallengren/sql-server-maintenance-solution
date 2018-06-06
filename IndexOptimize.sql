@@ -68,6 +68,8 @@ BEGIN
   DECLARE @HostPlatform nvarchar(max)
   DECLARE @AmazonRDS bit
 
+  DECLARE @PartitionLevelStatistics bit
+
   DECLARE @CurrentDBID int
   DECLARE @CurrentDatabaseID int
   DECLARE @CurrentDatabaseName nvarchar(max)
@@ -952,6 +954,12 @@ BEGIN
   END
 
   ----------------------------------------------------------------------------------------------------
+  --// Should statistics be updated on the partition level?                                       //--
+  ----------------------------------------------------------------------------------------------------
+
+  SET @PartitionLevelStatistics = CASE WHEN @PartitionLevel = 'Y' AND ((@Version >= 12.05 AND @Version < 13) OR @Version >= 13.04422 OR SERVERPROPERTY('EngineEdition') IN (5,8)) THEN 1 ELSE 0 END
+
+  ----------------------------------------------------------------------------------------------------
   --// Execute commands                                                                           //--
   ----------------------------------------------------------------------------------------------------
 
@@ -1142,7 +1150,7 @@ BEGIN
                                                     + ', stats.no_recompute AS NoRecompute'
                                                     + ', ' + CASE WHEN @Version >= 12 THEN 'stats.is_incremental' ELSE '0' END + ' AS IsIncremental'
                                                     + ', NULL AS PartitionID'
-                                                    + ', NULL AS PartitionNumber'
+                                                    + ', ' + CASE WHEN @PartitionLevelStatistics = 1 THEN 'dm_db_incremental_stats_properties.partition_number' ELSE 'NULL' END + ' AS PartitionNumber'
                                                     + ', NULL AS PartitionCount'
                                                     + ', 0 AS [Order]'
                                                     + ', 0 AS Selected'
@@ -1151,6 +1159,11 @@ BEGIN
                                                     + ' INNER JOIN sys.objects objects ON stats.[object_id] = objects.[object_id]'
                                                     + ' INNER JOIN sys.schemas schemas ON objects.[schema_id] = schemas.[schema_id]'
                                                     + ' LEFT OUTER JOIN sys.tables tables ON objects.[object_id] = tables.[object_id]'
+
+          IF @PartitionLevelStatistics = 1
+          BEGIN
+            SET @CurrentCommand01 = @CurrentCommand01 + ' OUTER APPLY sys.dm_db_incremental_stats_properties(stats.object_id, stats.stats_id) dm_db_incremental_stats_properties'
+          END
 
           SET @CurrentCommand01 = @CurrentCommand01 + ' WHERE objects.[type] IN(''U'',''V'')'
                                                     + CASE WHEN @MSShippedObjects = 'N' THEN ' AND objects.is_ms_shipped = 0' ELSE '' END
@@ -1344,6 +1357,11 @@ BEGIN
           IF @LockTimeout IS NOT NULL SET @CurrentCommand04 = 'SET LOCK_TIMEOUT ' + CAST(@LockTimeout * 1000 AS nvarchar) + '; '
           SET @CurrentCommand04 = @CurrentCommand04 + 'USE ' + QUOTENAME(@CurrentDatabaseName) + '; '
 
+          IF @PartitionLevelStatistics = 1 AND @CurrentIsIncremental = 1
+          BEGIN
+            SET @CurrentCommand04 = @CurrentCommand04 + 'SELECT @ParamRowCount = [rows], @ParamModificationCounter = modification_counter FROM sys.dm_db_incremental_stats_properties (@ParamObjectID, @ParamStatisticsID) WHERE partition_number = @ParamPartitionNumber'
+          END
+          ELSE
           IF (@Version >= 10.504000 AND @Version < 11) OR @Version >= 11.03000
           BEGIN
             SET @CurrentCommand04 = @CurrentCommand04 + 'SELECT @ParamRowCount = [rows], @ParamModificationCounter = modification_counter FROM sys.dm_db_stats_properties (@ParamObjectID, @ParamStatisticsID)'
@@ -1476,7 +1494,8 @@ BEGIN
         IF @CurrentStatisticsID IS NOT NULL
         AND ((@UpdateStatistics = 'ALL' AND (@CurrentIndexType IN (1,2,3,4,7) OR @CurrentIndexID IS NULL)) OR (@UpdateStatistics = 'INDEX' AND @CurrentIndexID IS NOT NULL AND @CurrentIndexType IN (1,2,3,4,7)) OR (@UpdateStatistics = 'COLUMNS' AND @CurrentIndexID IS NULL))
         AND (@CurrentModificationCounter > 0 OR @OnlyModifiedStatistics = 'N' OR (@CurrentIsMemoryOptimized = 1 AND NOT (@Version >= 13 OR SERVERPROPERTY('EngineEdition') IN (5,8))))
-        AND ((@CurrentIsPartition = 0 AND (@CurrentAction NOT IN('INDEX_REBUILD_ONLINE','INDEX_REBUILD_OFFLINE') OR @CurrentAction IS NULL)) OR (@CurrentIsPartition = 1 AND @CurrentPartitionNumber = @CurrentPartitionCount))
+        AND ((@CurrentIsPartition = 0 AND (@CurrentAction NOT IN('INDEX_REBUILD_ONLINE','INDEX_REBUILD_OFFLINE') OR @CurrentAction IS NULL)) OR (@CurrentIsPartition = 1 AND (@CurrentPartitionNumber = @CurrentPartitionCount OR (@PartitionLevelStatistics = 1 AND @CurrentIsIncremental = 1))))
+
         BEGIN
           SET @CurrentUpdateStatistics = 'Y'
         END
@@ -1495,6 +1514,12 @@ BEGIN
           SET @CurrentStatisticsResample = 'Y'
         END
 
+        -- Incremental statistics only supports RESAMPLE
+        IF @PartitionLevelStatistics = 1 AND @CurrentIsIncremental = 1
+        BEGIN
+          SET @CurrentStatisticsSample = NULL
+          SET @CurrentStatisticsResample = 'Y'
+        END
 
         -- Create index comment
         IF @CurrentIndexID IS NOT NULL
@@ -1642,6 +1667,12 @@ BEGIN
           IF @LockTimeout IS NOT NULL SET @CurrentCommand07 = 'SET LOCK_TIMEOUT ' + CAST(@LockTimeout * 1000 AS nvarchar) + '; '
           SET @CurrentCommand07 = @CurrentCommand07 + 'UPDATE STATISTICS ' + QUOTENAME(@CurrentDatabaseName) + '.' + QUOTENAME(@CurrentSchemaName) + '.' + QUOTENAME(@CurrentObjectName) + ' ' + QUOTENAME(@CurrentStatisticsName)
 
+          IF @CurrentMaxDOP IS NOT NULL AND ((@Version >= 13.05026 AND @Version < 14) OR @Version >= 14.030154)
+          BEGIN
+            INSERT INTO @CurrentUpdateStatisticsWithClauseArguments (Argument)
+            SELECT 'MAXDOP = ' + CAST(@CurrentMaxDOP AS nvarchar)
+          END
+
           IF @CurrentStatisticsSample = 100
           BEGIN
             INSERT INTO @CurrentUpdateStatisticsWithClauseArguments (Argument)
@@ -1666,12 +1697,6 @@ BEGIN
             SELECT 'NORECOMPUTE'
           END
 
-          IF @CurrentMaxDOP IS NOT NULL AND ((@Version >= 13.05026 AND @Version < 14) OR @Version >= 14.030154)
-          BEGIN
-            INSERT INTO @CurrentUpdateStatisticsWithClauseArguments (Argument)
-            SELECT 'MAXDOP = ' + CAST(@CurrentMaxDOP AS nvarchar)
-          END
-
           IF EXISTS (SELECT * FROM @CurrentUpdateStatisticsWithClauseArguments)
           BEGIN
             SET @CurrentUpdateStatisticsWithClause = ' WITH'
@@ -1684,6 +1709,8 @@ BEGIN
           END
 
           IF @CurrentUpdateStatisticsWithClause IS NOT NULL SET @CurrentCommand07 = @CurrentCommand07 + @CurrentUpdateStatisticsWithClause
+
+          IF @PartitionLevelStatistics = 1 AND @CurrentIsIncremental = 1 AND @CurrentPartitionNumber IS NOT NULL SET @CurrentCommand07 = @CurrentCommand07 + ' ON PARTITIONS(' + CAST(@CurrentPartitionNumber AS nvarchar(max)) + ')'
 
           EXECUTE @CurrentCommandOutput07 = [dbo].[CommandExecute] @Command = @CurrentCommand07, @CommandType = @CurrentCommandType07, @Mode = 2, @Comment = @CurrentComment07, @DatabaseName = @CurrentDatabaseName, @SchemaName = @CurrentSchemaName, @ObjectName = @CurrentObjectName, @ObjectType = @CurrentObjectType, @IndexName = @CurrentIndexName, @IndexType = @CurrentIndexType, @StatisticsName = @CurrentStatisticsName, @ExtendedInfo = @CurrentExtendedInfo07, @LogToTable = @LogToTable, @Execute = @Execute
           SET @Error = @@ERROR
