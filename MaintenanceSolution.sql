@@ -10,7 +10,7 @@ License: https://ola.hallengren.com/license.html
 
 GitHub: https://github.com/olahallengren/sql-server-maintenance-solution
 
-Version: 2018-06-10 14:25:42
+Version: 2018-06-10 16:09:01
 
 You can contact me by e-mail at ola@hallengren.com.
 
@@ -117,7 +117,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2018-06-10 14:25:42                                                               //--
+  --// Version: 2018-06-10 16:09:01                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -364,7 +364,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2018-06-10 14:25:42                                                               //--
+  --// Version: 2018-06-10 16:09:01                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -377,6 +377,7 @@ BEGIN
   DECLARE @StartTime datetime
   DECLARE @SchemaName nvarchar(max)
   DECLARE @ObjectName nvarchar(max)
+  DECLARE @VersionTimestamp nvarchar(max)
   DECLARE @Parameters nvarchar(max)
 
   DECLARE @Version numeric(18,10)
@@ -538,6 +539,7 @@ BEGIN
   SET @StartTime = GETDATE()
   SET @SchemaName = (SELECT schemas.name FROM sys.schemas schemas INNER JOIN sys.objects objects ON schemas.[schema_id] = objects.[schema_id] WHERE [object_id] = @@PROCID)
   SET @ObjectName = OBJECT_NAME(@@PROCID)
+  SET @VersionTimestamp = SUBSTRING(OBJECT_DEFINITION(@@PROCID),CHARINDEX('--// Version: ',OBJECT_DEFINITION(@@PROCID)) + LEN('--// Version: ') + 1, 19)
 
   SET @Parameters = '@Databases = ' + ISNULL('''' + REPLACE(@Databases,'''','''''') + '''','NULL')
   SET @Parameters = @Parameters + ', @Directory = ' + ISNULL('''' + REPLACE(@Directory,'''','''''') + '''','NULL')
@@ -612,6 +614,9 @@ BEGIN
 
   SET @StartMessage = 'Parameters: ' + @Parameters
   SET @StartMessage = REPLACE(@StartMessage,'%','%%')
+  RAISERROR(@StartMessage,10,1) WITH NOWAIT
+
+  SET @StartMessage = 'Version: ' + @VersionTimestamp
   RAISERROR(@StartMessage,10,1) WITH NOWAIT
 
   SET @StartMessage = 'Source: https://ola.hallengren.com' + CHAR(13) + CHAR(10) + ' '
@@ -3045,7 +3050,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2018-06-10 14:25:42                                                               //--
+  --// Version: 2018-06-10 16:09:01                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -3058,6 +3063,7 @@ BEGIN
   DECLARE @StartTime datetime
   DECLARE @SchemaName nvarchar(max)
   DECLARE @ObjectName nvarchar(max)
+  DECLARE @VersionTimestamp nvarchar(max)
   DECLARE @Parameters nvarchar(max)
 
   DECLARE @Version numeric(18,10)
@@ -3198,6 +3204,7 @@ BEGIN
   SET @StartTime = GETDATE()
   SET @SchemaName = (SELECT schemas.name FROM sys.schemas schemas INNER JOIN sys.objects objects ON schemas.[schema_id] = objects.[schema_id] WHERE [object_id] = @@PROCID)
   SET @ObjectName = OBJECT_NAME(@@PROCID)
+  SET @VersionTimestamp = SUBSTRING(OBJECT_DEFINITION(@@PROCID),CHARINDEX('--// Version: ',OBJECT_DEFINITION(@@PROCID)) + LEN('--// Version: ') + 1, 19)
 
   SET @Parameters = '@Databases = ' + ISNULL('''' + REPLACE(@Databases,'''','''''') + '''','NULL')
   SET @Parameters = @Parameters + ', @CheckCommands = ' + ISNULL('''' + REPLACE(@CheckCommands,'''','''''') + '''','NULL')
@@ -3235,6 +3242,9 @@ BEGIN
 
   SET @StartMessage = 'Parameters: ' + @Parameters
   SET @StartMessage = REPLACE(@StartMessage,'%','%%')
+  RAISERROR(@StartMessage,10,1) WITH NOWAIT
+
+  SET @StartMessage = 'Version: ' + @VersionTimestamp
   RAISERROR(@StartMessage,10,1) WITH NOWAIT
 
   SET @StartMessage = 'Source: https://ola.hallengren.com' + CHAR(13) + CHAR(10) + ' '
@@ -4388,7 +4398,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2018-06-10 14:25:42                                                               //--
+  --// Version: 2018-06-10 16:09:01                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -4405,6 +4415,7 @@ BEGIN
   DECLARE @StartTime datetime
   DECLARE @SchemaName nvarchar(max)
   DECLARE @ObjectName nvarchar(max)
+  DECLARE @VersionTimestamp nvarchar(max)
   DECLARE @Parameters nvarchar(max)
 
   DECLARE @Version numeric(18,10)
@@ -4600,6 +4611,7 @@ BEGIN
   SET @StartTime = GETDATE()
   SET @SchemaName = (SELECT schemas.name FROM sys.schemas schemas INNER JOIN sys.objects objects ON schemas.[schema_id] = objects.[schema_id] WHERE [object_id] = @@PROCID)
   SET @ObjectName = OBJECT_NAME(@@PROCID)
+  SET @VersionTimestamp = SUBSTRING(OBJECT_DEFINITION(@@PROCID),CHARINDEX('--// Version: ',OBJECT_DEFINITION(@@PROCID)) + LEN('--// Version: ') + 1, 19)
 
   SET @Parameters = '@Databases = ' + ISNULL('''' + REPLACE(@Databases,'''','''''') + '''','NULL')
   SET @Parameters = @Parameters + ', @FragmentationLow = ' + ISNULL('''' + REPLACE(@FragmentationLow,'''','''''') + '''','NULL')
@@ -4651,6 +4663,9 @@ BEGIN
 
   SET @StartMessage = 'Parameters: ' + @Parameters
   SET @StartMessage = REPLACE(@StartMessage,'%','%%')
+  RAISERROR(@StartMessage,10,1) WITH NOWAIT
+
+  SET @StartMessage = 'Version: ' + @VersionTimestamp
   RAISERROR(@StartMessage,10,1) WITH NOWAIT
 
   SET @StartMessage = 'Source: https://ola.hallengren.com' + CHAR(13) + CHAR(10) + ' '
