@@ -6,13 +6,13 @@ Backup: https://ola.hallengren.com/sql-server-backup.html
 Integrity Check: https://ola.hallengren.com/sql-server-integrity-check.html
 Index and Statistics Maintenance: https://ola.hallengren.com/sql-server-index-and-statistics-maintenance.html
 
-The solution is free: https://ola.hallengren.com/license.html
+License: https://ola.hallengren.com/license.html
 
 GitHub: https://github.com/olahallengren/sql-server-maintenance-solution
 
-You can contact me by e-mail at ola@hallengren.com.
+Version: 2018-06-10 14:25:42
 
-Last updated 9 June, 2018.
+You can contact me by e-mail at ola@hallengren.com.
 
 Ola Hallengren
 https://ola.hallengren.com
@@ -117,6 +117,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
+  --// Version: 2018-06-10 14:25:42                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -363,6 +364,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
+  --// Version: 2018-06-10 14:25:42                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -3043,6 +3045,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
+  --// Version: 2018-06-10 14:25:42                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -4385,6 +4388,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
+  --// Version: 2018-06-10 14:25:42                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
