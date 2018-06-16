@@ -21,7 +21,9 @@ ALTER PROCEDURE [dbo].[DatabaseIntegrityCheck]
 @AvailabilityGroups nvarchar(max) = NULL,
 @AvailabilityGroupReplicas nvarchar(max) = 'ALL',
 @Updateability nvarchar(max) = 'ALL',
+@TimeLimit int = NULL,
 @LockTimeout int = NULL,
+@DatabaseOrder nvarchar(max) = NULL,
 @LogToTable nvarchar(max) = 'N',
 @Execute nvarchar(max) = 'Y'
 
@@ -33,7 +35,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2018-06-15 10:37:58                                                               //--
+  --// Version: 2018-06-16 14:27:00                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -59,6 +61,8 @@ BEGIN
   DECLARE @CurrentIsDatabaseAccessible bit
   DECLARE @CurrentAvailabilityGroup nvarchar(max)
   DECLARE @CurrentAvailabilityGroupRole nvarchar(max)
+  DECLARE @CurrentAvailabilityGroupBackupPreference nvarchar(max)
+  DECLARE @CurrentIsPreferredBackupReplica bit
   DECLARE @CurrentDatabaseMirroringRole nvarchar(max)
   DECLARE @CurrentIsReadOnly bit
 
@@ -103,6 +107,9 @@ BEGIN
                                AvailabilityGroup bit,
                                [Snapshot] bit,
                                StartPosition int,
+                               LastCommandTime datetime,
+                               DatabaseSize bigint,
+                               LastGoodCheckDbTime datetime,
                                [Order] int,
                                Selected bit,
                                Completed bit,
@@ -201,7 +208,9 @@ BEGIN
   SET @Parameters = @Parameters + ', @AvailabilityGroups = ' + ISNULL('''' + REPLACE(@AvailabilityGroups,'''','''''') + '''','NULL')
   SET @Parameters = @Parameters + ', @AvailabilityGroupReplicas = ' + ISNULL('''' + REPLACE(@AvailabilityGroupReplicas,'''','''''') + '''','NULL')
   SET @Parameters = @Parameters + ', @Updateability = ' + ISNULL('''' + REPLACE(@Updateability,'''','''''') + '''','NULL')
+  SET @Parameters = @Parameters + ', @TimeLimit = ' + ISNULL(CAST(@TimeLimit AS nvarchar),'NULL')
   SET @Parameters = @Parameters + ', @LockTimeout = ' + ISNULL(CAST(@LockTimeout AS nvarchar),'NULL')
+  SET @Parameters = @Parameters + ', @DatabaseOrder = ' + ISNULL('''' + REPLACE(@DatabaseOrder,'''','''''') + '''','NULL')
   SET @Parameters = @Parameters + ', @LogToTable = ' + ISNULL('''' + REPLACE(@LogToTable,'''','''''') + '''','NULL')
   SET @Parameters = @Parameters + ', @Execute = ' + ISNULL('''' + REPLACE(@Execute,'''','''''') + '''','NULL')
 
@@ -336,11 +345,13 @@ BEGIN
     INNER JOIN sys.availability_groups availability_groups ON availability_databases_cluster.group_id = availability_groups.group_id
   END
 
-  INSERT INTO @tmpDatabases (DatabaseName, DatabaseType, AvailabilityGroup, [Snapshot], [Order], Selected, Completed)
+  INSERT INTO @tmpDatabases (DatabaseName, DatabaseType, AvailabilityGroup, [Snapshot], DatabaseSize, LastGoodCheckDbTime, [Order], Selected, Completed)
   SELECT [name] AS DatabaseName,
           CASE WHEN name IN('master','msdb','model') THEN 'S' ELSE 'U' END AS DatabaseType,
           NULL AS AvailabilityGroup,
           CASE WHEN source_database_id IS NOT NULL THEN 1 ELSE 0 END AS [Snapshot],
+          (SELECT SUM(size) FROM sys.master_files WHERE [type] = 0 AND database_id = sys.databases.database_id) AS DatabaseSize,
+          NULLIF(CAST(DATABASEPROPERTYEX (name,'LastGoodCheckDbTime') AS datetime),'1900-01-01 00:00:00.000') AS LastGoodCheckDbTime,
           0 AS [Order],
           0 AS Selected,
           0 AS Completed
@@ -499,19 +510,7 @@ BEGIN
     SET @ErrorMessage = 'You can only specify one of the parameters @Databases and @AvailabilityGroups.' + CHAR(13) + CHAR(10) + ' '
     RAISERROR(@ErrorMessage,16,1) WITH NOWAIT
     SET @Error = @@ERROR
-  END;
-
-  ----------------------------------------------------------------------------------------------------
-  --// Update database order                                                                      //--
-  ----------------------------------------------------------------------------------------------------
-
-  WITH tmpDatabases AS (
-  SELECT DatabaseName, [Order], ROW_NUMBER() OVER (ORDER BY StartPosition ASC, DatabaseName ASC) AS RowNumber
-  FROM @tmpDatabases tmpDatabases
-  WHERE Selected = 1
-  )
-  UPDATE tmpDatabases
-  SET [Order] = RowNumber
+  END
 
   ----------------------------------------------------------------------------------------------------
   --// Select filegroups                                                                          //--
@@ -700,7 +699,7 @@ BEGIN
     SET @Error = @@ERROR
   END
 
-  IF @AvailabilityGroupReplicas NOT IN('ALL','PRIMARY','SECONDARY') OR @AvailabilityGroupReplicas IS NULL
+  IF @AvailabilityGroupReplicas NOT IN('ALL','PRIMARY','SECONDARY','PREFERRED_BACKUP_REPLICA') OR @AvailabilityGroupReplicas IS NULL
   BEGIN
     SET @ErrorMessage = 'The value for the parameter @AvailabilityGroupReplicas is not supported.' + CHAR(13) + CHAR(10) + ' '
     RAISERROR(@ErrorMessage,16,1) WITH NOWAIT
@@ -714,9 +713,23 @@ BEGIN
     SET @Error = @@ERROR
   END
 
+  IF @TimeLimit < 0
+  BEGIN
+    SET @ErrorMessage = 'The value for the parameter @TimeLimit is not supported.' + CHAR(13) + CHAR(10) + ' '
+    RAISERROR(@ErrorMessage,16,1) WITH NOWAIT
+    SET @Error = @@ERROR
+  END
+
   IF @LockTimeout < 0
   BEGIN
     SET @ErrorMessage = 'The value for the parameter @LockTimeout is not supported.' + CHAR(13) + CHAR(10) + ' '
+    RAISERROR(@ErrorMessage,16,1) WITH NOWAIT
+    SET @Error = @@ERROR
+  END
+
+  IF @DatabaseOrder NOT IN('DATABASE_NAME_ASC','DATABASE_NAME_DESC','DATABASE_SIZE_ASC','DATABASE_SIZE_DESC','DATABASE_LAST_GOOD_CHECK_ASC','DATABASE_LAST_GOOD_CHECK_DESC','REPLICA_LAST_GOOD_CHECK_ASC','REPLICA_LAST_GOOD_CHECK_DESC') OR (@DatabaseOrder IN('DATABASE_LAST_GOOD_CHECK_ASC','DATABASE_LAST_GOOD_CHECK_DESC') AND NOT (@Version >= 13.05026 AND @Version < 14)) OR (@DatabaseOrder IN('REPLICA_LAST_GOOD_CHECK_ASC','REPLICA_LAST_GOOD_CHECK_DESC') AND @LogToTable = 'N') OR (@DatabaseOrder IN('DATABASE_LAST_GOOD_CHECK_ASC','DATABASE_LAST_GOOD_CHECK_DESC','REPLICA_LAST_GOOD_CHECK_ASC','REPLICA_LAST_GOOD_CHECK_DESC') AND @CheckCommands <> 'CHECKDB')
+  BEGIN
+    SET @ErrorMessage = 'The value for the parameter @DatabaseOrder is not supported.' + CHAR(13) + CHAR(10) + ' '
     RAISERROR(@ErrorMessage,16,1) WITH NOWAIT
     SET @Error = @@ERROR
   END
@@ -822,6 +835,133 @@ BEGIN
   END
 
   ----------------------------------------------------------------------------------------------------
+  --// Check @@SERVERNAME                                                                         //--
+  ----------------------------------------------------------------------------------------------------
+
+  IF @@SERVERNAME <> CAST(SERVERPROPERTY('ServerName') AS nvarchar(max)) AND SERVERPROPERTY('IsHadrEnabled') = 1
+  BEGIN
+    SET @ErrorMessage = 'The @@SERVERNAME does not match SERVERPROPERTY(''ServerName''). See ' + CASE WHEN SERVERPROPERTY('IsClustered') = 0 THEN 'https://docs.microsoft.com/en-us/sql/database-engine/install-windows/rename-a-computer-that-hosts-a-stand-alone-instance-of-sql-server' WHEN SERVERPROPERTY('IsClustered') = 1 THEN 'https://docs.microsoft.com/en-us/sql/sql-server/failover-clusters/install/rename-a-sql-server-failover-cluster-instance' END + '.' + CHAR(13) + CHAR(10) + ' '
+    RAISERROR(@ErrorMessage,16,1) WITH NOWAIT
+    SET @Error = @@ERROR
+  END
+
+  ----------------------------------------------------------------------------------------------------
+  --// Update database order                                                                      //--
+  ----------------------------------------------------------------------------------------------------
+
+  IF @DatabaseOrder IN('REPLICA_LAST_GOOD_CHECK_ASC','REPLICA_LAST_GOOD_CHECK_DESC')
+    BEGIN
+    UPDATE tmpDatabases
+    SET LastCommandTime = MaxStartTime
+    FROM @tmpDatabases tmpDatabases
+    INNER JOIN (SELECT DatabaseName, MAX(StartTime) AS MaxStartTime
+                FROM dbo.CommandLog
+                WHERE CommandType = 'DBCC_CHECKDB'
+                AND ErrorNumber = 0
+                GROUP BY DatabaseName) CommandLog
+    ON tmpDatabases.DatabaseName = CommandLog.DatabaseName
+  END
+
+  IF @DatabaseOrder IS NULL
+  BEGIN
+    WITH tmpDatabases AS (
+    SELECT DatabaseName, [Order], ROW_NUMBER() OVER (ORDER BY StartPosition ASC, DatabaseName ASC) AS RowNumber
+    FROM @tmpDatabases tmpDatabases
+    WHERE Selected = 1
+    )
+    UPDATE tmpDatabases
+    SET [Order] = RowNumber
+  END
+  ELSE
+  IF @DatabaseOrder = 'DATABASE_NAME_ASC'
+  BEGIN
+    WITH tmpDatabases AS (
+    SELECT DatabaseName, [Order], ROW_NUMBER() OVER (ORDER BY DatabaseName ASC) AS RowNumber
+    FROM @tmpDatabases tmpDatabases
+    WHERE Selected = 1
+    )
+    UPDATE tmpDatabases
+    SET [Order] = RowNumber
+  END
+  ELSE
+  IF @DatabaseOrder = 'DATABASE_NAME_DESC'
+  BEGIN
+    WITH tmpDatabases AS (
+    SELECT DatabaseName, [Order], ROW_NUMBER() OVER (ORDER BY DatabaseName DESC) AS RowNumber
+    FROM @tmpDatabases tmpDatabases
+    WHERE Selected = 1
+    )
+    UPDATE tmpDatabases
+    SET [Order] = RowNumber
+  END
+  ELSE
+  IF @DatabaseOrder = 'DATABASE_SIZE_ASC'
+  BEGIN
+    WITH tmpDatabases AS (
+    SELECT DatabaseName, [Order], ROW_NUMBER() OVER (ORDER BY DatabaseSize ASC) AS RowNumber
+    FROM @tmpDatabases tmpDatabases
+    WHERE Selected = 1
+    )
+    UPDATE tmpDatabases
+    SET [Order] = RowNumber
+  END
+  ELSE
+  IF @DatabaseOrder = 'DATABASE_SIZE_DESC'
+  BEGIN
+    WITH tmpDatabases AS (
+    SELECT DatabaseName, [Order], ROW_NUMBER() OVER (ORDER BY DatabaseSize DESC) AS RowNumber
+    FROM @tmpDatabases tmpDatabases
+    WHERE Selected = 1
+    )
+    UPDATE tmpDatabases
+    SET [Order] = RowNumber
+  END
+  ELSE
+  IF @DatabaseOrder = 'DATABASE_LAST_GOOD_CHECK_ASC'
+  BEGIN
+    WITH tmpDatabases AS (
+    SELECT DatabaseName, [Order], ROW_NUMBER() OVER (ORDER BY LastGoodCheckDbTime ASC) AS RowNumber
+    FROM @tmpDatabases tmpDatabases
+    WHERE Selected = 1
+    )
+    UPDATE tmpDatabases
+    SET [Order] = RowNumber
+  END
+  ELSE
+  IF @DatabaseOrder = 'DATABASE_LAST_GOOD_CHECK_DESC'
+  BEGIN
+    WITH tmpDatabases AS (
+    SELECT DatabaseName, [Order], ROW_NUMBER() OVER (ORDER BY LastGoodCheckDbTime DESC) AS RowNumber
+    FROM @tmpDatabases tmpDatabases
+    WHERE Selected = 1
+    )
+    UPDATE tmpDatabases
+    SET [Order] = RowNumber
+  END
+  ELSE
+  IF @DatabaseOrder = 'REPLICA_LAST_GOOD_CHECK_ASC'
+  BEGIN
+    WITH tmpDatabases AS (
+    SELECT DatabaseName, [Order], ROW_NUMBER() OVER (ORDER BY LastCommandTime ASC) AS RowNumber
+    FROM @tmpDatabases tmpDatabases
+    WHERE Selected = 1
+    )
+    UPDATE tmpDatabases
+    SET [Order] = RowNumber
+  END
+  ELSE
+  IF @DatabaseOrder = 'REPLICA_LAST_GOOD_CHECK_DESC'
+  BEGIN
+    WITH tmpDatabases AS (
+    SELECT DatabaseName, [Order], ROW_NUMBER() OVER (ORDER BY LastCommandTime DESC) AS RowNumber
+    FROM @tmpDatabases tmpDatabases
+    WHERE Selected = 1
+    )
+    UPDATE tmpDatabases
+    SET [Order] = RowNumber
+  END
+
+  ----------------------------------------------------------------------------------------------------
   --// Execute commands                                                                           //--
   ----------------------------------------------------------------------------------------------------
 
@@ -857,12 +997,18 @@ BEGIN
     IF @Version >= 11 AND SERVERPROPERTY('IsHadrEnabled') = 1
     BEGIN
       SELECT @CurrentAvailabilityGroup = availability_groups.name,
-             @CurrentAvailabilityGroupRole = dm_hadr_availability_replica_states.role_desc
+             @CurrentAvailabilityGroupRole = dm_hadr_availability_replica_states.role_desc,
+             @CurrentAvailabilityGroupBackupPreference = UPPER(availability_groups.automated_backup_preference_desc)
       FROM sys.databases databases
       INNER JOIN sys.availability_databases_cluster availability_databases_cluster ON databases.group_database_id = availability_databases_cluster.group_database_id
       INNER JOIN sys.availability_groups availability_groups ON availability_databases_cluster.group_id = availability_groups.group_id
       INNER JOIN sys.dm_hadr_availability_replica_states dm_hadr_availability_replica_states ON availability_groups.group_id = dm_hadr_availability_replica_states.group_id AND databases.replica_id = dm_hadr_availability_replica_states.replica_id
       WHERE databases.name = @CurrentDatabaseName
+    END
+
+    IF @Version >= 11 AND SERVERPROPERTY('IsHadrEnabled') = 1 AND @CurrentAvailabilityGroup IS NOT NULL AND @AvailabilityGroupReplicas = 'PREFERRED_BACKUP_REPLICA'
+    BEGIN
+      SELECT @CurrentIsPreferredBackupReplica = sys.fn_hadr_backup_is_preferred_replica(@CurrentDatabaseName)
     END
 
     IF SERVERPROPERTY('EngineEdition') <> 5
@@ -910,6 +1056,15 @@ BEGIN
 
       SET @DatabaseMessage = 'Availability group role: ' + @CurrentAvailabilityGroupRole
       RAISERROR(@DatabaseMessage,10,1) WITH NOWAIT
+
+      IF @AvailabilityGroupReplicas = 'PREFERRED_BACKUP_REPLICA'
+      BEGIN
+        SET @DatabaseMessage = 'Availability group backup preference: ' + @CurrentAvailabilityGroupBackupPreference
+        RAISERROR(@DatabaseMessage,10,1) WITH NOWAIT
+
+        SET @DatabaseMessage = 'Is preferred backup replica: ' + CASE WHEN @CurrentIsPreferredBackupReplica = 1 THEN 'Yes' WHEN @CurrentIsPreferredBackupReplica = 0 THEN 'No' ELSE 'N/A' END
+        RAISERROR(@DatabaseMessage,10,1) WITH NOWAIT
+      END
     END
 
     IF @CurrentDatabaseMirroringRole IS NOT NULL
@@ -923,13 +1078,13 @@ BEGIN
     IF DATABASEPROPERTYEX(@CurrentDatabaseName,'Status') = 'ONLINE'
     AND (@CurrentIsDatabaseAccessible = 1 OR @CurrentIsDatabaseAccessible IS NULL)
     AND (@CurrentAvailabilityGroupRole = 'PRIMARY' OR @CurrentAvailabilityGroupRole IS NULL OR SERVERPROPERTY('EngineEdition') = 3)
-    AND (@CurrentAvailabilityGroupRole = @AvailabilityGroupReplicas OR @AvailabilityGroupReplicas = 'ALL' OR @CurrentAvailabilityGroupRole IS NULL)
+    AND ((@AvailabilityGroupReplicas = 'PRIMARY' AND @CurrentAvailabilityGroupRole = 'PRIMARY') OR (@AvailabilityGroupReplicas = 'SECONDARY' AND @CurrentAvailabilityGroupRole = 'SECONDARY') OR (@AvailabilityGroupReplicas = 'PREFERRED_BACKUP_REPLICA' AND @CurrentIsPreferredBackupReplica = 1) OR @AvailabilityGroupReplicas = 'ALL' OR @CurrentAvailabilityGroupRole IS NULL)
     AND NOT (@CurrentIsReadOnly = 1 AND @Updateability = 'READ_WRITE')
     AND NOT (@CurrentIsReadOnly = 0 AND @Updateability = 'READ_ONLY')
     BEGIN
 
       -- Check database
-      IF EXISTS(SELECT * FROM @SelectedCheckCommands WHERE CheckCommand = 'CHECKDB')
+      IF EXISTS(SELECT * FROM @SelectedCheckCommands WHERE CheckCommand = 'CHECKDB') AND (GETDATE() < DATEADD(ss,@TimeLimit,@StartTime) OR @TimeLimit IS NULL)
       BEGIN
         SET @CurrentCommandType01 = 'DBCC_CHECKDB'
 
@@ -951,7 +1106,7 @@ BEGIN
       END
 
       -- Check filegroups
-      IF EXISTS(SELECT * FROM @SelectedCheckCommands WHERE CheckCommand = 'CHECKFILEGROUP')
+      IF EXISTS(SELECT * FROM @SelectedCheckCommands WHERE CheckCommand = 'CHECKFILEGROUP') AND (GETDATE() < DATEADD(ss,@TimeLimit,@StartTime) OR @TimeLimit IS NULL)
       BEGIN
         SET @CurrentCommand02 = 'SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED; SELECT data_space_id AS FileGroupID, name AS FileGroupName, 0 AS [Order], 0 AS Selected, 0 AS Completed FROM ' + QUOTENAME(@CurrentDatabaseName) + '.sys.filegroups filegroups WHERE [type] <> ''FX'' ORDER BY CASE WHEN filegroups.name = ''PRIMARY'' THEN 1 ELSE 0 END DESC, filegroups.name ASC'
 
@@ -1015,7 +1170,7 @@ BEGIN
           SET @Error = @@ERROR
         END
 
-        WHILE (1 = 1)
+        WHILE (GETDATE() < DATEADD(ss,@TimeLimit,@StartTime) OR @TimeLimit IS NULL)
         BEGIN
           SELECT TOP 1 @CurrentFGID = ID,
                        @CurrentFileGroupID = FileGroupID,
@@ -1089,7 +1244,7 @@ BEGIN
       END
 
       -- Check disk space allocation structures
-      IF EXISTS(SELECT * FROM @SelectedCheckCommands WHERE CheckCommand = 'CHECKALLOC')
+      IF EXISTS(SELECT * FROM @SelectedCheckCommands WHERE CheckCommand = 'CHECKALLOC') AND (GETDATE() < DATEADD(ss,@TimeLimit,@StartTime) OR @TimeLimit IS NULL)
       BEGIN
         SET @CurrentCommandType05 = 'DBCC_CHECKALLOC'
 
@@ -1106,7 +1261,7 @@ BEGIN
       END
 
       -- Check objects
-      IF EXISTS(SELECT * FROM @SelectedCheckCommands WHERE CheckCommand = 'CHECKTABLE')
+      IF EXISTS(SELECT * FROM @SelectedCheckCommands WHERE CheckCommand = 'CHECKTABLE') AND (GETDATE() < DATEADD(ss,@TimeLimit,@StartTime) OR @TimeLimit IS NULL)
       BEGIN
         SET @CurrentCommand06 = 'SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED; SELECT schemas.[schema_id] AS SchemaID, schemas.[name] AS SchemaName, objects.[object_id] AS ObjectID, objects.[name] AS ObjectName, RTRIM(objects.[type]) AS ObjectType, 0 AS [Order], 0 AS Selected, 0 AS Completed FROM ' + QUOTENAME(@CurrentDatabaseName) + '.sys.objects objects INNER JOIN ' + QUOTENAME(@CurrentDatabaseName) + '.sys.schemas schemas ON objects.schema_id = schemas.schema_id LEFT OUTER JOIN ' + QUOTENAME(@CurrentDatabaseName) + '.sys.tables tables ON objects.object_id = tables.object_id WHERE objects.[type] IN(''U'',''V'') AND EXISTS(SELECT * FROM ' + QUOTENAME(@CurrentDatabaseName) + '.sys.indexes indexes WHERE indexes.object_id = objects.object_id)' + CASE WHEN @Version >= 12 THEN ' AND (tables.is_memory_optimized = 0 OR is_memory_optimized IS NULL)' ELSE '' END + ' ORDER BY schemas.name ASC, objects.name ASC'
 
@@ -1171,7 +1326,7 @@ BEGIN
           SET @Error = @@ERROR
         END
 
-        WHILE (1 = 1)
+        WHILE (GETDATE() < DATEADD(ss,@TimeLimit,@StartTime) OR @TimeLimit IS NULL)
         BEGIN
           SELECT TOP 1 @CurrentOID = ID,
                        @CurrentSchemaID = SchemaID,
@@ -1253,7 +1408,7 @@ BEGIN
       END
 
       -- Check catalog
-      IF EXISTS(SELECT * FROM @SelectedCheckCommands WHERE CheckCommand = 'CHECKCATALOG')
+      IF EXISTS(SELECT * FROM @SelectedCheckCommands WHERE CheckCommand = 'CHECKCATALOG') AND (GETDATE() < DATEADD(ss,@TimeLimit,@StartTime) OR @TimeLimit IS NULL)
       BEGIN
         SET @CurrentCommandType09 = 'DBCC_CHECKCATALOG'
 
@@ -1291,6 +1446,8 @@ BEGIN
     SET @CurrentIsDatabaseAccessible = NULL
     SET @CurrentAvailabilityGroup = NULL
     SET @CurrentAvailabilityGroupRole = NULL
+    SET @CurrentAvailabilityGroupBackupPreference = NULL
+    SET @CurrentIsPreferredBackupReplica = NULL
     SET @CurrentDatabaseMirroringRole = NULL
     SET @CurrentIsReadOnly = NULL
 

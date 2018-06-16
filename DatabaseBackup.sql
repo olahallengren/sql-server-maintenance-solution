@@ -59,6 +59,7 @@ ALTER PROCEDURE [dbo].[DatabaseBackup]
 @FileExtensionDiff nvarchar(max) = NULL,
 @FileExtensionLog nvarchar(max) = NULL,
 @Init nvarchar(max) = 'N',
+@DatabaseOrder nvarchar(max) = NULL,
 @LogToTable nvarchar(max) = 'N',
 @Execute nvarchar(max) = 'Y'
 
@@ -70,7 +71,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2018-06-15 10:37:58                                                               //--
+  --// Version: 2018-06-16 14:27:00                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -171,6 +172,7 @@ BEGIN
                                DatabaseType nvarchar(max),
                                AvailabilityGroup bit,
                                StartPosition int,
+                               DatabaseSize bigint,
                                [Order] int,
                                Selected bit,
                                Completed bit,
@@ -297,6 +299,7 @@ BEGIN
   SET @Parameters = @Parameters + ', @FileExtensionDiff = ' + ISNULL('''' + REPLACE(@FileExtensionDiff,'''','''''') + '''','NULL')
   SET @Parameters = @Parameters + ', @FileExtensionLog = ' + ISNULL('''' + REPLACE(@FileExtensionLog,'''','''''') + '''','NULL')
   SET @Parameters = @Parameters + ', @Init = ' + ISNULL('''' + REPLACE(@Init,'''','''''') + '''','NULL')
+  SET @Parameters = @Parameters + ', @DatabaseOrder = ' + ISNULL('''' + REPLACE(@DatabaseOrder,'''','''''') + '''','NULL')
   SET @Parameters = @Parameters + ', @LogToTable = ' + ISNULL('''' + REPLACE(@LogToTable,'''','''''') + '''','NULL')
   SET @Parameters = @Parameters + ', @Execute = ' + ISNULL('''' + REPLACE(@Execute,'''','''''') + '''','NULL')
 
@@ -438,11 +441,12 @@ BEGIN
     INNER JOIN sys.availability_groups availability_groups ON availability_databases_cluster.group_id = availability_groups.group_id
   END
 
-  INSERT INTO @tmpDatabases (DatabaseName, DatabaseNameFS, DatabaseType, AvailabilityGroup, [Order], Selected, Completed)
+  INSERT INTO @tmpDatabases (DatabaseName, DatabaseNameFS, DatabaseType, AvailabilityGroup, DatabaseSize, [Order], Selected, Completed)
   SELECT [name] AS DatabaseName,
           LTRIM(RTRIM(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE([name],'\',''),'/',''),':',''),'*',''),'?',''),'"',''),'<',''),'>',''),'|',''))) AS DatabaseNameFS,
           CASE WHEN name IN('master','msdb','model') THEN 'S' ELSE 'U' END AS DatabaseType,
           NULL AS AvailabilityGroup,
+          (SELECT SUM(size) FROM sys.master_files WHERE [type] = 0 AND database_id = sys.databases.database_id) AS DatabaseSize,
           0 AS [Order],
           0 AS Selected,
           0 AS Completed
@@ -601,19 +605,7 @@ BEGIN
     SET @ErrorMessage = 'You can only specify one of the parameters @Databases and @AvailabilityGroups.' + CHAR(13) + CHAR(10) + ' '
     RAISERROR(@ErrorMessage,16,1) WITH NOWAIT
     SET @Error = @@ERROR
-  END;
-
-  ----------------------------------------------------------------------------------------------------
-  --// Update database order                                                                      //--
-  ----------------------------------------------------------------------------------------------------
-
-  WITH tmpDatabases AS (
-  SELECT DatabaseName, [Order], ROW_NUMBER() OVER (ORDER BY StartPosition ASC, DatabaseName ASC) AS RowNumber
-  FROM @tmpDatabases tmpDatabases
-  WHERE Selected = 1
-  )
-  UPDATE tmpDatabases
-  SET [Order] = RowNumber
+  END
 
   ----------------------------------------------------------------------------------------------------
   --// Check database names                                                                       //--
@@ -1293,6 +1285,13 @@ BEGIN
     SET @Error = @@ERROR
   END
 
+  IF @DatabaseOrder NOT IN('DATABASE_NAME_ASC','DATABASE_NAME_DESC','DATABASE_SIZE_ASC','DATABASE_SIZE_DESC')
+  BEGIN
+    SET @ErrorMessage = 'The value for the parameter @DatabaseOrder is not supported.' + CHAR(13) + CHAR(10) + ' '
+    RAISERROR(@ErrorMessage,16,1) WITH NOWAIT
+    SET @Error = @@ERROR
+  END
+
   IF @LogToTable NOT IN('Y','N') OR @LogToTable IS NULL
   BEGIN
     SET @ErrorMessage = 'The value for the parameter @LogToTable is not supported.' + CHAR(13) + CHAR(10) + ' '
@@ -1362,6 +1361,65 @@ BEGIN
   BEGIN
     SELECT @Cluster = NULLIF(cluster_name,'')
     FROM sys.dm_hadr_cluster
+  END
+
+  ----------------------------------------------------------------------------------------------------
+  --// Update database order                                                                      //--
+  ----------------------------------------------------------------------------------------------------
+
+  IF @DatabaseOrder IS NULL
+  BEGIN
+    WITH tmpDatabases AS (
+    SELECT DatabaseName, [Order], ROW_NUMBER() OVER (ORDER BY StartPosition ASC, DatabaseName ASC) AS RowNumber
+    FROM @tmpDatabases tmpDatabases
+    WHERE Selected = 1
+    )
+    UPDATE tmpDatabases
+    SET [Order] = RowNumber
+  END
+  ELSE
+  IF @DatabaseOrder = 'DATABASE_NAME_ASC'
+  BEGIN
+    WITH tmpDatabases AS (
+    SELECT DatabaseName, [Order], ROW_NUMBER() OVER (ORDER BY DatabaseName ASC) AS RowNumber
+    FROM @tmpDatabases tmpDatabases
+    WHERE Selected = 1
+    )
+    UPDATE tmpDatabases
+    SET [Order] = RowNumber
+  END
+  ELSE
+  IF @DatabaseOrder = 'DATABASE_NAME_DESC'
+  BEGIN
+    WITH tmpDatabases AS (
+    SELECT DatabaseName, [Order], ROW_NUMBER() OVER (ORDER BY DatabaseName DESC) AS RowNumber
+    FROM @tmpDatabases tmpDatabases
+    WHERE Selected = 1
+    )
+    UPDATE tmpDatabases
+    SET [Order] = RowNumber
+  END
+  ELSE
+  IF @DatabaseOrder = 'DATABASE_SIZE_ASC'
+  BEGIN
+    WITH tmpDatabases AS (
+    SELECT DatabaseName, [Order], ROW_NUMBER() OVER (ORDER BY DatabaseSize ASC) AS RowNumber
+    FROM @tmpDatabases tmpDatabases
+    WHERE Selected = 1
+    )
+    UPDATE tmpDatabases
+    SET [Order] = RowNumber
+  END
+  ELSE
+  IF @DatabaseOrder = 'DATABASE_SIZE_DESC'
+  BEGIN
+    WITH tmpDatabases AS (
+    SELECT DatabaseName, [Order], ROW_NUMBER() OVER (ORDER BY DatabaseSize DESC) AS RowNumber
+    FROM @tmpDatabases tmpDatabases
+    WHERE Selected = 1
+    )
+    UPDATE tmpDatabases
+    SET [Order] = RowNumber
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -1937,7 +1995,7 @@ BEGIN
       SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'{Hour}',RIGHT('0' + CAST(DATEPART(HOUR,@CurrentDate) AS nvarchar),2))
       SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'{Minute}',RIGHT('0' + CAST(DATEPART(MINUTE,@CurrentDate) AS nvarchar),2))
       SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'{Second}',RIGHT('0' + CAST(DATEPART(SECOND,@CurrentDate) AS nvarchar),2))
-      SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'{FileExtension}',@CurrentFileExtension);
+      SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'{FileExtension}',@CurrentFileExtension)
 
       SELECT @CurrentMaxFilePathLength = CASE
       WHEN EXISTS (SELECT * FROM @CurrentDirectories) THEN (SELECT MAX(LEN(DirectoryPath + @DirectorySeparator)) FROM @CurrentDirectories)

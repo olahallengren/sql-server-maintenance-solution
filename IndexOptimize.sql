@@ -24,6 +24,7 @@ ALTER PROCEDURE [dbo].[IndexOptimize]
 @LOBCompaction nvarchar(max) = 'Y',
 @UpdateStatistics nvarchar(max) = NULL,
 @OnlyModifiedStatistics nvarchar(max) = 'N',
+@StatisticsModificationLevel int = NULL,
 @StatisticsSample int = NULL,
 @StatisticsResample nvarchar(max) = 'N',
 @PartitionLevel nvarchar(max) = 'Y',
@@ -36,6 +37,7 @@ ALTER PROCEDURE [dbo].[IndexOptimize]
 @Resumable nvarchar(max) = 'N',
 @AvailabilityGroups nvarchar(max) = NULL,
 @LockTimeout int = NULL,
+@DatabaseOrder nvarchar(max) = NULL,
 @LogToTable nvarchar(max) = 'N',
 @Execute nvarchar(max) = 'Y'
 
@@ -47,7 +49,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2018-06-15 10:37:58                                                               //--
+  --// Version: 2018-06-16 14:27:00                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -148,6 +150,7 @@ BEGIN
                                DatabaseType nvarchar(max),
                                AvailabilityGroup bit,
                                StartPosition int,
+                               DatabaseSize bigint,
                                [Order] int,
                                Selected bit,
                                Completed bit,
@@ -277,6 +280,7 @@ BEGIN
   SET @Parameters = @Parameters + ', @LOBCompaction = ' + ISNULL('''' + REPLACE(@LOBCompaction,'''','''''') + '''','NULL')
   SET @Parameters = @Parameters + ', @UpdateStatistics = ' + ISNULL('''' + REPLACE(@UpdateStatistics,'''','''''') + '''','NULL')
   SET @Parameters = @Parameters + ', @OnlyModifiedStatistics = ' + ISNULL('''' + REPLACE(@OnlyModifiedStatistics,'''','''''') + '''','NULL')
+  SET @Parameters = @Parameters + ', @StatisticsModificationLevel = ' + ISNULL(CAST(@StatisticsModificationLevel AS nvarchar),'NULL')
   SET @Parameters = @Parameters + ', @StatisticsSample = ' + ISNULL(CAST(@StatisticsSample AS nvarchar),'NULL')
   SET @Parameters = @Parameters + ', @StatisticsResample = ' + ISNULL('''' + REPLACE(@StatisticsResample,'''','''''') + '''','NULL')
   SET @Parameters = @Parameters + ', @PartitionLevel = ' + ISNULL('''' + REPLACE(@PartitionLevel,'''','''''') + '''','NULL')
@@ -289,6 +293,7 @@ BEGIN
   SET @Parameters = @Parameters + ', @Resumable = ' + ISNULL('''' + REPLACE(@Resumable,'''','''''') + '''','NULL')
   SET @Parameters = @Parameters + ', @AvailabilityGroups = ' + ISNULL('''' + REPLACE(@AvailabilityGroups,'''','''''') + '''','NULL')
   SET @Parameters = @Parameters + ', @LockTimeout = ' + ISNULL(CAST(@LockTimeout AS nvarchar),'NULL')
+  SET @Parameters = @Parameters + ', @DatabaseOrder = ' + ISNULL('''' + REPLACE(@DatabaseOrder,'''','''''') + '''','NULL')
   SET @Parameters = @Parameters + ', @LogToTable = ' + ISNULL('''' + REPLACE(@LogToTable,'''','''''') + '''','NULL')
   SET @Parameters = @Parameters + ', @Execute = ' + ISNULL('''' + REPLACE(@Execute,'''','''''') + '''','NULL')
 
@@ -423,10 +428,11 @@ BEGIN
     INNER JOIN sys.availability_groups availability_groups ON availability_databases_cluster.group_id = availability_groups.group_id
   END
 
-  INSERT INTO @tmpDatabases (DatabaseName, DatabaseType, AvailabilityGroup, [Order], Selected, Completed)
+  INSERT INTO @tmpDatabases (DatabaseName, DatabaseType, AvailabilityGroup, DatabaseSize, [Order], Selected, Completed)
   SELECT [name] AS DatabaseName,
           CASE WHEN name IN('master','msdb','model') THEN 'S' ELSE 'U' END AS DatabaseType,
           NULL AS AvailabilityGroup,
+          (SELECT SUM(size) FROM sys.master_files WHERE [type] = 0 AND database_id = sys.databases.database_id) AS DatabaseSize,
           0 AS [Order],
           0 AS Selected,
           0 AS Completed
@@ -585,19 +591,7 @@ BEGIN
     SET @ErrorMessage = 'You can only specify one of the parameters @Databases and @AvailabilityGroups.' + CHAR(13) + CHAR(10) + ' '
     RAISERROR(@ErrorMessage,16,1) WITH NOWAIT
     SET @Error = @@ERROR
-  END;
-
-  ----------------------------------------------------------------------------------------------------
-  --// Update database order                                                                      //--
-  ----------------------------------------------------------------------------------------------------
-
-  WITH tmpDatabases AS (
-  SELECT DatabaseName, [Order], ROW_NUMBER() OVER (ORDER BY StartPosition ASC, DatabaseName ASC) AS RowNumber
-  FROM @tmpDatabases tmpDatabases
-  WHERE Selected = 1
-  )
-  UPDATE tmpDatabases
-  SET [Order] = RowNumber
+  END
 
   ----------------------------------------------------------------------------------------------------
   --// Select indexes                                                                             //--
@@ -822,6 +816,20 @@ BEGIN
     SET @Error = @@ERROR
   END
 
+  IF @StatisticsModificationLevel <= 0 OR @StatisticsModificationLevel > 100
+  BEGIN
+    SET @ErrorMessage = 'The value for the parameter @StatisticsModificationLevel is not supported.' + CHAR(13) + CHAR(10) + ' '
+    RAISERROR(@ErrorMessage,16,1) WITH NOWAIT
+    SET @Error = @@ERROR
+  END
+
+  IF @OnlyModifiedStatistics = 'Y' AND @StatisticsModificationLevel IS NOT NULL
+  BEGIN
+    SET @ErrorMessage = 'You can only specify one of the parameters @OnlyModifiedStatistics and @StatisticsModificationLevel.' + CHAR(13) + CHAR(10) + ' '
+    RAISERROR(@ErrorMessage,16,1) WITH NOWAIT
+    SET @Error = @@ERROR
+  END
+
   IF @StatisticsSample <= 0 OR @StatisticsSample  > 100
   BEGIN
     SET @ErrorMessage = 'The value for the parameter @StatisticsSample is not supported.' + CHAR(13) + CHAR(10) + ' '
@@ -906,6 +914,13 @@ BEGIN
     SET @Error = @@ERROR
   END
 
+  IF @DatabaseOrder NOT IN('DATABASE_NAME_ASC','DATABASE_NAME_DESC','DATABASE_SIZE_ASC','DATABASE_SIZE_DESC')
+  BEGIN
+    SET @ErrorMessage = 'The value for the parameter @DatabaseOrder is not supported.' + CHAR(13) + CHAR(10) + ' '
+    RAISERROR(@ErrorMessage,16,1) WITH NOWAIT
+    SET @Error = @@ERROR
+  END
+
   IF @LogToTable NOT IN('Y','N') OR @LogToTable IS NULL
   BEGIN
     SET @ErrorMessage = 'The value for the parameter @LogToTable is not supported.' + CHAR(13) + CHAR(10) + ' '
@@ -986,6 +1001,65 @@ BEGIN
   ----------------------------------------------------------------------------------------------------
 
   SET @PartitionLevelStatistics = CASE WHEN @PartitionLevel = 'Y' AND ((@Version >= 12.05 AND @Version < 13) OR @Version >= 13.04422 OR SERVERPROPERTY('EngineEdition') IN (5,8)) THEN 1 ELSE 0 END
+
+  ----------------------------------------------------------------------------------------------------
+  --// Update database order                                                                      //--
+  ----------------------------------------------------------------------------------------------------
+
+  IF @DatabaseOrder IS NULL
+  BEGIN
+    WITH tmpDatabases AS (
+    SELECT DatabaseName, [Order], ROW_NUMBER() OVER (ORDER BY StartPosition ASC, DatabaseName ASC) AS RowNumber
+    FROM @tmpDatabases tmpDatabases
+    WHERE Selected = 1
+    )
+    UPDATE tmpDatabases
+    SET [Order] = RowNumber
+  END
+  ELSE
+  IF @DatabaseOrder = 'DATABASE_NAME_ASC'
+  BEGIN
+    WITH tmpDatabases AS (
+    SELECT DatabaseName, [Order], ROW_NUMBER() OVER (ORDER BY DatabaseName ASC) AS RowNumber
+    FROM @tmpDatabases tmpDatabases
+    WHERE Selected = 1
+    )
+    UPDATE tmpDatabases
+    SET [Order] = RowNumber
+  END
+  ELSE
+  IF @DatabaseOrder = 'DATABASE_NAME_DESC'
+  BEGIN
+    WITH tmpDatabases AS (
+    SELECT DatabaseName, [Order], ROW_NUMBER() OVER (ORDER BY DatabaseName DESC) AS RowNumber
+    FROM @tmpDatabases tmpDatabases
+    WHERE Selected = 1
+    )
+    UPDATE tmpDatabases
+    SET [Order] = RowNumber
+  END
+  ELSE
+  IF @DatabaseOrder = 'DATABASE_SIZE_ASC'
+  BEGIN
+    WITH tmpDatabases AS (
+    SELECT DatabaseName, [Order], ROW_NUMBER() OVER (ORDER BY DatabaseSize ASC) AS RowNumber
+    FROM @tmpDatabases tmpDatabases
+    WHERE Selected = 1
+    )
+    UPDATE tmpDatabases
+    SET [Order] = RowNumber
+  END
+  ELSE
+  IF @DatabaseOrder = 'DATABASE_SIZE_DESC'
+  BEGIN
+    WITH tmpDatabases AS (
+    SELECT DatabaseName, [Order], ROW_NUMBER() OVER (ORDER BY DatabaseSize DESC) AS RowNumber
+    FROM @tmpDatabases tmpDatabases
+    WHERE Selected = 1
+    )
+    UPDATE tmpDatabases
+    SET [Order] = RowNumber
+  END
 
   ----------------------------------------------------------------------------------------------------
   --// Execute commands                                                                           //--
@@ -1539,9 +1613,8 @@ BEGIN
         -- Update statistics?
         IF @CurrentStatisticsID IS NOT NULL
         AND ((@UpdateStatistics = 'ALL' AND (@CurrentIndexType IN (1,2,3,4,7) OR @CurrentIndexID IS NULL)) OR (@UpdateStatistics = 'INDEX' AND @CurrentIndexID IS NOT NULL AND @CurrentIndexType IN (1,2,3,4,7)) OR (@UpdateStatistics = 'COLUMNS' AND @CurrentIndexID IS NULL))
-        AND (@CurrentModificationCounter > 0 OR @OnlyModifiedStatistics = 'N' OR (@CurrentIsMemoryOptimized = 1 AND NOT (@Version >= 13 OR SERVERPROPERTY('EngineEdition') IN (5,8))))
+        AND ((@OnlyModifiedStatistics = 'N' AND @StatisticsModificationLevel IS NULL) OR (@OnlyModifiedStatistics = 'Y' AND @CurrentModificationCounter > 0) OR ((@CurrentModificationCounter * 1. / NULLIF(@CurrentRowCount,0)) * 100 >= @StatisticsModificationLevel) OR (@StatisticsModificationLevel IS NOT NULL AND @CurrentModificationCounter > 0 AND (@CurrentModificationCounter >= SQRT(@CurrentRowCount * 1000))) OR (@CurrentIsMemoryOptimized = 1 AND NOT (@Version >= 13 OR SERVERPROPERTY('EngineEdition') IN (5,8))))
         AND ((@CurrentIsPartition = 0 AND (@CurrentAction NOT IN('INDEX_REBUILD_ONLINE','INDEX_REBUILD_OFFLINE') OR @CurrentAction IS NULL)) OR (@CurrentIsPartition = 1 AND (@CurrentPartitionNumber = @CurrentPartitionCount OR (@PartitionLevelStatistics = 1 AND @CurrentIsIncremental = 1))))
-
         BEGIN
           SET @CurrentUpdateStatistics = 'Y'
         END
