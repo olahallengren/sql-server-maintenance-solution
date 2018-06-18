@@ -49,7 +49,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2018-06-16 14:27:00                                                               //--
+  --// Version: 2018-06-18 19:09:39                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -428,11 +428,10 @@ BEGIN
     INNER JOIN sys.availability_groups availability_groups ON availability_databases_cluster.group_id = availability_groups.group_id
   END
 
-  INSERT INTO @tmpDatabases (DatabaseName, DatabaseType, AvailabilityGroup, DatabaseSize, [Order], Selected, Completed)
+  INSERT INTO @tmpDatabases (DatabaseName, DatabaseType, AvailabilityGroup, [Order], Selected, Completed)
   SELECT [name] AS DatabaseName,
           CASE WHEN name IN('master','msdb','model') THEN 'S' ELSE 'U' END AS DatabaseType,
           NULL AS AvailabilityGroup,
-          (SELECT SUM(size) FROM sys.master_files WHERE [type] = 0 AND database_id = sys.databases.database_id) AS DatabaseSize,
           0 AS [Order],
           0 AS Selected,
           0 AS Completed
@@ -914,7 +913,7 @@ BEGIN
     SET @Error = @@ERROR
   END
 
-  IF @DatabaseOrder NOT IN('DATABASE_NAME_ASC','DATABASE_NAME_DESC','DATABASE_SIZE_ASC','DATABASE_SIZE_DESC')
+  IF @DatabaseOrder NOT IN('DATABASE_NAME_ASC','DATABASE_NAME_DESC','DATABASE_SIZE_ASC','DATABASE_SIZE_DESC') OR (@DatabaseOrder IS NOT NULL AND SERVERPROPERTY('EngineEdition') = 5)
   BEGIN
     SET @ErrorMessage = 'The value for the parameter @DatabaseOrder is not supported.' + CHAR(13) + CHAR(10) + ' '
     RAISERROR(@ErrorMessage,16,1) WITH NOWAIT
@@ -1005,6 +1004,13 @@ BEGIN
   ----------------------------------------------------------------------------------------------------
   --// Update database order                                                                      //--
   ----------------------------------------------------------------------------------------------------
+
+  IF @DatabaseOrder IN('DATABASE_SIZE_ASC','DATABASE_SIZE_DESC')
+    BEGIN
+    UPDATE tmpDatabases
+    SET DatabaseSize = (SELECT SUM(size) FROM sys.master_files WHERE [type] = 0 AND database_id = DB_ID(tmpDatabases.DatabaseName))
+    FROM @tmpDatabases tmpDatabases
+  END
 
   IF @DatabaseOrder IS NULL
   BEGIN
