@@ -10,7 +10,7 @@ License: https://ola.hallengren.com/license.html
 
 GitHub: https://github.com/olahallengren/sql-server-maintenance-solution
 
-Version: 2018-06-20 20:30:47
+Version: 2018-06-20 23:42:47
 
 You can contact me by e-mail at ola@hallengren.com.
 
@@ -117,7 +117,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2018-06-20 20:30:47                                                               //--
+  --// Version: 2018-06-20 23:42:47                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -354,7 +354,7 @@ ALTER PROCEDURE [dbo].[DatabaseBackup]
 @FileExtensionLog nvarchar(max) = NULL,
 @Init nvarchar(max) = 'N',
 @DatabaseOrder nvarchar(max) = NULL,
-@ExecutionMode nvarchar(max) = NULL,
+@DatabasesInParallel nvarchar(max) = 'N',
 @LogToTable nvarchar(max) = 'N',
 @Execute nvarchar(max) = 'Y'
 
@@ -366,7 +366,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2018-06-20 20:30:47                                                               //--
+  --// Version: 2018-06-20 23:42:47                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -599,7 +599,7 @@ BEGIN
   SET @Parameters = @Parameters + ', @FileExtensionLog = ' + ISNULL('''' + REPLACE(@FileExtensionLog,'''','''''') + '''','NULL')
   SET @Parameters = @Parameters + ', @Init = ' + ISNULL('''' + REPLACE(@Init,'''','''''') + '''','NULL')
   SET @Parameters = @Parameters + ', @DatabaseOrder = ' + ISNULL('''' + REPLACE(@DatabaseOrder,'''','''''') + '''','NULL')
-  SET @Parameters = @Parameters + ', @ExecutionMode = ' + ISNULL('''' + REPLACE(@ExecutionMode,'''','''''') + '''','NULL')
+  SET @Parameters = @Parameters + ', @DatabasesInParallel = ' + ISNULL('''' + REPLACE(@DatabasesInParallel,'''','''''') + '''','NULL')
   SET @Parameters = @Parameters + ', @LogToTable = ' + ISNULL('''' + REPLACE(@LogToTable,'''','''''') + '''','NULL')
   SET @Parameters = @Parameters + ', @Execute = ' + ISNULL('''' + REPLACE(@Execute,'''','''''') + '''','NULL')
 
@@ -656,14 +656,14 @@ BEGIN
     SET @Error = @@ERROR
   END
 
-  IF @ExecutionMode = 'DATABASES_IN_PARALLEL' AND NOT EXISTS (SELECT * FROM sys.objects objects INNER JOIN sys.schemas schemas ON objects.[schema_id] = schemas.[schema_id] WHERE objects.[type] = 'U' AND schemas.[name] = 'dbo' AND objects.[name] = 'Queue')
+  IF @DatabasesInParallel = 'Y' AND NOT EXISTS (SELECT * FROM sys.objects objects INNER JOIN sys.schemas schemas ON objects.[schema_id] = schemas.[schema_id] WHERE objects.[type] = 'U' AND schemas.[name] = 'dbo' AND objects.[name] = 'Queue')
   BEGIN
     SET @ErrorMessage = 'The table Queue is missing. Download https://ola.hallengren.com/scripts/Queue.sql.' + CHAR(13) + CHAR(10) + ' '
     RAISERROR(@ErrorMessage,16,1) WITH NOWAIT
     SET @Error = @@ERROR
   END
 
-  IF @ExecutionMode = 'DATABASES_IN_PARALLEL' AND NOT EXISTS (SELECT * FROM sys.objects objects INNER JOIN sys.schemas schemas ON objects.[schema_id] = schemas.[schema_id] WHERE objects.[type] = 'U' AND schemas.[name] = 'dbo' AND objects.[name] = 'QueueDatabase')
+  IF @DatabasesInParallel = 'Y' AND NOT EXISTS (SELECT * FROM sys.objects objects INNER JOIN sys.schemas schemas ON objects.[schema_id] = schemas.[schema_id] WHERE objects.[type] = 'U' AND schemas.[name] = 'dbo' AND objects.[name] = 'QueueDatabase')
   BEGIN
     SET @ErrorMessage = 'The table QueueDatabase is missing. Download https://ola.hallengren.com/scripts/QueueDatabase.sql.' + CHAR(13) + CHAR(10) + ' '
     RAISERROR(@ErrorMessage,16,1) WITH NOWAIT
@@ -1612,9 +1612,9 @@ BEGIN
     SET @Error = @@ERROR
   END
 
-  IF @ExecutionMode NOT IN('DATABASES_IN_PARALLEL') OR (@ExecutionMode IS NOT NULL AND SERVERPROPERTY('EngineEdition') = 5)
+  IF @DatabasesInParallel NOT IN('Y','N') OR @DatabasesInParallel IS NULL OR (@DatabasesInParallel = 'Y' AND SERVERPROPERTY('EngineEdition') = 5)
   BEGIN
-    SET @ErrorMessage = 'The value for the parameter @ExecutionMode is not supported.' + CHAR(13) + CHAR(10) + ' '
+    SET @ErrorMessage = 'The value for the parameter @DatabasesInParallel is not supported.' + CHAR(13) + CHAR(10) + ' '
     RAISERROR(@ErrorMessage,16,1) WITH NOWAIT
     SET @Error = @@ERROR
   END
@@ -1789,7 +1789,7 @@ BEGIN
   --// Update the queue                                                                           //--
   ----------------------------------------------------------------------------------------------------
 
-  IF @ExecutionMode = 'DATABASES_IN_PARALLEL'
+  IF @DatabasesInParallel = 'Y'
   BEGIN
 
     BEGIN TRY
@@ -1889,7 +1889,7 @@ BEGIN
   WHILE (1 = 1)
   BEGIN
 
-    IF @ExecutionMode = 'DATABASES_IN_PARALLEL'
+    IF @DatabasesInParallel = 'Y'
     BEGIN
       UPDATE QueueDatabase
       SET DatabaseStartTime = NULL,
@@ -3214,7 +3214,7 @@ BEGIN
     END
 
     -- Update that the database is completed
-    IF @ExecutionMode = 'DATABASES_IN_PARALLEL'
+    IF @DatabasesInParallel = 'Y'
     BEGIN
       UPDATE dbo.QueueDatabase
       SET DatabaseEndTime = GETDATE()
@@ -3320,7 +3320,7 @@ ALTER PROCEDURE [dbo].[DatabaseIntegrityCheck]
 @TimeLimit int = NULL,
 @LockTimeout int = NULL,
 @DatabaseOrder nvarchar(max) = NULL,
-@ExecutionMode nvarchar(max) = NULL,
+@DatabasesInParallel nvarchar(max) = 'N',
 @LogToTable nvarchar(max) = 'N',
 @Execute nvarchar(max) = 'Y'
 
@@ -3332,7 +3332,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2018-06-20 20:30:47                                                               //--
+  --// Version: 2018-06-20 23:42:47                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -3511,7 +3511,7 @@ BEGIN
   SET @Parameters = @Parameters + ', @TimeLimit = ' + ISNULL(CAST(@TimeLimit AS nvarchar),'NULL')
   SET @Parameters = @Parameters + ', @LockTimeout = ' + ISNULL(CAST(@LockTimeout AS nvarchar),'NULL')
   SET @Parameters = @Parameters + ', @DatabaseOrder = ' + ISNULL('''' + REPLACE(@DatabaseOrder,'''','''''') + '''','NULL')
-  SET @Parameters = @Parameters + ', @ExecutionMode = ' + ISNULL('''' + REPLACE(@ExecutionMode,'''','''''') + '''','NULL')
+  SET @Parameters = @Parameters + ', @DatabasesInParallel = ' + ISNULL('''' + REPLACE(@DatabasesInParallel,'''','''''') + '''','NULL')
   SET @Parameters = @Parameters + ', @LogToTable = ' + ISNULL('''' + REPLACE(@LogToTable,'''','''''') + '''','NULL')
   SET @Parameters = @Parameters + ', @Execute = ' + ISNULL('''' + REPLACE(@Execute,'''','''''') + '''','NULL')
 
@@ -3568,14 +3568,14 @@ BEGIN
     SET @Error = @@ERROR
   END
 
-  IF @ExecutionMode = 'DATABASES_IN_PARALLEL' AND NOT EXISTS (SELECT * FROM sys.objects objects INNER JOIN sys.schemas schemas ON objects.[schema_id] = schemas.[schema_id] WHERE objects.[type] = 'U' AND schemas.[name] = 'dbo' AND objects.[name] = 'Queue')
+  IF @DatabasesInParallel = 'Y' AND NOT EXISTS (SELECT * FROM sys.objects objects INNER JOIN sys.schemas schemas ON objects.[schema_id] = schemas.[schema_id] WHERE objects.[type] = 'U' AND schemas.[name] = 'dbo' AND objects.[name] = 'Queue')
   BEGIN
     SET @ErrorMessage = 'The table Queue is missing. Download https://ola.hallengren.com/scripts/Queue.sql.' + CHAR(13) + CHAR(10) + ' '
     RAISERROR(@ErrorMessage,16,1) WITH NOWAIT
     SET @Error = @@ERROR
   END
 
-  IF @ExecutionMode = 'DATABASES_IN_PARALLEL' AND NOT EXISTS (SELECT * FROM sys.objects objects INNER JOIN sys.schemas schemas ON objects.[schema_id] = schemas.[schema_id] WHERE objects.[type] = 'U' AND schemas.[name] = 'dbo' AND objects.[name] = 'QueueDatabase')
+  IF @DatabasesInParallel = 'Y' AND NOT EXISTS (SELECT * FROM sys.objects objects INNER JOIN sys.schemas schemas ON objects.[schema_id] = schemas.[schema_id] WHERE objects.[type] = 'U' AND schemas.[name] = 'dbo' AND objects.[name] = 'QueueDatabase')
   BEGIN
     SET @ErrorMessage = 'The table QueueDatabase is missing. Download https://ola.hallengren.com/scripts/QueueDatabase.sql.' + CHAR(13) + CHAR(10) + ' '
     RAISERROR(@ErrorMessage,16,1) WITH NOWAIT
@@ -4054,9 +4054,9 @@ BEGIN
     SET @Error = @@ERROR
   END
 
-  IF @ExecutionMode NOT IN('DATABASES_IN_PARALLEL') OR (@ExecutionMode IS NOT NULL AND SERVERPROPERTY('EngineEdition') = 5)
+  IF @DatabasesInParallel NOT IN('Y','N') OR @DatabasesInParallel IS NULL OR (@DatabasesInParallel = 'Y' AND SERVERPROPERTY('EngineEdition') = 5)
   BEGIN
-    SET @ErrorMessage = 'The value for the parameter @ExecutionMode is not supported.' + CHAR(13) + CHAR(10) + ' '
+    SET @ErrorMessage = 'The value for the parameter @DatabasesInParallel is not supported.' + CHAR(13) + CHAR(10) + ' '
     RAISERROR(@ErrorMessage,16,1) WITH NOWAIT
     SET @Error = @@ERROR
   END
@@ -4306,7 +4306,7 @@ BEGIN
   --// Update the queue                                                                           //--
   ----------------------------------------------------------------------------------------------------
 
-  IF @ExecutionMode = 'DATABASES_IN_PARALLEL'
+  IF @DatabasesInParallel = 'Y'
   BEGIN
 
     BEGIN TRY
@@ -4406,7 +4406,7 @@ BEGIN
   WHILE (1 = 1)
   BEGIN
 
-    IF @ExecutionMode = 'DATABASES_IN_PARALLEL'
+    IF @DatabasesInParallel = 'Y'
     BEGIN
       UPDATE QueueDatabase
       SET DatabaseStartTime = NULL,
@@ -4907,7 +4907,7 @@ BEGIN
     END
 
     -- Update that the database is completed
-    IF @ExecutionMode = 'DATABASES_IN_PARALLEL'
+    IF @DatabasesInParallel = 'Y'
     BEGIN
       UPDATE dbo.QueueDatabase
       SET DatabaseEndTime = GETDATE()
@@ -5013,7 +5013,7 @@ ALTER PROCEDURE [dbo].[IndexOptimize]
 @AvailabilityGroups nvarchar(max) = NULL,
 @LockTimeout int = NULL,
 @DatabaseOrder nvarchar(max) = NULL,
-@ExecutionMode nvarchar(max) = NULL,
+@DatabasesInParallel nvarchar(max) = 'N',
 @LogToTable nvarchar(max) = 'N',
 @Execute nvarchar(max) = 'Y'
 
@@ -5025,7 +5025,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2018-06-20 20:30:47                                                               //--
+  --// Version: 2018-06-20 23:42:47                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -5273,7 +5273,7 @@ BEGIN
   SET @Parameters = @Parameters + ', @AvailabilityGroups = ' + ISNULL('''' + REPLACE(@AvailabilityGroups,'''','''''') + '''','NULL')
   SET @Parameters = @Parameters + ', @LockTimeout = ' + ISNULL(CAST(@LockTimeout AS nvarchar),'NULL')
   SET @Parameters = @Parameters + ', @DatabaseOrder = ' + ISNULL('''' + REPLACE(@DatabaseOrder,'''','''''') + '''','NULL')
-  SET @Parameters = @Parameters + ', @ExecutionMode = ' + ISNULL('''' + REPLACE(@ExecutionMode,'''','''''') + '''','NULL')
+  SET @Parameters = @Parameters + ', @DatabasesInParallel = ' + ISNULL('''' + REPLACE(@DatabasesInParallel,'''','''''') + '''','NULL')
   SET @Parameters = @Parameters + ', @LogToTable = ' + ISNULL('''' + REPLACE(@LogToTable,'''','''''') + '''','NULL')
   SET @Parameters = @Parameters + ', @Execute = ' + ISNULL('''' + REPLACE(@Execute,'''','''''') + '''','NULL')
 
@@ -5330,14 +5330,14 @@ BEGIN
     SET @Error = @@ERROR
   END
 
-  IF @ExecutionMode = 'DATABASES_IN_PARALLEL' AND NOT EXISTS (SELECT * FROM sys.objects objects INNER JOIN sys.schemas schemas ON objects.[schema_id] = schemas.[schema_id] WHERE objects.[type] = 'U' AND schemas.[name] = 'dbo' AND objects.[name] = 'Queue')
+  IF @DatabasesInParallel = 'Y' AND NOT EXISTS (SELECT * FROM sys.objects objects INNER JOIN sys.schemas schemas ON objects.[schema_id] = schemas.[schema_id] WHERE objects.[type] = 'U' AND schemas.[name] = 'dbo' AND objects.[name] = 'Queue')
   BEGIN
     SET @ErrorMessage = 'The table Queue is missing. Download https://ola.hallengren.com/scripts/Queue.sql.' + CHAR(13) + CHAR(10) + ' '
     RAISERROR(@ErrorMessage,16,1) WITH NOWAIT
     SET @Error = @@ERROR
   END
 
-  IF @ExecutionMode = 'DATABASES_IN_PARALLEL' AND NOT EXISTS (SELECT * FROM sys.objects objects INNER JOIN sys.schemas schemas ON objects.[schema_id] = schemas.[schema_id] WHERE objects.[type] = 'U' AND schemas.[name] = 'dbo' AND objects.[name] = 'QueueDatabase')
+  IF @DatabasesInParallel = 'Y' AND NOT EXISTS (SELECT * FROM sys.objects objects INNER JOIN sys.schemas schemas ON objects.[schema_id] = schemas.[schema_id] WHERE objects.[type] = 'U' AND schemas.[name] = 'dbo' AND objects.[name] = 'QueueDatabase')
   BEGIN
     SET @ErrorMessage = 'The table QueueDatabase is missing. Download https://ola.hallengren.com/scripts/QueueDatabase.sql.' + CHAR(13) + CHAR(10) + ' '
     RAISERROR(@ErrorMessage,16,1) WITH NOWAIT
@@ -5921,9 +5921,9 @@ BEGIN
     SET @Error = @@ERROR
   END
 
-  IF @ExecutionMode NOT IN('DATABASES_IN_PARALLEL') OR (@ExecutionMode IS NOT NULL AND SERVERPROPERTY('EngineEdition') = 5)
+  IF @DatabasesInParallel NOT IN('Y','N') OR @DatabasesInParallel IS NULL OR (@DatabasesInParallel = 'Y' AND SERVERPROPERTY('EngineEdition') = 5)
   BEGIN
-    SET @ErrorMessage = 'The value for the parameter @ExecutionMode is not supported.' + CHAR(13) + CHAR(10) + ' '
+    SET @ErrorMessage = 'The value for the parameter @DatabasesInParallel is not supported.' + CHAR(13) + CHAR(10) + ' '
     RAISERROR(@ErrorMessage,16,1) WITH NOWAIT
     SET @Error = @@ERROR
   END
@@ -6079,7 +6079,7 @@ BEGIN
   --// Update the queue                                                                           //--
   ----------------------------------------------------------------------------------------------------
 
-  IF @ExecutionMode = 'DATABASES_IN_PARALLEL'
+  IF @DatabasesInParallel = 'Y'
   BEGIN
 
     BEGIN TRY
@@ -6179,7 +6179,7 @@ BEGIN
   WHILE (1 = 1)
   BEGIN
 
-    IF @ExecutionMode = 'DATABASES_IN_PARALLEL'
+    IF @DatabasesInParallel = 'Y'
     BEGIN
       UPDATE QueueDatabase
       SET DatabaseStartTime = NULL,
@@ -7086,7 +7086,7 @@ BEGIN
     END
 
     -- Update that the database is completed
-    IF @ExecutionMode = 'DATABASES_IN_PARALLEL'
+    IF @DatabasesInParallel = 'Y'
     BEGIN
       UPDATE dbo.QueueDatabase
       SET DatabaseEndTime = GETDATE()
