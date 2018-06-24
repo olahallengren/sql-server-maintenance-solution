@@ -22,6 +22,7 @@ ALTER PROCEDURE [dbo].[CommandExecute]
 @StatisticsName nvarchar(max) = NULL,
 @PartitionNumber int = NULL,
 @ExtendedInfo xml = NULL,
+@LockMessageSeverity int = 16,
 @LogToTable nvarchar(max),
 @Execute nvarchar(max)
 
@@ -33,7 +34,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2018-06-23 11:25:41                                                               //--
+  --// Version: 2018-06-24 15:24:40                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -42,6 +43,7 @@ BEGIN
   DECLARE @EndMessage nvarchar(max)
   DECLARE @ErrorMessage nvarchar(max)
   DECLARE @ErrorMessageOriginal nvarchar(max)
+  DECLARE @Severity int
 
   DECLARE @StartTime datetime
   DECLARE @EndTime datetime
@@ -95,6 +97,13 @@ BEGIN
   IF @Mode NOT IN(1,2) OR @Mode IS NULL
   BEGIN
     SET @ErrorMessage = 'The value for the parameter @Mode is not supported.' + CHAR(13) + CHAR(10) + ' '
+    RAISERROR(@ErrorMessage,16,1) WITH NOWAIT
+    SET @Error = @@ERROR
+  END
+
+  IF @LockMessageSeverity NOT IN(10,16) OR @LockMessageSeverity IS NULL
+  BEGIN
+    SET @ErrorMessage = 'The value for the parameter @LockMessageSeverity is not supported.' + CHAR(13) + CHAR(10) + ' '
     RAISERROR(@ErrorMessage,16,1) WITH NOWAIT
     SET @Error = @@ERROR
   END
@@ -166,10 +175,16 @@ BEGIN
     END TRY
     BEGIN CATCH
       SET @Error = ERROR_NUMBER()
-      SET @ReturnCode = @Error
       SET @ErrorMessageOriginal = ERROR_MESSAGE()
-      SET @ErrorMessage = 'Msg ' + CAST(@Error AS nvarchar) + ', ' + ISNULL(@ErrorMessageOriginal,'')
-      RAISERROR(@ErrorMessage,16,1) WITH NOWAIT
+
+      SET @ErrorMessage = 'Msg ' + CAST(ERROR_NUMBER() AS nvarchar) + ', ' + ISNULL(ERROR_MESSAGE(),'')
+      SET @Severity = CASE WHEN ERROR_NUMBER() IN(1205,1222) THEN @LockMessageSeverity ELSE 16 END
+      RAISERROR(@ErrorMessage,@Severity,1) WITH NOWAIT
+
+      IF NOT (ERROR_NUMBER() IN(1205,1222) AND @LockMessageSeverity = 10)
+      BEGIN
+        SET @ReturnCode = ERROR_NUMBER()
+      END
     END CATCH
   END
 
