@@ -10,7 +10,7 @@ License: https://ola.hallengren.com/license.html
 
 GitHub: https://github.com/olahallengren/sql-server-maintenance-solution
 
-Version: 2018-06-24 15:24:40
+Version: 2018-06-27 20:44:12
 
 You can contact me by e-mail at ola@hallengren.com.
 
@@ -118,7 +118,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2018-06-24 15:24:40                                                               //--
+  --// Version: 2018-06-27 20:44:12                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -350,6 +350,7 @@ ALTER PROCEDURE [dbo].[DatabaseBackup]
 @MirrorDirectory nvarchar(max) = NULL,
 @MirrorCleanupTime int = NULL,
 @MirrorCleanupMode nvarchar(max) = 'AFTER_BACKUP',
+@MirrorURL nvarchar(max) = NULL,
 @AvailabilityGroups nvarchar(max) = NULL,
 @Updateability nvarchar(max) = 'ALL',
 @AdaptiveCompression nvarchar(max) = NULL,
@@ -381,7 +382,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2018-06-24 15:24:40                                                               //--
+  --// Version: 2018-06-27 20:44:12                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -475,6 +476,10 @@ BEGIN
                               Mirror bit,
                               Completed bit)
 
+  DECLARE @URLs TABLE (ID int IDENTITY PRIMARY KEY,
+                       DirectoryPath nvarchar(max),
+                       Mirror bit)
+
   DECLARE @DirectoryInfo TABLE (FileExists bit,
                                 FileIsADirectory bit,
                                 ParentDirectoryExists bit)
@@ -525,6 +530,10 @@ BEGIN
                                      CleanupCompleted bit,
                                      CreateOutput int,
                                      CleanupOutput int)
+
+  DECLARE @CurrentURLs TABLE (ID int PRIMARY KEY,
+                              DirectoryPath nvarchar(max),
+                              Mirror bit)
 
   DECLARE @CurrentFiles TABLE ([Type] nvarchar(max),
                                FilePath nvarchar(max),
@@ -595,6 +604,7 @@ BEGIN
   SET @Parameters = @Parameters + ', @MirrorDirectory = ' + ISNULL('''' + REPLACE(@MirrorDirectory,'''','''''') + '''','NULL')
   SET @Parameters = @Parameters + ', @MirrorCleanupTime = ' + ISNULL(CAST(@MirrorCleanupTime AS nvarchar),'NULL')
   SET @Parameters = @Parameters + ', @MirrorCleanupMode = ' + ISNULL('''' + REPLACE(@MirrorCleanupMode,'''','''''') + '''','NULL')
+  SET @Parameters = @Parameters + ', @MirrorURL = ' + ISNULL('''' + REPLACE(@MirrorURL,'''','''''') + '''','NULL')
   SET @Parameters = @Parameters + ', @AvailabilityGroups = ' + ISNULL('''' + REPLACE(@AvailabilityGroups,'''','''''') + '''','NULL')
   SET @Parameters = @Parameters + ', @Updateability = ' + ISNULL('''' + REPLACE(@Updateability,'''','''''') + '''','NULL')
   SET @Parameters = @Parameters + ', @AdaptiveCompression = ' + ISNULL('''' + REPLACE(@AdaptiveCompression,'''','''''') + '''','NULL')
@@ -1117,6 +1127,18 @@ BEGIN
   END
 
   ----------------------------------------------------------------------------------------------------
+  --// Select URLs                                                                                //--
+  ----------------------------------------------------------------------------------------------------
+
+  INSERT INTO @URLs (DirectoryPath, Mirror)
+  SELECT @URL, 0
+  WHERE @URL IS NOT NULL
+
+  INSERT INTO @URLs (DirectoryPath, Mirror)
+  SELECT @MirrorURL, 1
+  WHERE @MirrorURL IS NOT NULL
+
+  ----------------------------------------------------------------------------------------------------
   --// Get directory separator                                                                   //--
   ----------------------------------------------------------------------------------------------------
 
@@ -1130,10 +1152,9 @@ BEGIN
   SET DirectoryPath = LEFT(DirectoryPath,LEN(DirectoryPath) - 1)
   WHERE RIGHT(DirectoryPath,1) = @DirectorySeparator
 
-  IF RIGHT(@URL,1) = @DirectorySeparator
-  BEGIN
-    SET @URL = LEFT(@URL,LEN(@URL) - 1)
-  END
+  UPDATE @URLs
+  SET DirectoryPath = LEFT(DirectoryPath,LEN(DirectoryPath) - 1)
+  WHERE RIGHT(DirectoryPath,1) = @DirectorySeparator
 
   ----------------------------------------------------------------------------------------------------
   --// Get file extension                                                                         //--
@@ -1465,6 +1486,13 @@ BEGIN
   IF @MirrorCleanupMode NOT IN('BEFORE_BACKUP','AFTER_BACKUP') OR @MirrorCleanupMode IS NULL
   BEGIN
     SET @ErrorMessage = 'The value for the parameter @MirrorCleanupMode is not supported.' + CHAR(13) + CHAR(10) + ' '
+    RAISERROR(@ErrorMessage,16,1) WITH NOWAIT
+    SET @Error = @@ERROR
+  END
+
+  IF (@MirrorURL IS NOT NULL AND @Directory IS NOT NULL) OR (@MirrorURL IS NOT NULL AND @MirrorDirectory IS NOT NULL) OR (@MirrorURL IS NOT NULL AND @Version < 11.03339) OR (@MirrorURL IS NOT NULL AND @BackupSoftware IS NOT NULL) OR (@MirrorURL NOT LIKE 'https://%/%') OR (@MirrorURL IS NOT NULL AND @URL IS NULL)
+  BEGIN
+    SET @ErrorMessage = 'The value for the parameter @MirrorURL is not supported.' + CHAR(13) + CHAR(10) + ' '
     RAISERROR(@ErrorMessage,16,1) WITH NOWAIT
     SET @Error = @@ERROR
   END
@@ -2383,6 +2411,13 @@ BEGIN
       FROM @Directories
       ORDER BY ID ASC
 
+      INSERT INTO @CurrentURLs (ID, DirectoryPath, Mirror)
+      SELECT ROW_NUMBER() OVER (ORDER BY ID),
+             DirectoryPath + CASE WHEN @CurrentDirectoryStructure IS NOT NULL THEN @DirectorySeparator + @CurrentDirectoryStructure ELSE '' END,
+             Mirror
+      FROM @URLs
+      ORDER BY ID ASC
+
       SELECT @CurrentDatabaseFileName = CASE
       WHEN @CurrentAvailabilityGroup IS NOT NULL THEN @AvailabilityGroupFileName
       ELSE @FileName
@@ -2510,7 +2545,7 @@ BEGIN
 
       SELECT @CurrentMaxFilePathLength = CASE
       WHEN EXISTS (SELECT * FROM @CurrentDirectories) THEN (SELECT MAX(LEN(DirectoryPath + @DirectorySeparator)) FROM @CurrentDirectories)
-      WHEN @URL IS NOT NULL THEN LEN(@URL + CASE WHEN @CurrentDirectoryStructure IS NOT NULL THEN @DirectorySeparator + @CurrentDirectoryStructure ELSE '' END + @DirectorySeparator)
+      WHEN EXISTS (SELECT * FROM @CurrentURLs) THEN (SELECT MAX(LEN(DirectoryPath + @DirectorySeparator)) FROM @CurrentURLs)
       END
       + LEN(REPLACE(REPLACE(@CurrentDatabaseFileName,'{DatabaseName}',@CurrentDatabaseNameFS), '{FileNumber}', CASE WHEN @NumberOfFiles > 1 AND @NumberOfFiles <= 9 THEN '1' WHEN @NumberOfFiles >= 10 THEN '01' ELSE '' END))
 
@@ -2584,7 +2619,7 @@ BEGIN
         SELECT 1, 0
       END
 
-      IF @URL IS NOT NULL
+      IF EXISTS (SELECT * FROM @CurrentURLs WHERE Mirror = 0)
       BEGIN
         SET @CurrentFileNumber = 0
 
@@ -2592,7 +2627,9 @@ BEGIN
         BEGIN
           SET @CurrentFileNumber = @CurrentFileNumber + 1
 
-          SET @CurrentDirectoryPath = @URL + CASE WHEN @CurrentDirectoryStructure IS NOT NULL THEN @DirectorySeparator + @CurrentDirectoryStructure ELSE '' END
+          SELECT @CurrentDirectoryPath = DirectoryPath
+          FROM @CurrentURLs
+          WHERE Mirror = 0
 
           SET @CurrentFileName = REPLACE(@CurrentDatabaseFileName, '{FileNumber}', CASE WHEN @NumberOfFiles > 1 AND @NumberOfFiles <= 9 THEN CAST(@CurrentFileNumber AS nvarchar) WHEN @NumberOfFiles >= 10 THEN RIGHT('0' + CAST(@CurrentFileNumber AS nvarchar),2) ELSE '' END)
 
@@ -2608,6 +2645,34 @@ BEGIN
 
         INSERT INTO @CurrentBackupSet (Mirror, VerifyCompleted)
         SELECT 0, 0
+      END
+
+      IF EXISTS (SELECT * FROM @CurrentURLs WHERE Mirror = 1)
+      BEGIN
+        SET @CurrentFileNumber = 0
+
+        WHILE @CurrentFileNumber < @NumberOfFiles
+        BEGIN
+          SET @CurrentFileNumber = @CurrentFileNumber + 1
+
+          SELECT @CurrentDirectoryPath = DirectoryPath
+          FROM @CurrentURLs
+          WHERE Mirror = 1
+
+          SET @CurrentFileName = REPLACE(@CurrentDatabaseFileName, '{FileNumber}', CASE WHEN @NumberOfFiles > 1 AND @NumberOfFiles <= 9 THEN CAST(@CurrentFileNumber AS nvarchar) WHEN @NumberOfFiles >= 10 THEN RIGHT('0' + CAST(@CurrentFileNumber AS nvarchar),2) ELSE '' END)
+
+          SET @CurrentFilePath = @CurrentDirectoryPath + @DirectorySeparator + @CurrentFileName
+
+          INSERT INTO @CurrentFiles ([Type], FilePath, Mirror)
+          SELECT 'URL', @CurrentFilePath, 1
+
+          SET @CurrentDirectoryPath = NULL
+          SET @CurrentFileName = NULL
+          SET @CurrentFilePath = NULL
+        END
+
+        INSERT INTO @CurrentBackupSet (Mirror, VerifyCompleted)
+        SELECT 1, 0
       END
 
       -- Create directory
@@ -3284,6 +3349,7 @@ BEGIN
     SET @CurrentCommandType03 = NULL
 
     DELETE FROM @CurrentDirectories
+    DELETE FROM @CurrentURLs
     DELETE FROM @CurrentFiles
     DELETE FROM @CurrentCleanupDates
     DELETE FROM @CurrentBackupSet
@@ -3347,7 +3413,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2018-06-24 15:24:40                                                               //--
+  --// Version: 2018-06-27 20:44:12                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -5053,7 +5119,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2018-06-24 15:24:40                                                               //--
+  --// Version: 2018-06-27 20:44:12                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
