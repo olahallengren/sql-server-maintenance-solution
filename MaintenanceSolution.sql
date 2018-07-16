@@ -10,7 +10,7 @@ License: https://ola.hallengren.com/license.html
 
 GitHub: https://github.com/olahallengren/sql-server-maintenance-solution
 
-Version: 2018-06-27 20:44:12
+Version: 2018-07-16 18:32:21
 
 You can contact me by e-mail at ola@hallengren.com.
 
@@ -28,6 +28,7 @@ DECLARE @BackupDirectory nvarchar(max)
 DECLARE @CleanupTime int
 DECLARE @OutputFileDirectory nvarchar(max)
 DECLARE @LogToTable nvarchar(max)
+DECLARE @ErrorMessage nvarchar(max)
 
 SET @CreateJobs          = 'Y'          -- Specify whether jobs should be created.
 SET @BackupDirectory     = NULL         -- Specify the backup root directory. If no directory is specified, the default backup directory is used.
@@ -37,7 +38,14 @@ SET @LogToTable          = 'Y'          -- Log commands to a table.
 
 IF IS_SRVROLEMEMBER('sysadmin') = 0 AND NOT (DB_ID('rdsadmin') IS NOT NULL AND SUSER_SNAME(0x01) = 'rdsa')
 BEGIN
-  RAISERROR('You need to be a member of the SysAdmin server role to install the SQL Server Maintenance Solution.',16,1)
+  SET @ErrorMessage = 'You need to be a member of the SysAdmin server role to install the SQL Server Maintenance Solution.' + CHAR(13) + CHAR(10) + ' '
+  RAISERROR(@ErrorMessage,16,1) WITH NOWAIT
+END
+
+IF NOT (SELECT [compatibility_level] FROM sys.databases WHERE database_id = DB_ID()) >= 90
+BEGIN
+  SET @ErrorMessage = 'The database ' + QUOTENAME(DB_NAME(DB_ID())) + ' has to be in compatibility level 90 or higher.' + CHAR(13) + CHAR(10) + ' '
+  RAISERROR(@ErrorMessage,16,1) WITH NOWAIT
 END
 
 IF OBJECT_ID('tempdb..#Config') IS NOT NULL DROP TABLE #Config
@@ -118,7 +126,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2018-06-27 20:44:12                                                               //--
+  --// Version: 2018-07-16 18:32:21                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -146,6 +154,27 @@ BEGIN
   ----------------------------------------------------------------------------------------------------
   --// Check core requirements                                                                    //--
   ----------------------------------------------------------------------------------------------------
+
+  IF NOT (SELECT [compatibility_level] FROM sys.databases WHERE database_id = DB_ID()) >= 90
+  BEGIN
+    SET @ErrorMessage = 'The database ' + QUOTENAME(DB_NAME(DB_ID())) + ' has to be in compatibility level 90 or higher.' + CHAR(13) + CHAR(10) + ' '
+    RAISERROR(@ErrorMessage,16,1) WITH NOWAIT
+    SET @Error = @@ERROR
+  END
+
+  IF NOT (SELECT uses_ansi_nulls FROM sys.sql_modules WHERE [object_id] = @@PROCID) = 1
+  BEGIN
+    SET @ErrorMessage = 'ANSI_NULLS has to be set to ON for the stored procedure.' + CHAR(13) + CHAR(10) + ' '
+    RAISERROR(@ErrorMessage,16,1) WITH NOWAIT
+    SET @Error = @@ERROR
+  END
+
+  IF NOT (SELECT uses_quoted_identifier FROM sys.sql_modules WHERE [object_id] = @@PROCID) = 1
+  BEGIN
+    SET @ErrorMessage = 'QUOTED_IDENTIFIER has to be set to ON for the stored procedure.' + CHAR(13) + CHAR(10) + ' '
+    RAISERROR(@ErrorMessage,16,1) WITH NOWAIT
+    SET @Error = @@ERROR
+  END
 
   IF @LogToTable = 'Y' AND NOT EXISTS (SELECT * FROM sys.objects objects INNER JOIN sys.schemas schemas ON objects.[schema_id] = schemas.[schema_id] WHERE objects.[type] = 'U' AND schemas.[name] = 'dbo' AND objects.[name] = 'CommandLog')
   BEGIN
@@ -382,7 +411,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2018-06-27 20:44:12                                                               //--
+  --// Version: 2018-07-16 18:32:21                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -660,6 +689,27 @@ BEGIN
   --// Check core requirements                                                                    //--
   ----------------------------------------------------------------------------------------------------
 
+  IF NOT (SELECT [compatibility_level] FROM sys.databases WHERE database_id = DB_ID()) >= 90
+  BEGIN
+    SET @ErrorMessage = 'The database ' + QUOTENAME(DB_NAME(DB_ID())) + ' has to be in compatibility level 90 or higher.' + CHAR(13) + CHAR(10) + ' '
+    RAISERROR(@ErrorMessage,16,1) WITH NOWAIT
+    SET @Error = @@ERROR
+  END
+
+  IF NOT (SELECT uses_ansi_nulls FROM sys.sql_modules WHERE [object_id] = @@PROCID) = 1
+  BEGIN
+    SET @ErrorMessage = 'ANSI_NULLS has to be set to ON for the stored procedure.' + CHAR(13) + CHAR(10) + ' '
+    RAISERROR(@ErrorMessage,16,1) WITH NOWAIT
+    SET @Error = @@ERROR
+  END
+
+  IF NOT (SELECT uses_quoted_identifier FROM sys.sql_modules WHERE [object_id] = @@PROCID) = 1
+  BEGIN
+    SET @ErrorMessage = 'QUOTED_IDENTIFIER has to be set to ON for the stored procedure.' + CHAR(13) + CHAR(10) + ' '
+    RAISERROR(@ErrorMessage,16,1) WITH NOWAIT
+    SET @Error = @@ERROR
+  END
+
   IF NOT EXISTS (SELECT * FROM sys.objects objects INNER JOIN sys.schemas schemas ON objects.[schema_id] = schemas.[schema_id] WHERE objects.[type] = 'P' AND schemas.[name] = 'dbo' AND objects.[name] = 'CommandExecute')
   BEGIN
     SET @ErrorMessage = 'The stored procedure CommandExecute is missing. Download https://ola.hallengren.com/scripts/CommandExecute.sql.' + CHAR(13) + CHAR(10) + ' '
@@ -778,7 +828,7 @@ BEGIN
   BEGIN
     INSERT INTO @tmpAvailabilityGroups (AvailabilityGroupName, Selected)
     SELECT name AS AvailabilityGroupName,
-            0 AS Selected
+           0 AS Selected
     FROM sys.availability_groups
 
     INSERT INTO @tmpDatabasesAvailabilityGroups (DatabaseName, AvailabilityGroupName)
@@ -789,12 +839,12 @@ BEGIN
 
   INSERT INTO @tmpDatabases (DatabaseName, DatabaseNameFS, DatabaseType, AvailabilityGroup, [Order], Selected, Completed)
   SELECT [name] AS DatabaseName,
-          LTRIM(RTRIM(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE([name],'\',''),'/',''),':',''),'*',''),'?',''),'"',''),'<',''),'>',''),'|',''))) AS DatabaseNameFS,
-          CASE WHEN name IN('master','msdb','model') THEN 'S' ELSE 'U' END AS DatabaseType,
-          NULL AS AvailabilityGroup,
-          0 AS [Order],
-          0 AS Selected,
-          0 AS Completed
+         LTRIM(RTRIM(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE([name],'\',''),'/',''),':',''),'*',''),'?',''),'"',''),'<',''),'>',''),'|',''))) AS DatabaseNameFS,
+         CASE WHEN name IN('master','msdb','model') THEN 'S' ELSE 'U' END AS DatabaseType,
+         NULL AS AvailabilityGroup,
+         0 AS [Order],
+         0 AS Selected,
+         0 AS Completed
   FROM sys.databases
   WHERE [name] <> 'tempdb'
   AND source_database_id IS NULL
@@ -1738,14 +1788,14 @@ BEGIN
   ----------------------------------------------------------------------------------------------------
 
   IF @DatabaseOrder IN('DATABASE_SIZE_ASC','DATABASE_SIZE_DESC')
-    BEGIN
+  BEGIN
     UPDATE tmpDatabases
     SET DatabaseSize = (SELECT SUM(size) FROM sys.master_files WHERE [type] = 0 AND database_id = DB_ID(tmpDatabases.DatabaseName))
     FROM @tmpDatabases tmpDatabases
   END
 
   IF @DatabaseOrder IN('LOG_SIZE_SINCE_LAST_LOG_BACKUP_ASC','LOG_SIZE_SINCE_LAST_LOG_BACKUP_DESC')
-    BEGIN
+  BEGIN
     UPDATE tmpDatabases
     SET LogSizeSinceLastLogBackup = (SELECT log_since_last_log_backup_mb FROM sys.dm_db_log_stats(DB_ID(tmpDatabases.DatabaseName)))
     FROM @tmpDatabases tmpDatabases
@@ -3413,7 +3463,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2018-06-27 20:44:12                                                               //--
+  --// Version: 2018-07-16 18:32:21                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -3630,6 +3680,27 @@ BEGIN
   --// Check core requirements                                                                    //--
   ----------------------------------------------------------------------------------------------------
 
+  IF NOT (SELECT [compatibility_level] FROM sys.databases WHERE database_id = DB_ID()) >= 90
+  BEGIN
+    SET @ErrorMessage = 'The database ' + QUOTENAME(DB_NAME(DB_ID())) + ' has to be in compatibility level 90 or higher.' + CHAR(13) + CHAR(10) + ' '
+    RAISERROR(@ErrorMessage,16,1) WITH NOWAIT
+    SET @Error = @@ERROR
+  END
+
+  IF NOT (SELECT uses_ansi_nulls FROM sys.sql_modules WHERE [object_id] = @@PROCID) = 1
+  BEGIN
+    SET @ErrorMessage = 'ANSI_NULLS has to be set to ON for the stored procedure.' + CHAR(13) + CHAR(10) + ' '
+    RAISERROR(@ErrorMessage,16,1) WITH NOWAIT
+    SET @Error = @@ERROR
+  END
+
+  IF NOT (SELECT uses_quoted_identifier FROM sys.sql_modules WHERE [object_id] = @@PROCID) = 1
+  BEGIN
+    SET @ErrorMessage = 'QUOTED_IDENTIFIER has to be set to ON for the stored procedure.' + CHAR(13) + CHAR(10) + ' '
+    RAISERROR(@ErrorMessage,16,1) WITH NOWAIT
+    SET @Error = @@ERROR
+  END
+
   IF NOT EXISTS (SELECT * FROM sys.objects objects INNER JOIN sys.schemas schemas ON objects.[schema_id] = schemas.[schema_id] WHERE objects.[type] = 'P' AND schemas.[name] = 'dbo' AND objects.[name] = 'CommandExecute')
   BEGIN
     SET @ErrorMessage = 'The stored procedure CommandExecute is missing. Download https://ola.hallengren.com/scripts/CommandExecute.sql.' + CHAR(13) + CHAR(10) + ' '
@@ -3741,7 +3812,7 @@ BEGIN
   BEGIN
     INSERT INTO @tmpAvailabilityGroups (AvailabilityGroupName, Selected)
     SELECT name AS AvailabilityGroupName,
-            0 AS Selected
+           0 AS Selected
     FROM sys.availability_groups
 
     INSERT INTO @tmpDatabasesAvailabilityGroups (DatabaseName, AvailabilityGroupName)
@@ -3752,12 +3823,12 @@ BEGIN
 
   INSERT INTO @tmpDatabases (DatabaseName, DatabaseType, AvailabilityGroup, [Snapshot], [Order], Selected, Completed)
   SELECT [name] AS DatabaseName,
-          CASE WHEN name IN('master','msdb','model') THEN 'S' ELSE 'U' END AS DatabaseType,
-          NULL AS AvailabilityGroup,
-          CASE WHEN source_database_id IS NOT NULL THEN 1 ELSE 0 END AS [Snapshot],
-          0 AS [Order],
-          0 AS Selected,
-          0 AS Completed
+         CASE WHEN name IN('master','msdb','model') THEN 'S' ELSE 'U' END AS DatabaseType,
+         NULL AS AvailabilityGroup,
+         CASE WHEN source_database_id IS NOT NULL THEN 1 ELSE 0 END AS [Snapshot],
+         0 AS [Order],
+         0 AS Selected,
+         0 AS Completed
   FROM sys.databases
   ORDER BY [name] ASC
 
@@ -4267,21 +4338,21 @@ BEGIN
   ----------------------------------------------------------------------------------------------------
 
   IF @DatabaseOrder IN('DATABASE_SIZE_ASC','DATABASE_SIZE_DESC')
-    BEGIN
+  BEGIN
     UPDATE tmpDatabases
     SET DatabaseSize = (SELECT SUM(size) FROM sys.master_files WHERE [type] = 0 AND database_id = DB_ID(tmpDatabases.DatabaseName))
     FROM @tmpDatabases tmpDatabases
   END
 
   IF @DatabaseOrder IN('DATABASE_LAST_GOOD_CHECK_ASC','DATABASE_LAST_GOOD_CHECK_DESC')
-    BEGIN
+  BEGIN
     UPDATE tmpDatabases
     SET LastGoodCheckDbTime = NULLIF(CAST(DATABASEPROPERTYEX (DatabaseName,'LastGoodCheckDbTime') AS datetime),'1900-01-01 00:00:00.000')
     FROM @tmpDatabases tmpDatabases
   END
 
   IF @DatabaseOrder IN('REPLICA_LAST_GOOD_CHECK_ASC','REPLICA_LAST_GOOD_CHECK_DESC')
-    BEGIN
+  BEGIN
     UPDATE tmpDatabases
     SET LastCommandTime = MaxStartTime
     FROM @tmpDatabases tmpDatabases
@@ -5119,7 +5190,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2018-06-27 20:44:12                                                               //--
+  --// Version: 2018-07-16 18:32:21                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -5405,6 +5476,27 @@ BEGIN
   --// Check core requirements                                                                    //--
   ----------------------------------------------------------------------------------------------------
 
+  IF NOT (SELECT [compatibility_level] FROM sys.databases WHERE database_id = DB_ID()) >= 90
+  BEGIN
+    SET @ErrorMessage = 'The database ' + QUOTENAME(DB_NAME(DB_ID())) + ' has to be in compatibility level 90 or higher.' + CHAR(13) + CHAR(10) + ' '
+    RAISERROR(@ErrorMessage,16,1) WITH NOWAIT
+    SET @Error = @@ERROR
+  END
+
+  IF NOT (SELECT uses_ansi_nulls FROM sys.sql_modules WHERE [object_id] = @@PROCID) = 1
+  BEGIN
+    SET @ErrorMessage = 'ANSI_NULLS has to be set to ON for the stored procedure.' + CHAR(13) + CHAR(10) + ' '
+    RAISERROR(@ErrorMessage,16,1) WITH NOWAIT
+    SET @Error = @@ERROR
+  END
+
+  IF NOT (SELECT uses_quoted_identifier FROM sys.sql_modules WHERE [object_id] = @@PROCID) = 1
+  BEGIN
+    SET @ErrorMessage = 'QUOTED_IDENTIFIER has to be set to ON for the stored procedure.' + CHAR(13) + CHAR(10) + ' '
+    RAISERROR(@ErrorMessage,16,1) WITH NOWAIT
+    SET @Error = @@ERROR
+  END
+
   IF NOT EXISTS (SELECT * FROM sys.objects objects INNER JOIN sys.schemas schemas ON objects.[schema_id] = schemas.[schema_id] WHERE objects.[type] = 'P' AND schemas.[name] = 'dbo' AND objects.[name] = 'CommandExecute')
   BEGIN
     SET @ErrorMessage = 'The stored procedure CommandExecute is missing. Download https://ola.hallengren.com/scripts/CommandExecute.sql.' + CHAR(13) + CHAR(10) + ' '
@@ -5516,7 +5608,7 @@ BEGIN
   BEGIN
     INSERT INTO @tmpAvailabilityGroups (AvailabilityGroupName, Selected)
     SELECT name AS AvailabilityGroupName,
-            0 AS Selected
+           0 AS Selected
     FROM sys.availability_groups
 
     INSERT INTO @tmpDatabasesAvailabilityGroups (DatabaseName, AvailabilityGroupName)
@@ -5527,11 +5619,11 @@ BEGIN
 
   INSERT INTO @tmpDatabases (DatabaseName, DatabaseType, AvailabilityGroup, [Order], Selected, Completed)
   SELECT [name] AS DatabaseName,
-          CASE WHEN name IN('master','msdb','model') THEN 'S' ELSE 'U' END AS DatabaseType,
-          NULL AS AvailabilityGroup,
-          0 AS [Order],
-          0 AS Selected,
-          0 AS Completed
+         CASE WHEN name IN('master','msdb','model') THEN 'S' ELSE 'U' END AS DatabaseType,
+         NULL AS AvailabilityGroup,
+         0 AS [Order],
+         0 AS Selected,
+         0 AS Completed
   FROM sys.databases
   WHERE [name] <> 'tempdb'
   AND source_database_id IS NULL
@@ -6117,7 +6209,7 @@ BEGIN
   ----------------------------------------------------------------------------------------------------
 
   IF @DatabaseOrder IN('DATABASE_SIZE_ASC','DATABASE_SIZE_DESC')
-    BEGIN
+  BEGIN
     UPDATE tmpDatabases
     SET DatabaseSize = (SELECT SUM(size) FROM sys.master_files WHERE [type] = 0 AND database_id = DB_ID(tmpDatabases.DatabaseName))
     FROM @tmpDatabases tmpDatabases
@@ -7256,7 +7348,7 @@ BEGIN
 END
 
 GO
-IF (SELECT [Value] FROM #Config WHERE Name = 'CreateJobs') = 'Y' AND SERVERPROPERTY('EngineEdition') NOT IN(4, 5) AND (IS_SRVROLEMEMBER('sysadmin') = 1 OR (DB_ID('rdsadmin') IS NOT NULL AND SUSER_SNAME(0x01) = 'rdsa'))
+IF (SELECT [Value] FROM #Config WHERE Name = 'CreateJobs') = 'Y' AND SERVERPROPERTY('EngineEdition') NOT IN(4, 5) AND (IS_SRVROLEMEMBER('sysadmin') = 1 OR (DB_ID('rdsadmin') IS NOT NULL AND SUSER_SNAME(0x01) = 'rdsa')) AND (SELECT [compatibility_level] FROM sys.databases WHERE database_id = DB_ID()) >= 90
 BEGIN
 
   DECLARE @BackupDirectory nvarchar(max)
