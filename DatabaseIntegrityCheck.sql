@@ -1219,6 +1219,11 @@ BEGIN
       SELECT @CurrentIsPreferredBackupReplica = sys.fn_hadr_backup_is_preferred_replica(@CurrentDatabaseName)
     END
 
+	IF @Version >= 13 AND SERVERPROPERTY('IsHadrEnabled') = 1 AND @CurrentAvailabilityGroup IS NOT NULL AND @CurrentAvailabilityGroupRole = 'SECONDARY' AND SERVERPROPERTY('EngineEdition') = 2
+    BEGIN
+      SET @CurrentIsDatabaseAccessible = 0
+    END
+
     IF SERVERPROPERTY('EngineEdition') <> 5
     BEGIN
       SELECT @CurrentDatabaseMirroringRole = UPPER(mirroring_role_desc)
