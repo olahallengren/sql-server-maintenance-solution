@@ -7558,6 +7558,16 @@ BEGIN
          'cmd /q /c "For /F "tokens=1 delims=" %v In (''ForFiles /P "' + COALESCE(@OutputFileDirectory,@TokenLogDirectory,@LogDirectory) + '" /m *_*_*_*.txt /d -30 2^>^&1'') do if EXIST "' + COALESCE(@OutputFileDirectory,@TokenLogDirectory,@LogDirectory) + '"\%v echo del "' + COALESCE(@OutputFileDirectory,@TokenLogDirectory,@LogDirectory) + '"\%v& del "' + COALESCE(@OutputFileDirectory,@TokenLogDirectory,@LogDirectory) + '"\%v"',
          'OutputFileCleanup'
 
+  INSERT INTO @Jobs ([Name], CommandTSQL, DatabaseName)
+  SELECT 'sp_cycle_errorlog',
+         'EXECUTE dbo.sp_cycle_errorlog',
+         'master'
+
+  INSERT INTO @Jobs ([Name], CommandTSQL, DatabaseName)
+  SELECT 'sp_cycle_agent_errorlog',
+         'EXECUTE dbo.sp_cycle_agent_errorlog',
+         'master'
+
   IF @AmazonRDS = 1
   BEGIN
    UPDATE @Jobs
@@ -7568,7 +7578,7 @@ BEGIN
   BEGIN
    UPDATE @Jobs
    SET Selected = 1
-   WHERE [Name] IN('DatabaseIntegrityCheck - SYSTEM_DATABASES','DatabaseIntegrityCheck - USER_DATABASES','IndexOptimize - USER_DATABASES','CommandLog Cleanup','sp_delete_backuphistory','sp_purge_jobhistory')
+   WHERE [Name] IN('DatabaseIntegrityCheck - SYSTEM_DATABASES','DatabaseIntegrityCheck - USER_DATABASES','IndexOptimize - USER_DATABASES','CommandLog Cleanup','sp_delete_backuphistory','sp_purge_jobhistory','sp_cycle_errorlog','sp_cycle_agent_errorlog')
   END
   ELSE IF @HostPlatform = 'Windows'
   BEGIN
