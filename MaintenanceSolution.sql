@@ -7561,12 +7561,12 @@ BEGIN
   INSERT INTO @Jobs ([Name], CommandTSQL, DatabaseName)
   SELECT 'sp_cycle_errorlog',
          'EXECUTE dbo.sp_cycle_errorlog',
-         'master'
+         'msdb'
 
   INSERT INTO @Jobs ([Name], CommandTSQL, DatabaseName)
   SELECT 'sp_cycle_agent_errorlog',
          'EXECUTE dbo.sp_cycle_agent_errorlog',
-         'master'
+         'msdb'
 
   IF @AmazonRDS = 1
   BEGIN
