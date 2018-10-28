@@ -37,7 +37,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2018-10-28 13:55:49                                                               //--
+  --// Version: 2018-10-28 14:45:02                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -935,7 +935,7 @@ BEGIN
                 WHERE CommandType = 'DBCC_CHECKDB'
                 AND ErrorNumber = 0
                 GROUP BY DatabaseName) CommandLog
-    ON tmpDatabases.DatabaseName = CommandLog.DatabaseName
+    ON tmpDatabases.DatabaseName = CommandLog.DatabaseName COLLATE DATABASE_DEFAULT
   END
 
   IF @DatabaseOrder IS NULL
