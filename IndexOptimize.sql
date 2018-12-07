@@ -306,32 +306,32 @@ BEGIN
   SET @Parameters = @Parameters + ', @Execute = ' + ISNULL('''' + REPLACE(@Execute,'''','''''') + '''','NULL')
 
   SET @StartMessage = 'Date and time: ' + CONVERT(nvarchar,@StartTime,120)
-  RAISERROR(@StartMessage,10,1) WITH NOWAIT
+    RAISERROR('%s',10,1),'%s',(@StartMessage,10,(@StartMessage) WITH NOWAIT
 
   SET @StartMessage = 'Server: ' + CAST(SERVERPROPERTY('ServerName') AS nvarchar(max))
-  RAISERROR(@StartMessage,10,1) WITH NOWAIT
+    RAISERROR('%s',10,1),'%s',(@StartMessage,10,(@StartMessage) WITH NOWAIT
 
   SET @StartMessage = 'Version: ' + CAST(SERVERPROPERTY('ProductVersion') AS nvarchar(max))
-  RAISERROR(@StartMessage,10,1) WITH NOWAIT
+    RAISERROR('%s',10,1),'%s',(@StartMessage,10,(@StartMessage) WITH NOWAIT
 
   SET @StartMessage = 'Edition: ' + CAST(SERVERPROPERTY('Edition') AS nvarchar(max))
-  RAISERROR(@StartMessage,10,1) WITH NOWAIT
+    RAISERROR('%s',10,1),'%s',(@StartMessage,10,(@StartMessage) WITH NOWAIT
 
   SET @StartMessage = 'Platform: ' + @HostPlatform
-  RAISERROR(@StartMessage,10,1) WITH NOWAIT
+    RAISERROR('%s',10,1),'%s',(@StartMessage,10,(@StartMessage) WITH NOWAIT
 
   SET @StartMessage = 'Procedure: ' + QUOTENAME(DB_NAME(DB_ID())) + '.' + QUOTENAME(@SchemaName) + '.' + QUOTENAME(@ObjectName)
-  RAISERROR(@StartMessage,10,1) WITH NOWAIT
+    RAISERROR('%s',10,1),'%s',(@StartMessage,10,(@StartMessage) WITH NOWAIT
 
   SET @StartMessage = 'Parameters: ' + @Parameters
   SET @StartMessage = REPLACE(@StartMessage,'%','%%')
-  RAISERROR(@StartMessage,10,1) WITH NOWAIT
+    RAISERROR('%s',10,1),'%s',(@StartMessage,10,(@StartMessage) WITH NOWAIT
 
   SET @StartMessage = 'Version: ' + @VersionTimestamp
-  RAISERROR(@StartMessage,10,1) WITH NOWAIT
+    RAISERROR('%s',10,1),'%s',(@StartMessage,10,(@StartMessage) WITH NOWAIT
 
   SET @StartMessage = 'Source: https://ola.hallengren.com' + CHAR(13) + CHAR(10) + ' '
-  RAISERROR(@StartMessage,10,1) WITH NOWAIT
+    RAISERROR('%s',10,1),'%s',(@StartMessage,10,(@StartMessage) WITH NOWAIT
 
   ----------------------------------------------------------------------------------------------------
   --// Check core requirements                                                                    //--
@@ -340,63 +340,63 @@ BEGIN
   IF NOT (SELECT [compatibility_level] FROM sys.databases WHERE database_id = DB_ID()) >= 90
   BEGIN
     SET @ErrorMessage = 'The database ' + QUOTENAME(DB_NAME(DB_ID())) + ' has to be in compatibility level 90 or higher.' + CHAR(13) + CHAR(10) + ' '
-    RAISERROR(@ErrorMessage,16,1) WITH NOWAIT
+      RAISERROR('%s',16,1),'%s',(@ErrorMessage,16,(@ErrorMessage) WITH NOWAIT
     SET @Error = @@ERROR
   END
 
   IF NOT (SELECT uses_ansi_nulls FROM sys.sql_modules WHERE [object_id] = @@PROCID) = 1
   BEGIN
     SET @ErrorMessage = 'ANSI_NULLS has to be set to ON for the stored procedure.' + CHAR(13) + CHAR(10) + ' '
-    RAISERROR(@ErrorMessage,16,1) WITH NOWAIT
+      RAISERROR('%s',16,1),'%s',(@ErrorMessage,16,(@ErrorMessage) WITH NOWAIT
     SET @Error = @@ERROR
   END
 
   IF NOT (SELECT uses_quoted_identifier FROM sys.sql_modules WHERE [object_id] = @@PROCID) = 1
   BEGIN
     SET @ErrorMessage = 'QUOTED_IDENTIFIER has to be set to ON for the stored procedure.' + CHAR(13) + CHAR(10) + ' '
-    RAISERROR(@ErrorMessage,16,1) WITH NOWAIT
+      RAISERROR('%s',16,1),'%s',(@ErrorMessage,16,(@ErrorMessage) WITH NOWAIT
     SET @Error = @@ERROR
   END
 
   IF NOT EXISTS (SELECT * FROM sys.objects objects INNER JOIN sys.schemas schemas ON objects.[schema_id] = schemas.[schema_id] WHERE objects.[type] = 'P' AND schemas.[name] = 'dbo' AND objects.[name] = 'CommandExecute')
   BEGIN
     SET @ErrorMessage = 'The stored procedure CommandExecute is missing. Download https://ola.hallengren.com/scripts/CommandExecute.sql.' + CHAR(13) + CHAR(10) + ' '
-    RAISERROR(@ErrorMessage,16,1) WITH NOWAIT
+      RAISERROR('%s',16,1),'%s',(@ErrorMessage,16,(@ErrorMessage) WITH NOWAIT
     SET @Error = @@ERROR
   END
 
   IF EXISTS (SELECT * FROM sys.objects objects INNER JOIN sys.schemas schemas ON objects.[schema_id] = schemas.[schema_id] WHERE objects.[type] = 'P' AND schemas.[name] = 'dbo' AND objects.[name] = 'CommandExecute' AND OBJECT_DEFINITION(objects.[object_id]) NOT LIKE '%@LockMessageSeverity%')
   BEGIN
     SET @ErrorMessage = 'The stored procedure CommandExecute needs to be updated. Download https://ola.hallengren.com/scripts/CommandExecute.sql.' + CHAR(13) + CHAR(10) + ' '
-    RAISERROR(@ErrorMessage,16,1) WITH NOWAIT
+      RAISERROR('%s',16,1),'%s',(@ErrorMessage,16,(@ErrorMessage) WITH NOWAIT
     SET @Error = @@ERROR
   END
 
   IF @LogToTable = 'Y' AND NOT EXISTS (SELECT * FROM sys.objects objects INNER JOIN sys.schemas schemas ON objects.[schema_id] = schemas.[schema_id] WHERE objects.[type] = 'U' AND schemas.[name] = 'dbo' AND objects.[name] = 'CommandLog')
   BEGIN
     SET @ErrorMessage = 'The table CommandLog is missing. Download https://ola.hallengren.com/scripts/CommandLog.sql.' + CHAR(13) + CHAR(10) + ' '
-    RAISERROR(@ErrorMessage,16,1) WITH NOWAIT
+      RAISERROR('%s',16,1),'%s',(@ErrorMessage,16,(@ErrorMessage) WITH NOWAIT
     SET @Error = @@ERROR
   END
 
   IF @DatabasesInParallel = 'Y' AND NOT EXISTS (SELECT * FROM sys.objects objects INNER JOIN sys.schemas schemas ON objects.[schema_id] = schemas.[schema_id] WHERE objects.[type] = 'U' AND schemas.[name] = 'dbo' AND objects.[name] = 'Queue')
   BEGIN
     SET @ErrorMessage = 'The table Queue is missing. Download https://ola.hallengren.com/scripts/Queue.sql.' + CHAR(13) + CHAR(10) + ' '
-    RAISERROR(@ErrorMessage,16,1) WITH NOWAIT
+      RAISERROR('%s',16,1),'%s',(@ErrorMessage,16,(@ErrorMessage) WITH NOWAIT
     SET @Error = @@ERROR
   END
 
   IF @DatabasesInParallel = 'Y' AND NOT EXISTS (SELECT * FROM sys.objects objects INNER JOIN sys.schemas schemas ON objects.[schema_id] = schemas.[schema_id] WHERE objects.[type] = 'U' AND schemas.[name] = 'dbo' AND objects.[name] = 'QueueDatabase')
   BEGIN
     SET @ErrorMessage = 'The table QueueDatabase is missing. Download https://ola.hallengren.com/scripts/QueueDatabase.sql.' + CHAR(13) + CHAR(10) + ' '
-    RAISERROR(@ErrorMessage,16,1) WITH NOWAIT
+      RAISERROR('%s',16,1),'%s',(@ErrorMessage,16,(@ErrorMessage) WITH NOWAIT
     SET @Error = @@ERROR
   END
 
   IF @@TRANCOUNT <> 0
   BEGIN
     SET @ErrorMessage = 'The transaction count is not 0.' + CHAR(13) + CHAR(10) + ' '
-    RAISERROR(@ErrorMessage,16,1) WITH NOWAIT
+      RAISERROR('%s',16,1),'%s',(@ErrorMessage,16,(@ErrorMessage) WITH NOWAIT
     SET @Error = @@ERROR
   END
 
@@ -528,7 +528,7 @@ BEGIN
   IF @Databases IS NOT NULL AND (NOT EXISTS(SELECT * FROM @SelectedDatabases) OR EXISTS(SELECT * FROM @SelectedDatabases WHERE DatabaseName IS NULL OR DatabaseName = ''))
   BEGIN
     SET @ErrorMessage = 'The value for the parameter @Databases is not supported.' + CHAR(13) + CHAR(10) + ' '
-    RAISERROR(@ErrorMessage,16,1) WITH NOWAIT
+      RAISERROR('%s',16,1),'%s',(@ErrorMessage,16,(@ErrorMessage) WITH NOWAIT
     SET @Error = @@ERROR
   END
 
@@ -624,21 +624,21 @@ BEGIN
   IF @AvailabilityGroups IS NOT NULL AND (NOT EXISTS(SELECT * FROM @SelectedAvailabilityGroups) OR EXISTS(SELECT * FROM @SelectedAvailabilityGroups WHERE AvailabilityGroupName IS NULL OR AvailabilityGroupName = '') OR @Version < 11 OR SERVERPROPERTY('IsHadrEnabled') = 0)
   BEGIN
     SET @ErrorMessage = 'The value for the parameter @AvailabilityGroups is not supported.' + CHAR(13) + CHAR(10) + ' '
-    RAISERROR(@ErrorMessage,16,1) WITH NOWAIT
+      RAISERROR('%s',16,1),'%s',(@ErrorMessage,16,(@ErrorMessage) WITH NOWAIT
     SET @Error = @@ERROR
   END
 
   IF (@Databases IS NULL AND @AvailabilityGroups IS NULL)
   BEGIN
     SET @ErrorMessage = 'You need to specify one of the parameters @Databases and @AvailabilityGroups.' + CHAR(13) + CHAR(10) + ' '
-    RAISERROR(@ErrorMessage,16,1) WITH NOWAIT
+      RAISERROR('%s',16,1),'%s',(@ErrorMessage,16,(@ErrorMessage) WITH NOWAIT
     SET @Error = @@ERROR
   END
 
   IF (@Databases IS NOT NULL AND @AvailabilityGroups IS NOT NULL)
   BEGIN
     SET @ErrorMessage = 'You can only specify one of the parameters @Databases and @AvailabilityGroups.' + CHAR(13) + CHAR(10) + ' '
-    RAISERROR(@ErrorMessage,16,1) WITH NOWAIT
+      RAISERROR('%s',16,1),'%s',(@ErrorMessage,16,(@ErrorMessage) WITH NOWAIT
     SET @Error = @@ERROR
   END
 
@@ -768,7 +768,7 @@ BEGIN
   OR EXISTS(SELECT * FROM @ActionsPreferred WHERE FragmentationGroup = 'Low' GROUP BY [Action] HAVING COUNT(*) > 1)
   BEGIN
     SET @ErrorMessage = 'The value for the parameter @FragmentationLow is not supported.' + CHAR(13) + CHAR(10) + ' '
-    RAISERROR(@ErrorMessage,16,1) WITH NOWAIT
+      RAISERROR('%s',16,1),'%s',(@ErrorMessage,16,(@ErrorMessage) WITH NOWAIT
     SET @Error = @@ERROR
   END
 
@@ -776,7 +776,7 @@ BEGIN
   OR EXISTS(SELECT * FROM @ActionsPreferred WHERE FragmentationGroup = 'Medium' GROUP BY [Action] HAVING COUNT(*) > 1)
   BEGIN
     SET @ErrorMessage = 'The value for the parameter @FragmentationMedium is not supported.' + CHAR(13) + CHAR(10) + ' '
-    RAISERROR(@ErrorMessage,16,1) WITH NOWAIT
+      RAISERROR('%s',16,1),'%s',(@ErrorMessage,16,(@ErrorMessage) WITH NOWAIT
     SET @Error = @@ERROR
   END
 
@@ -784,224 +784,224 @@ BEGIN
   OR EXISTS(SELECT * FROM @ActionsPreferred WHERE FragmentationGroup = 'High' GROUP BY [Action] HAVING COUNT(*) > 1)
   BEGIN
     SET @ErrorMessage = 'The value for the parameter @FragmentationHigh is not supported.' + CHAR(13) + CHAR(10) + ' '
-    RAISERROR(@ErrorMessage,16,1) WITH NOWAIT
+      RAISERROR('%s',16,1),'%s',(@ErrorMessage,16,(@ErrorMessage) WITH NOWAIT
     SET @Error = @@ERROR
   END
 
   IF @FragmentationLevel1 <= 0 OR @FragmentationLevel1 >= 100 OR @FragmentationLevel1 >= @FragmentationLevel2 OR @FragmentationLevel1 IS NULL
   BEGIN
     SET @ErrorMessage = 'The value for the parameter @FragmentationLevel1 is not supported.' + CHAR(13) + CHAR(10) + ' '
-    RAISERROR(@ErrorMessage,16,1) WITH NOWAIT
+      RAISERROR('%s',16,1),'%s',(@ErrorMessage,16,(@ErrorMessage) WITH NOWAIT
     SET @Error = @@ERROR
   END
 
   IF @FragmentationLevel2 <= 0 OR @FragmentationLevel2 >= 100 OR @FragmentationLevel2 <= @FragmentationLevel1 OR @FragmentationLevel2 IS NULL
   BEGIN
     SET @ErrorMessage = 'The value for the parameter @FragmentationLevel2 is not supported.' + CHAR(13) + CHAR(10) + ' '
-    RAISERROR(@ErrorMessage,16,1) WITH NOWAIT
+      RAISERROR('%s',16,1),'%s',(@ErrorMessage,16,(@ErrorMessage) WITH NOWAIT
     SET @Error = @@ERROR
   END
 
   IF @MinNumberOfPages < 0 OR @MinNumberOfPages IS NULL
   BEGIN
     SET @ErrorMessage = 'The value for the parameter @MinNumberOfPages is not supported.' + CHAR(13) + CHAR(10) + ' '
-    RAISERROR(@ErrorMessage,16,1) WITH NOWAIT
+      RAISERROR('%s',16,1),'%s',(@ErrorMessage,16,(@ErrorMessage) WITH NOWAIT
     SET @Error = @@ERROR
   END
 
   IF @MaxNumberOfPages < 0
   BEGIN
     SET @ErrorMessage = 'The value for the parameter @MaxNumberOfPages is not supported.' + CHAR(13) + CHAR(10) + ' '
-    RAISERROR(@ErrorMessage,16,1) WITH NOWAIT
+      RAISERROR('%s',16,1),'%s',(@ErrorMessage,16,(@ErrorMessage) WITH NOWAIT
     SET @Error = @@ERROR
   END
 
   IF @SortInTempdb NOT IN('Y','N') OR @SortInTempdb IS NULL
   BEGIN
     SET @ErrorMessage = 'The value for the parameter @SortInTempdb is not supported.' + CHAR(13) + CHAR(10) + ' '
-    RAISERROR(@ErrorMessage,16,1) WITH NOWAIT
+      RAISERROR('%s',16,1),'%s',(@ErrorMessage,16,(@ErrorMessage) WITH NOWAIT
     SET @Error = @@ERROR
   END
 
   IF @MaxDOP < 0 OR @MaxDOP > 64
   BEGIN
     SET @ErrorMessage = 'The value for the parameter @MaxDOP is not supported.' + CHAR(13) + CHAR(10) + ' '
-    RAISERROR(@ErrorMessage,16,1) WITH NOWAIT
+      RAISERROR('%s',16,1),'%s',(@ErrorMessage,16,(@ErrorMessage) WITH NOWAIT
     SET @Error = @@ERROR
   END
 
   IF @FillFactor <= 0 OR @FillFactor > 100
   BEGIN
     SET @ErrorMessage = 'The value for the parameter @FillFactor is not supported.' + CHAR(13) + CHAR(10) + ' '
-    RAISERROR(@ErrorMessage,16,1) WITH NOWAIT
+      RAISERROR('%s',16,1),'%s',(@ErrorMessage,16,(@ErrorMessage) WITH NOWAIT
     SET @Error = @@ERROR
   END
 
   IF @PadIndex NOT IN('Y','N')
   BEGIN
     SET @ErrorMessage = 'The value for the parameter @PadIndex is not supported.' + CHAR(13) + CHAR(10) + ' '
-    RAISERROR(@ErrorMessage,16,1) WITH NOWAIT
+      RAISERROR('%s',16,1),'%s',(@ErrorMessage,16,(@ErrorMessage) WITH NOWAIT
     SET @Error = @@ERROR
   END
 
   IF @LOBCompaction NOT IN('Y','N') OR @LOBCompaction IS NULL
   BEGIN
     SET @ErrorMessage = 'The value for the parameter @LOBCompaction is not supported.' + CHAR(13) + CHAR(10) + ' '
-    RAISERROR(@ErrorMessage,16,1) WITH NOWAIT
+      RAISERROR('%s',16,1),'%s',(@ErrorMessage,16,(@ErrorMessage) WITH NOWAIT
     SET @Error = @@ERROR
   END
 
   IF @UpdateStatistics NOT IN('ALL','COLUMNS','INDEX')
   BEGIN
     SET @ErrorMessage = 'The value for the parameter @UpdateStatistics is not supported.' + CHAR(13) + CHAR(10) + ' '
-    RAISERROR(@ErrorMessage,16,1) WITH NOWAIT
+      RAISERROR('%s',16,1),'%s',(@ErrorMessage,16,(@ErrorMessage) WITH NOWAIT
     SET @Error = @@ERROR
   END
 
   IF @OnlyModifiedStatistics NOT IN('Y','N') OR @OnlyModifiedStatistics IS NULL
   BEGIN
     SET @ErrorMessage = 'The value for the parameter @OnlyModifiedStatistics is not supported.' + CHAR(13) + CHAR(10) + ' '
-    RAISERROR(@ErrorMessage,16,1) WITH NOWAIT
+      RAISERROR('%s',16,1),'%s',(@ErrorMessage,16,(@ErrorMessage) WITH NOWAIT
     SET @Error = @@ERROR
   END
 
   IF @StatisticsModificationLevel <= 0 OR @StatisticsModificationLevel > 100
   BEGIN
     SET @ErrorMessage = 'The value for the parameter @StatisticsModificationLevel is not supported.' + CHAR(13) + CHAR(10) + ' '
-    RAISERROR(@ErrorMessage,16,1) WITH NOWAIT
+      RAISERROR('%s',16,1),'%s',(@ErrorMessage,16,(@ErrorMessage) WITH NOWAIT
     SET @Error = @@ERROR
   END
 
   IF @OnlyModifiedStatistics = 'Y' AND @StatisticsModificationLevel IS NOT NULL
   BEGIN
     SET @ErrorMessage = 'You can only specify one of the parameters @OnlyModifiedStatistics and @StatisticsModificationLevel.' + CHAR(13) + CHAR(10) + ' '
-    RAISERROR(@ErrorMessage,16,1) WITH NOWAIT
+      RAISERROR('%s',16,1),'%s',(@ErrorMessage,16,(@ErrorMessage) WITH NOWAIT
     SET @Error = @@ERROR
   END
 
   IF @StatisticsSample <= 0 OR @StatisticsSample  > 100
   BEGIN
     SET @ErrorMessage = 'The value for the parameter @StatisticsSample is not supported.' + CHAR(13) + CHAR(10) + ' '
-    RAISERROR(@ErrorMessage,16,1) WITH NOWAIT
+      RAISERROR('%s',16,1),'%s',(@ErrorMessage,16,(@ErrorMessage) WITH NOWAIT
     SET @Error = @@ERROR
   END
 
   IF @StatisticsResample NOT IN('Y','N') OR @StatisticsResample IS NULL OR (@StatisticsResample = 'Y' AND @StatisticsSample IS NOT NULL)
   BEGIN
     SET @ErrorMessage = 'The value for the parameter @StatisticsResample is not supported.' + CHAR(13) + CHAR(10) + ' '
-    RAISERROR(@ErrorMessage,16,1) WITH NOWAIT
+      RAISERROR('%s',16,1),'%s',(@ErrorMessage,16,(@ErrorMessage) WITH NOWAIT
     SET @Error = @@ERROR
   END
 
   IF @PartitionLevel NOT IN('Y','N') OR @PartitionLevel IS NULL
   BEGIN
     SET @ErrorMessage = 'The value for the parameter @PartitionLevel is not supported.' + CHAR(13) + CHAR(10) + ' '
-    RAISERROR(@ErrorMessage,16,1) WITH NOWAIT
+      RAISERROR('%s',16,1),'%s',(@ErrorMessage,16,(@ErrorMessage) WITH NOWAIT
     SET @Error = @@ERROR
   END
 
   IF @MSShippedObjects NOT IN('Y','N') OR @MSShippedObjects IS NULL
   BEGIN
     SET @ErrorMessage = 'The value for the parameter @MSShippedObjects is not supported.' + CHAR(13) + CHAR(10) + ' '
-    RAISERROR(@ErrorMessage,16,1) WITH NOWAIT
+      RAISERROR('%s',16,1),'%s',(@ErrorMessage,16,(@ErrorMessage) WITH NOWAIT
     SET @Error = @@ERROR
   END
 
   IF EXISTS(SELECT * FROM @SelectedIndexes WHERE DatabaseName IS NULL OR SchemaName IS NULL OR ObjectName IS NULL OR IndexName IS NULL) OR (@Indexes IS NOT NULL AND NOT EXISTS(SELECT * FROM @SelectedIndexes))
   BEGIN
     SET @ErrorMessage = 'The value for the parameter @Indexes is not supported.' + CHAR(13) + CHAR(10) + ' '
-    RAISERROR(@ErrorMessage,16,1) WITH NOWAIT
+      RAISERROR('%s',16,1),'%s',(@ErrorMessage,16,(@ErrorMessage) WITH NOWAIT
     SET @Error = @@ERROR
   END
 
   IF @TimeLimit < 0
   BEGIN
     SET @ErrorMessage = 'The value for the parameter @TimeLimit is not supported.' + CHAR(13) + CHAR(10) + ' '
-    RAISERROR(@ErrorMessage,16,1) WITH NOWAIT
+      RAISERROR('%s',16,1),'%s',(@ErrorMessage,16,(@ErrorMessage) WITH NOWAIT
     SET @Error = @@ERROR
   END
 
   IF @Delay < 0
   BEGIN
     SET @ErrorMessage = 'The value for the parameter @Delay is not supported.' + CHAR(13) + CHAR(10) + ' '
-    RAISERROR(@ErrorMessage,16,1) WITH NOWAIT
+      RAISERROR('%s',16,1),'%s',(@ErrorMessage,16,(@ErrorMessage) WITH NOWAIT
     SET @Error = @@ERROR
   END
 
   IF @WaitAtLowPriorityMaxDuration < 0 OR (@WaitAtLowPriorityMaxDuration IS NOT NULL AND @Version < 12) OR (@WaitAtLowPriorityMaxDuration IS NOT NULL AND @WaitAtLowPriorityAbortAfterWait IS NULL) OR (@WaitAtLowPriorityMaxDuration IS NULL AND @WaitAtLowPriorityAbortAfterWait IS NOT NULL)
   BEGIN
     SET @ErrorMessage = 'The value for the parameter @WaitAtLowPriorityMaxDuration is not supported.' + CHAR(13) + CHAR(10) + ' '
-    RAISERROR(@ErrorMessage,16,1) WITH NOWAIT
+      RAISERROR('%s',16,1),'%s',(@ErrorMessage,16,(@ErrorMessage) WITH NOWAIT
     SET @Error = @@ERROR
   END
 
   IF @WaitAtLowPriorityAbortAfterWait NOT IN('NONE','SELF','BLOCKERS') OR (@WaitAtLowPriorityAbortAfterWait IS NOT NULL AND @Version < 12) OR (@WaitAtLowPriorityAbortAfterWait IS NOT NULL AND @WaitAtLowPriorityMaxDuration IS NULL) OR (@WaitAtLowPriorityAbortAfterWait IS NULL AND @WaitAtLowPriorityMaxDuration IS NOT NULL)
   BEGIN
     SET @ErrorMessage = 'The value for the parameter @WaitAtLowPriorityAbortAfterWait is not supported.' + CHAR(13) + CHAR(10) + ' '
-    RAISERROR(@ErrorMessage,16,1) WITH NOWAIT
+      RAISERROR('%s',16,1),'%s',(@ErrorMessage,16,(@ErrorMessage) WITH NOWAIT
     SET @Error = @@ERROR
   END
 
   IF @Resumable NOT IN('Y','N') OR @Resumable IS NULL OR (@Resumable = 'Y' AND NOT (@Version >= 14 OR SERVERPROPERTY('EngineEdition') IN (5,8)))
   BEGIN
     SET @ErrorMessage = 'The value for the parameter @Resumable is not supported.' + CHAR(13) + CHAR(10) + ' '
-    RAISERROR(@ErrorMessage,16,1) WITH NOWAIT
+      RAISERROR('%s',16,1),'%s',(@ErrorMessage,16,(@ErrorMessage) WITH NOWAIT
     SET @Error = @@ERROR
   END
 
   IF @Resumable = 'Y' AND @SortInTempdb = 'Y'
   BEGIN
     SET @ErrorMessage = 'You can only specify one of the parameters @Resumable and @SortInTempdb.' + CHAR(13) + CHAR(10) + ' '
-    RAISERROR(@ErrorMessage,16,1) WITH NOWAIT
+      RAISERROR('%s',16,1),'%s',(@ErrorMessage,16,(@ErrorMessage) WITH NOWAIT
     SET @Error = @@ERROR
   END
 
   IF @LockTimeout < 0
   BEGIN
     SET @ErrorMessage = 'The value for the parameter @LockTimeout is not supported.' + CHAR(13) + CHAR(10) + ' '
-    RAISERROR(@ErrorMessage,16,1) WITH NOWAIT
+      RAISERROR('%s',16,1),'%s',(@ErrorMessage,16,(@ErrorMessage) WITH NOWAIT
     SET @Error = @@ERROR
   END
 
   IF @LockMessageSeverity NOT IN(10,16)
   BEGIN
     SET @ErrorMessage = 'The value for the parameter @LockMessageSeverity is not supported.' + CHAR(13) + CHAR(10) + ' '
-    RAISERROR(@ErrorMessage,16,1) WITH NOWAIT
+      RAISERROR('%s',16,1),'%s',(@ErrorMessage,16,(@ErrorMessage) WITH NOWAIT
     SET @Error = @@ERROR
   END
 
   IF @DatabaseOrder NOT IN('DATABASE_NAME_ASC','DATABASE_NAME_DESC','DATABASE_SIZE_ASC','DATABASE_SIZE_DESC') OR (@DatabaseOrder IS NOT NULL AND SERVERPROPERTY('EngineEdition') = 5)
   BEGIN
     SET @ErrorMessage = 'The value for the parameter @DatabaseOrder is not supported.' + CHAR(13) + CHAR(10) + ' '
-    RAISERROR(@ErrorMessage,16,1) WITH NOWAIT
+      RAISERROR('%s',16,1),'%s',(@ErrorMessage,16,(@ErrorMessage) WITH NOWAIT
     SET @Error = @@ERROR
   END
 
   IF @DatabasesInParallel NOT IN('Y','N') OR @DatabasesInParallel IS NULL OR (@DatabasesInParallel = 'Y' AND SERVERPROPERTY('EngineEdition') = 5)
   BEGIN
     SET @ErrorMessage = 'The value for the parameter @DatabasesInParallel is not supported.' + CHAR(13) + CHAR(10) + ' '
-    RAISERROR(@ErrorMessage,16,1) WITH NOWAIT
+      RAISERROR('%s',16,1),'%s',(@ErrorMessage,16,(@ErrorMessage) WITH NOWAIT
     SET @Error = @@ERROR
   END
 
   IF @LogToTable NOT IN('Y','N') OR @LogToTable IS NULL
   BEGIN
     SET @ErrorMessage = 'The value for the parameter @LogToTable is not supported.' + CHAR(13) + CHAR(10) + ' '
-    RAISERROR(@ErrorMessage,16,1) WITH NOWAIT
+      RAISERROR('%s',16,1),'%s',(@ErrorMessage,16,(@ErrorMessage) WITH NOWAIT
     SET @Error = @@ERROR
   END
 
   IF @Execute NOT IN('Y','N') OR @Execute IS NULL
   BEGIN
     SET @ErrorMessage = 'The value for the parameter @Execute is not supported.' + CHAR(13) + CHAR(10) + ' '
-    RAISERROR(@ErrorMessage,16,1) WITH NOWAIT
+      RAISERROR('%s',16,1),'%s',(@ErrorMessage,16,(@ErrorMessage) WITH NOWAIT
     SET @Error = @@ERROR
   END
 
   IF @Error <> 0
   BEGIN
     SET @ErrorMessage = 'The documentation is available at https://ola.hallengren.com/sql-server-index-and-statistics-maintenance.html.' + CHAR(13) + CHAR(10) + ' '
-    RAISERROR(@ErrorMessage,16,1) WITH NOWAIT
+      RAISERROR('%s',16,1),'%s',(@ErrorMessage,16,(@ErrorMessage) WITH NOWAIT
     SET @ReturnCode = @Error
     GOTO Logging
   END
@@ -1018,7 +1018,7 @@ BEGIN
   IF @@ROWCOUNT > 0
   BEGIN
     SET @ErrorMessage = 'The following databases in the @Databases parameter do not exist: ' + LEFT(@ErrorMessage,LEN(@ErrorMessage)-1) + '.' + CHAR(13) + CHAR(10) + ' '
-    RAISERROR(@ErrorMessage,16,1) WITH NOWAIT
+      RAISERROR('%s',16,1),'%s',(@ErrorMessage,16,(@ErrorMessage) WITH NOWAIT
     SET @Error = @@ERROR
   END
 
@@ -1030,7 +1030,7 @@ BEGIN
   IF @@ROWCOUNT > 0
   BEGIN
     SET @ErrorMessage = 'The following databases in the @Indexes parameter do not exist: ' + LEFT(@ErrorMessage,LEN(@ErrorMessage)-1) + '.' + CHAR(13) + CHAR(10) + ' '
-    RAISERROR(@ErrorMessage,16,1) WITH NOWAIT
+      RAISERROR('%s',16,1),'%s',(@ErrorMessage,16,(@ErrorMessage) WITH NOWAIT
     SET @Error = @@ERROR
   END
 
@@ -1042,7 +1042,7 @@ BEGIN
   IF @@ROWCOUNT > 0
   BEGIN
     SET @ErrorMessage = 'The following availability groups do not exist: ' + LEFT(@ErrorMessage,LEN(@ErrorMessage)-1) + '.' + CHAR(13) + CHAR(10) + ' '
-    RAISERROR(@ErrorMessage,16,1) WITH NOWAIT
+      RAISERROR('%s',16,1),'%s',(@ErrorMessage,16,(@ErrorMessage) WITH NOWAIT
     SET @Error = @@ERROR
   END
 
@@ -1055,7 +1055,7 @@ BEGIN
   IF @@ROWCOUNT > 0
   BEGIN
     SET @ErrorMessage = 'The following databases have been selected in the @Indexes parameter, but not in the @Databases or @AvailabilityGroups parameters: ' + LEFT(@ErrorMessage,LEN(@ErrorMessage)-1) + '.' + CHAR(13) + CHAR(10) + ' '
-    RAISERROR(@ErrorMessage,16,1) WITH NOWAIT
+      RAISERROR('%s',16,1),'%s',(@ErrorMessage,16,(@ErrorMessage) WITH NOWAIT
     SET @Error = @@ERROR
   END
 
@@ -1221,7 +1221,7 @@ BEGIN
         ROLLBACK TRANSACTION
       END
       SET @ErrorMessage = 'Msg ' + CAST(ERROR_NUMBER() AS nvarchar) + ', ' + ISNULL(ERROR_MESSAGE(),'') + CHAR(13) + CHAR(10) + ' '
-      RAISERROR(@ErrorMessage,16,1) WITH NOWAIT
+        RAISERROR('%s',16,1),'%s',(@ErrorMessage,16,(@ErrorMessage) WITH NOWAIT
       SET @ReturnCode = ERROR_NUMBER()
       GOTO Logging
     END CATCH
@@ -1320,48 +1320,48 @@ BEGIN
     WHERE name = @CurrentDatabaseName
 
     SET @DatabaseMessage = 'Date and time: ' + CONVERT(nvarchar,GETDATE(),120)
-    RAISERROR(@DatabaseMessage,10,1) WITH NOWAIT
+      RAISERROR('%s',10,1),'%s',(@DatabaseMessage,10,(@DatabaseMessage) WITH NOWAIT
 
     SET @DatabaseMessage = 'Database: ' + QUOTENAME(@CurrentDatabaseName)
-    RAISERROR(@DatabaseMessage,10,1) WITH NOWAIT
+      RAISERROR('%s',10,1),'%s',(@DatabaseMessage,10,(@DatabaseMessage) WITH NOWAIT
 
     SET @DatabaseMessage = 'Status: ' + CAST(DATABASEPROPERTYEX(@CurrentDatabaseName,'Status') AS nvarchar)
-    RAISERROR(@DatabaseMessage,10,1) WITH NOWAIT
+      RAISERROR('%s',10,1),'%s',(@DatabaseMessage,10,(@DatabaseMessage) WITH NOWAIT
 
     SET @DatabaseMessage = 'Standby: ' + CASE WHEN DATABASEPROPERTYEX(@CurrentDatabaseName,'IsInStandBy') = 1 THEN 'Yes' ELSE 'No' END
-    RAISERROR(@DatabaseMessage,10,1) WITH NOWAIT
+      RAISERROR('%s',10,1),'%s',(@DatabaseMessage,10,(@DatabaseMessage) WITH NOWAIT
 
     SET @DatabaseMessage = 'Updateability: ' + CASE WHEN @CurrentIsReadOnly = 1 THEN 'READ_ONLY' WHEN  @CurrentIsReadOnly = 0 THEN 'READ_WRITE' END
-    RAISERROR(@DatabaseMessage,10,1) WITH NOWAIT
+      RAISERROR('%s',10,1),'%s',(@DatabaseMessage,10,(@DatabaseMessage) WITH NOWAIT
 
     SET @DatabaseMessage = 'User access: ' + CAST(DATABASEPROPERTYEX(@CurrentDatabaseName,'UserAccess') AS nvarchar)
-    RAISERROR(@DatabaseMessage,10,1) WITH NOWAIT
+      RAISERROR('%s',10,1),'%s',(@DatabaseMessage,10,(@DatabaseMessage) WITH NOWAIT
 
     IF @CurrentIsDatabaseAccessible IS NOT NULL
     BEGIN
       SET @DatabaseMessage = 'Is accessible: ' + CASE WHEN @CurrentIsDatabaseAccessible = 1 THEN 'Yes' ELSE 'No' END
-      RAISERROR(@DatabaseMessage,10,1) WITH NOWAIT
+        RAISERROR('%s',10,1),'%s',(@DatabaseMessage,10,(@DatabaseMessage) WITH NOWAIT
     END
 
     SET @DatabaseMessage = 'Recovery model: ' + CAST(DATABASEPROPERTYEX(@CurrentDatabaseName,'Recovery') AS nvarchar)
-    RAISERROR(@DatabaseMessage,10,1) WITH NOWAIT
+      RAISERROR('%s',10,1),'%s',(@DatabaseMessage,10,(@DatabaseMessage) WITH NOWAIT
 
     IF @CurrentAvailabilityGroup IS NOT NULL
     BEGIN
       SET @DatabaseMessage = 'Availability group: ' + @CurrentAvailabilityGroup
-      RAISERROR(@DatabaseMessage,10,1) WITH NOWAIT
+        RAISERROR('%s',10,1),'%s',(@DatabaseMessage,10,(@DatabaseMessage) WITH NOWAIT
 
       SET @DatabaseMessage = 'Availability group role: ' + @CurrentAvailabilityGroupRole
-      RAISERROR(@DatabaseMessage,10,1) WITH NOWAIT
+        RAISERROR('%s',10,1),'%s',(@DatabaseMessage,10,(@DatabaseMessage) WITH NOWAIT
     END
 
     IF @CurrentDatabaseMirroringRole IS NOT NULL
     BEGIN
       SET @DatabaseMessage = 'Database mirroring role: ' + @CurrentDatabaseMirroringRole
-      RAISERROR(@DatabaseMessage,10,1) WITH NOWAIT
+        RAISERROR('%s',10,1),'%s',(@DatabaseMessage,10,(@DatabaseMessage) WITH NOWAIT
     END
 
-    RAISERROR('',10,1) WITH NOWAIT
+      RAISERROR('%s',10,1),'%s',('',10,('') WITH NOWAIT
 
     IF DATABASEPROPERTYEX(@CurrentDatabaseName,'Status') = 'ONLINE'
     AND (@CurrentIsDatabaseAccessible = 1 OR @CurrentIsDatabaseAccessible IS NULL)
@@ -1551,7 +1551,7 @@ BEGIN
       IF @@ROWCOUNT > 0
       BEGIN
         SET @ErrorMessage = 'The following objects in the @Indexes parameter do not exist: ' + LEFT(@ErrorMessage,LEN(@ErrorMessage)-1) + '.' + CHAR(13) + CHAR(10) + ' '
-        RAISERROR(@ErrorMessage,16,1) WITH NOWAIT
+          RAISERROR('%s',16,1),'%s',(@ErrorMessage,16,(@ErrorMessage) WITH NOWAIT
         SET @Error = @@ERROR
       END
 
@@ -1566,7 +1566,7 @@ BEGIN
       IF @@ROWCOUNT > 0
       BEGIN
         SET @ErrorMessage = 'The following indexes in the @Indexes parameter do not exist: ' + LEFT(@ErrorMessage,LEN(@ErrorMessage)-1) + '.' + CHAR(13) + CHAR(10) + ' '
-        RAISERROR(@ErrorMessage,16,1) WITH NOWAIT
+          RAISERROR('%s',16,1),'%s',(@ErrorMessage,16,(@ErrorMessage) WITH NOWAIT
         SET @Error = @@ERROR
       END
 
@@ -1634,7 +1634,7 @@ BEGIN
           BEGIN CATCH
             SET @ErrorMessage = 'Msg ' + CAST(ERROR_NUMBER() AS nvarchar) + ', ' + ISNULL(ERROR_MESSAGE(),'') + CASE WHEN ERROR_NUMBER() = 1222 THEN ' The index ' + QUOTENAME(@CurrentIndexName) + ' on the object ' + QUOTENAME(@CurrentDatabaseName) + '.' + QUOTENAME(@CurrentSchemaName) + '.' + QUOTENAME(@CurrentObjectName) + ' is locked. It could not be checked if the index exists.' ELSE '' END + CHAR(13) + CHAR(10) + ' '
             SET @Severity = CASE WHEN ERROR_NUMBER() IN(1205,1222) THEN @LockMessageSeverity ELSE 16 END
-            RAISERROR(@ErrorMessage,@Severity,1) WITH NOWAIT
+              RAISERROR('%s',@Severity,1),'%s',(@ErrorMessage,@Severity,(@ErrorMessage) WITH NOWAIT
 
             IF NOT (ERROR_NUMBER() IN(1205,1222) AND @LockMessageSeverity = 10)
             BEGIN
@@ -1667,7 +1667,7 @@ BEGIN
           BEGIN CATCH
             SET @ErrorMessage = 'Msg ' + CAST(ERROR_NUMBER() AS nvarchar) + ', ' + ISNULL(ERROR_MESSAGE(),'') + CASE WHEN ERROR_NUMBER() = 1222 THEN ' The statistics ' + QUOTENAME(@CurrentStatisticsName) + ' on the object ' + QUOTENAME(@CurrentDatabaseName) + '.' + QUOTENAME(@CurrentSchemaName) + '.' + QUOTENAME(@CurrentObjectName) + ' is locked. It could not be checked if the statistics exists.' ELSE '' END + CHAR(13) + CHAR(10) + ' '
             SET @Severity = CASE WHEN ERROR_NUMBER() IN(1205,1222) THEN @LockMessageSeverity ELSE 16 END
-            RAISERROR(@ErrorMessage,@Severity,1) WITH NOWAIT
+              RAISERROR('%s',@Severity,1),'%s',(@ErrorMessage,@Severity,(@ErrorMessage) WITH NOWAIT
 
             IF NOT (ERROR_NUMBER() IN(1205,1222) AND @LockMessageSeverity = 10)
             BEGIN
@@ -1709,7 +1709,7 @@ BEGIN
           BEGIN CATCH
             SET @ErrorMessage = 'Msg ' + CAST(ERROR_NUMBER() AS nvarchar) + ', ' + ISNULL(ERROR_MESSAGE(),'') + CASE WHEN ERROR_NUMBER() = 1222 THEN ' The statistics ' + QUOTENAME(@CurrentStatisticsName) + ' on the object ' + QUOTENAME(@CurrentDatabaseName) + '.' + QUOTENAME(@CurrentSchemaName) + '.' + QUOTENAME(@CurrentObjectName) + ' is locked. The rows and modification_counter could not be checked.' ELSE '' END + CHAR(13) + CHAR(10) + ' '
             SET @Severity = CASE WHEN ERROR_NUMBER() IN(1205,1222) THEN @LockMessageSeverity ELSE 16 END
-            RAISERROR(@ErrorMessage,@Severity,1) WITH NOWAIT
+              RAISERROR('%s',@Severity,1),'%s',(@ErrorMessage,@Severity,(@ErrorMessage) WITH NOWAIT
 
             IF NOT (ERROR_NUMBER() IN(1205,1222) AND @LockMessageSeverity = 10)
             BEGIN
@@ -1738,7 +1738,7 @@ BEGIN
           BEGIN CATCH
             SET @ErrorMessage = 'Msg ' + CAST(ERROR_NUMBER() AS nvarchar) + ', ' + ISNULL(ERROR_MESSAGE(),'') + CASE WHEN ERROR_NUMBER() = 1222 THEN ' The index ' + QUOTENAME(@CurrentIndexName) + ' on the object ' + QUOTENAME(@CurrentDatabaseName) + '.' + QUOTENAME(@CurrentSchemaName) + '.' + QUOTENAME(@CurrentObjectName) + ' is locked. The page_count and avg_fragmentation_in_percent could not be checked.' ELSE '' END + CHAR(13) + CHAR(10) + ' '
             SET @Severity = CASE WHEN ERROR_NUMBER() IN(1205,1222) THEN @LockMessageSeverity ELSE 16 END
-            RAISERROR(@ErrorMessage,@Severity,1) WITH NOWAIT
+              RAISERROR('%s',@Severity,1),'%s',(@ErrorMessage,@Severity,(@ErrorMessage) WITH NOWAIT
 
             IF NOT (ERROR_NUMBER() IN(1205,1222) AND @LockMessageSeverity = 10)
             BEGIN
@@ -2154,7 +2154,7 @@ BEGIN
     IF DATABASEPROPERTYEX(@CurrentDatabaseName,'Status') = 'SUSPECT'
     BEGIN
       SET @ErrorMessage = 'The database ' + QUOTENAME(@CurrentDatabaseName) + ' is in a SUSPECT state.' + CHAR(13) + CHAR(10) + ' '
-      RAISERROR(@ErrorMessage,16,1) WITH NOWAIT
+        RAISERROR('%s',16,1),'%s',(@ErrorMessage,16,(@ErrorMessage) WITH NOWAIT
       SET @Error = @@ERROR
     END
 
@@ -2198,7 +2198,7 @@ BEGIN
   Logging:
   SET @EndMessage = 'Date and time: ' + CONVERT(nvarchar,GETDATE(),120)
   SET @EndMessage = REPLACE(@EndMessage,'%','%%')
-  RAISERROR(@EndMessage,10,1) WITH NOWAIT
+    RAISERROR('%s',10,1),'%s',(@EndMessage,10,(@EndMessage) WITH NOWAIT
 
   IF @ReturnCode <> 0
   BEGIN
