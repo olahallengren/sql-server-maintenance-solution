@@ -67,7 +67,7 @@ ALTER PROCEDURE [dbo].[DatabaseBackup]
 @Execute nvarchar(max) = 'Y',
 @RetainDays int = NULL,  -- SQL Server and Litespeed only.
 @ExpireDate date = NULL,  -- SQL Server and Litespeed only.
-@SkipCloneDatabases bit = NULL   -- Skip RedGate SQL Clone databases.
+@SkipRedGateSqlCloneDatabases bit = NULL   -- Skip RedGate SQL Clone databases.
 
 AS
 
@@ -324,7 +324,7 @@ BEGIN
   SET @Parameters = @Parameters + ', @Execute = ' + ISNULL('''' + REPLACE(@Execute,'''','''''') + '''','NULL')
   SET @Parameters = @Parameters + ', @RetainDays = ' + ISNULL('''' + REPLACE(@RetainDays,'''','''''') + '''','NULL')
   SET @Parameters = @Parameters + ', @ExpireDate = ' + ISNULL('''' + REPLACE(@ExpireDate,'''','''''') + '''','NULL')
-  SET @Parameters = @Parameters + ', @SkipCloneDatabases = '  + ISNULL(CAST(@SkipCloneDatabases AS nvarchar),'NULL')
+  SET @Parameters = @Parameters + ', @SkipRedGateSqlCloneDatabases = '  + ISNULL(CAST(@SkipRedGateSqlCloneDatabases AS nvarchar),'NULL')
 
   SET @StartMessage = 'Date and time: ' + CONVERT(nvarchar,@StartTime,120)
   RAISERROR(@StartMessage,10,1) WITH NOWAIT
@@ -568,9 +568,10 @@ BEGIN
   --// Skip RedGate SQL Clone databases                                                           //--
   ----------------------------------------------------------------------------------------------------
 
-  IF(@SkipCloneDatabases = 1)
+  IF(@SkipRedGateSqlCloneDatabases = 1)
   BEGIN
   
+    -- https://documentation.red-gate.com/clone3/faqs#FAQs-CanIidentifywhichdatabasesareclones(soIdon'tbackthemupforexample)?
     DECLARE @TempCloneDatabases TABLE (DatabaseName VARCHAR(MAX));
      
     INSERT INTO @TempCloneDatabases EXEC sp_MSForEachDB 'Use [?];
