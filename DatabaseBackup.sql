@@ -66,7 +66,8 @@ ALTER PROCEDURE [dbo].[DatabaseBackup]
 @LogToTable nvarchar(max) = 'N',
 @Execute nvarchar(max) = 'Y',
 @RetainDays int = NULL,  -- SQL Server and Litespeed only.
-@ExpireDate date = NULL  -- SQL Server and Litespeed only.
+@ExpireDate date = NULL,  -- SQL Server and Litespeed only.
+@SkipCloneDatabases bit = NULL   -- Skip RedGate SQL Clone databases.
 
 AS
 
@@ -323,6 +324,7 @@ BEGIN
   SET @Parameters = @Parameters + ', @Execute = ' + ISNULL('''' + REPLACE(@Execute,'''','''''') + '''','NULL')
   SET @Parameters = @Parameters + ', @RetainDays = ' + ISNULL('''' + REPLACE(@RetainDays,'''','''''') + '''','NULL')
   SET @Parameters = @Parameters + ', @ExpireDate = ' + ISNULL('''' + REPLACE(@ExpireDate,'''','''''') + '''','NULL')
+  SET @Parameters = @Parameters + ', @SkipCloneDatabases = '  + ISNULL(CAST(@SkipCloneDatabases AS nvarchar),'NULL')
 
   SET @StartMessage = 'Date and time: ' + CONVERT(nvarchar,@StartTime,120)
   RAISERROR(@StartMessage,10,1) WITH NOWAIT
@@ -446,41 +448,41 @@ BEGIN
 
   WITH Databases1 (StartPosition, EndPosition, DatabaseItem) AS
   (
-  SELECT 1 AS StartPosition,
-         ISNULL(NULLIF(CHARINDEX(',', @Databases, 1), 0), LEN(@Databases) + 1) AS EndPosition,
-         SUBSTRING(@Databases, 1, ISNULL(NULLIF(CHARINDEX(',', @Databases, 1), 0), LEN(@Databases) + 1) - 1) AS DatabaseItem
-  WHERE @Databases IS NOT NULL
-  UNION ALL
-  SELECT CAST(EndPosition AS int) + 1 AS StartPosition,
-         ISNULL(NULLIF(CHARINDEX(',', @Databases, EndPosition + 1), 0), LEN(@Databases) + 1) AS EndPosition,
-         SUBSTRING(@Databases, EndPosition + 1, ISNULL(NULLIF(CHARINDEX(',', @Databases, EndPosition + 1), 0), LEN(@Databases) + 1) - EndPosition - 1) AS DatabaseItem
-  FROM Databases1
-  WHERE EndPosition < LEN(@Databases) + 1
+          SELECT 1 AS StartPosition,
+                 ISNULL(NULLIF(CHARINDEX(',', @Databases, 1), 0), LEN(@Databases) + 1) AS EndPosition,
+                 SUBSTRING(@Databases, 1, ISNULL(NULLIF(CHARINDEX(',', @Databases, 1), 0), LEN(@Databases) + 1) - 1) AS DatabaseItem
+          WHERE @Databases IS NOT NULL
+          UNION ALL
+          SELECT CAST(EndPosition AS int) + 1 AS StartPosition,
+                 ISNULL(NULLIF(CHARINDEX(',', @Databases, EndPosition + 1), 0), LEN(@Databases) + 1) AS EndPosition,
+                 SUBSTRING(@Databases, EndPosition + 1, ISNULL(NULLIF(CHARINDEX(',', @Databases, EndPosition + 1), 0), LEN(@Databases) + 1) - EndPosition - 1) AS DatabaseItem
+          FROM Databases1
+          WHERE EndPosition < LEN(@Databases) + 1
   ),
   Databases2 (DatabaseItem, StartPosition, Selected) AS
   (
-  SELECT CASE WHEN DatabaseItem LIKE '-%' THEN RIGHT(DatabaseItem,LEN(DatabaseItem) - 1) ELSE DatabaseItem END AS DatabaseItem,
-         StartPosition,
-         CASE WHEN DatabaseItem LIKE '-%' THEN 0 ELSE 1 END AS Selected
-  FROM Databases1
+          SELECT CASE WHEN DatabaseItem LIKE '-%' THEN RIGHT(DatabaseItem,LEN(DatabaseItem) - 1) ELSE DatabaseItem END AS DatabaseItem,
+                 StartPosition,
+                 CASE WHEN DatabaseItem LIKE '-%' THEN 0 ELSE 1 END AS Selected
+          FROM Databases1
   ),
   Databases3 (DatabaseItem, DatabaseType, AvailabilityGroup, StartPosition, Selected) AS
   (
-  SELECT CASE WHEN DatabaseItem IN('ALL_DATABASES','SYSTEM_DATABASES','USER_DATABASES','AVAILABILITY_GROUP_DATABASES') THEN '%' ELSE DatabaseItem END AS DatabaseItem,
-         CASE WHEN DatabaseItem = 'SYSTEM_DATABASES' THEN 'S' WHEN DatabaseItem = 'USER_DATABASES' THEN 'U' ELSE NULL END AS DatabaseType,
-         CASE WHEN DatabaseItem = 'AVAILABILITY_GROUP_DATABASES' THEN 1 ELSE NULL END AvailabilityGroup,
-         StartPosition,
-         Selected
-  FROM Databases2
+          SELECT CASE WHEN DatabaseItem IN('ALL_DATABASES','SYSTEM_DATABASES','USER_DATABASES','AVAILABILITY_GROUP_DATABASES') THEN '%' ELSE DatabaseItem END AS DatabaseItem,
+                 CASE WHEN DatabaseItem = 'SYSTEM_DATABASES' THEN 'S' WHEN DatabaseItem = 'USER_DATABASES' THEN 'U' ELSE NULL END AS DatabaseType,
+                 CASE WHEN DatabaseItem = 'AVAILABILITY_GROUP_DATABASES' THEN 1 ELSE NULL END AvailabilityGroup,
+                 StartPosition,
+                 Selected
+          FROM Databases2
   ),
   Databases4 (DatabaseName, DatabaseType, AvailabilityGroup, StartPosition, Selected) AS
   (
-  SELECT CASE WHEN LEFT(DatabaseItem,1) = '[' AND RIGHT(DatabaseItem,1) = ']' THEN PARSENAME(DatabaseItem,1) ELSE DatabaseItem END AS DatabaseItem,
-         DatabaseType,
-         AvailabilityGroup,
-         StartPosition,
-         Selected
-  FROM Databases3
+          SELECT CASE WHEN LEFT(DatabaseItem,1) = '[' AND RIGHT(DatabaseItem,1) = ']' THEN PARSENAME(DatabaseItem,1) ELSE DatabaseItem END AS DatabaseItem,
+                 DatabaseType,
+                 AvailabilityGroup,
+                 StartPosition,
+                 Selected
+          FROM Databases3
   )
   INSERT INTO @SelectedDatabases (DatabaseName, DatabaseType, AvailabilityGroup, StartPosition, Selected)
   SELECT DatabaseName,
@@ -490,6 +492,8 @@ BEGIN
          Selected
   FROM Databases4
   OPTION (MAXRECURSION 0)
+
+
 
   IF @Version >= 11 AND SERVERPROPERTY('IsHadrEnabled') = 1
   BEGIN
@@ -558,6 +562,30 @@ BEGIN
     RAISERROR(@ErrorMessage,16,1) WITH NOWAIT
     SET @Error = @@ERROR
   END
+
+
+  ----------------------------------------------------------------------------------------------------
+  --// Skip RedGate SQL Clone databases                                                           //--
+  ----------------------------------------------------------------------------------------------------
+
+  IF(@SkipCloneDatabases = 1)
+  BEGIN
+  
+    DECLARE @TempCloneDatabases TABLE (DatabaseName VARCHAR(MAX));
+     
+    INSERT INTO @TempCloneDatabases EXEC sp_MSForEachDB 'Use [?];
+    SELECT db.name AS DatabaseName
+    FROM sys.extended_properties AS prop WITH (NOLOCK)
+    JOIN sys.databases AS db WITH (NOLOCK) ON db.name = DB_NAME()
+    WHERE prop.[class_desc] = "DATABASE" AND prop.name = "IsSQLCloneDatabase" AND prop.value = 1';
+     
+    UPDATE tmpDatabases
+    SET tmpDatabases.Selected = 0
+    FROM @tmpDatabases       AS tmpDatabases
+    JOIN @TempCloneDatabases AS tmpCloneDatabases ON tmpDatabases.DatabaseName = tmpCloneDatabases.DatabaseName
+
+  END
+
 
   ----------------------------------------------------------------------------------------------------
   --// Select availability groups                                                                 //--
@@ -3106,4 +3134,3 @@ BEGIN
   ----------------------------------------------------------------------------------------------------
 
 END
-
