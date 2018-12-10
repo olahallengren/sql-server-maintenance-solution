@@ -7,6 +7,7 @@ BEGIN
 EXEC dbo.sp_executesql @statement = N'CREATE PROCEDURE [dbo].[DatabaseBackup] AS'
 END
 GO
+
 ALTER PROCEDURE [dbo].[DatabaseBackup]
 
 @Databases nvarchar(max) = NULL,
@@ -63,7 +64,9 @@ ALTER PROCEDURE [dbo].[DatabaseBackup]
 @DatabaseOrder nvarchar(max) = NULL,
 @DatabasesInParallel nvarchar(max) = 'N',
 @LogToTable nvarchar(max) = 'N',
-@Execute nvarchar(max) = 'Y'
+@Execute nvarchar(max) = 'Y',
+@RetainDays int = NULL,  -- SQL Server and Litespeed only.
+@ExpireDate date = NULL  -- SQL Server and Litespeed only.
 
 AS
 
@@ -73,7 +76,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2018-10-28 14:45:02                                                               //--
+  --// Version: 2018-07-16 18:32:21                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -318,6 +321,8 @@ BEGIN
   SET @Parameters = @Parameters + ', @DatabasesInParallel = ' + ISNULL('''' + REPLACE(@DatabasesInParallel,'''','''''') + '''','NULL')
   SET @Parameters = @Parameters + ', @LogToTable = ' + ISNULL('''' + REPLACE(@LogToTable,'''','''''') + '''','NULL')
   SET @Parameters = @Parameters + ', @Execute = ' + ISNULL('''' + REPLACE(@Execute,'''','''''') + '''','NULL')
+  SET @Parameters = @Parameters + ', @RetainDays = ' + ISNULL('''' + REPLACE(@RetainDays,'''','''''') + '''','NULL')
+  SET @Parameters = @Parameters + ', @ExpireDate = ' + ISNULL('''' + REPLACE(@ExpireDate,'''','''''') + '''','NULL')
 
   SET @StartMessage = 'Date and time: ' + CONVERT(nvarchar,@StartTime,120)
   RAISERROR(@StartMessage,10,1) WITH NOWAIT
@@ -1613,7 +1618,6 @@ BEGIN
         SET DatabaseOrder = tmpDatabases.[Order]
         FROM dbo.QueueDatabase QueueDatabase
         INNER JOIN @tmpDatabases tmpDatabases ON QueueDatabase.DatabaseName = tmpDatabases.DatabaseName
-        WHERE QueueID = @QueueID
       END
 
       COMMIT TRANSACTION
@@ -2582,6 +2586,7 @@ BEGIN
             SET @CurrentCommand03 = @CurrentCommand03 + ', FORMAT'
           END
 
+          
           IF @CopyOnly = 'Y' SET @CurrentCommand03 = @CurrentCommand03 + ', COPY_ONLY'
           IF @NoRecovery = 'Y' AND @CurrentBackupType = 'LOG' SET @CurrentCommand03 = @CurrentCommand03 + ', NORECOVERY'
           IF @Init = 'Y' SET @CurrentCommand03 = @CurrentCommand03 + ', INIT'
@@ -2594,6 +2599,14 @@ BEGIN
           IF @Encrypt = 'Y' AND @ServerAsymmetricKey IS NOT NULL SET @CurrentCommand03 = @CurrentCommand03 + 'SERVER ASYMMETRIC KEY = ' + QUOTENAME(@ServerAsymmetricKey)
           IF @Encrypt = 'Y' SET @CurrentCommand03 = @CurrentCommand03 + ')'
           IF @URL IS NOT NULL AND @Credential IS NOT NULL SET @CurrentCommand03 = @CurrentCommand03 + ', CREDENTIAL = N''' + REPLACE(@Credential,'''','''''') + ''''
+
+          -- Specifies when the backup set for this backup can be overwritten. 
+          -- If these options are both used, RETAINDAYS takes precedence over EXPIREDATE.
+          -- https://docs.microsoft.com/en-us/sql/t-sql/statements/backup-transact-sql
+          IF @RetainDays IS NOT NULL SET @CurrentCommand03 = @CurrentCommand03 + ', RETAINDAYS = ' + CAST(@RetainDays AS nvarchar)
+          IF @ExpireDate IS NOT NULL SET @CurrentCommand03 = @CurrentCommand03 + ', EXPIREDATE = ''' + CAST(@ExpireDate AS nvarchar) + ''''
+
+
         END
 
         IF @BackupSoftware = 'LITESPEED'
@@ -2652,6 +2665,13 @@ BEGIN
           END
 
           IF @EncryptionKey IS NOT NULL SET @CurrentCommand03 = @CurrentCommand03 + ', @encryptionkey = N''' + REPLACE(@EncryptionKey,'''','''''') + ''''
+
+          -- , ( @retaindays = 0..99999 | @expiration = 'date' ) ]
+          -- https://support.quest.com/fr-fr/technical-documents/litespeed-for-sql-server/8.2/installation-guide/xp_backup_database
+          IF @RetainDays IS NOT NULL SET @CurrentCommand03 = @CurrentCommand03 + ', @retaindays = ' + CAST(@RetainDays AS nvarchar)
+          IF @ExpireDate IS NOT NULL SET @CurrentCommand03 = @CurrentCommand03 + ', @expiration = ''' + CAST(@ExpireDate AS nvarchar) + ''''
+
+
           SET @CurrentCommand03 = @CurrentCommand03 + ' IF @ReturnCode <> 0 RAISERROR(''Error performing LiteSpeed backup.'', 16, 1)'
         END
 
@@ -3086,5 +3106,4 @@ BEGIN
   ----------------------------------------------------------------------------------------------------
 
 END
-GO
 
