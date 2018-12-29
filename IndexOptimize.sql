@@ -51,7 +51,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2018-12-29 16:42:00                                                               //--
+  --// Version: 2018-12-29 18:23:44                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -1881,7 +1881,7 @@ BEGIN
         SET @CurrentExtendedInfo06 = (SELECT *
                                       FROM (SELECT CAST(@CurrentPageCount AS nvarchar) AS [PageCount],
                                                    CAST(@CurrentFragmentationLevel AS nvarchar) AS Fragmentation
-                                      ) ExtendedInfo FOR XML AUTO, ELEMENTS)
+                                      ) ExtendedInfo FOR XML RAW('ExtendedInfo'), ELEMENTS)
         END
 
         -- Create statistics comment
@@ -1900,7 +1900,7 @@ BEGIN
         SET @CurrentExtendedInfo07 = (SELECT *
                                       FROM (SELECT CAST(@CurrentRowCount AS nvarchar) AS [RowCount],
                                                    CAST(@CurrentModificationCounter AS nvarchar) AS ModificationCounter
-                                      ) ExtendedInfo FOR XML AUTO, ELEMENTS)
+                                      ) ExtendedInfo FOR XML RAW('ExtendedInfo'), ELEMENTS)
         END
 
         IF @CurrentIndexID IS NOT NULL AND @CurrentAction IS NOT NULL AND (GETDATE() < DATEADD(ss,@TimeLimit,@StartTime) OR @TimeLimit IS NULL)
