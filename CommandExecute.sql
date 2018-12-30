@@ -34,7 +34,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2018-12-29 19:23:12                                                               //--
+  --// Version: 2018-12-30 11:14:12                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -66,28 +66,28 @@ BEGIN
   IF NOT (SELECT [compatibility_level] FROM sys.databases WHERE database_id = DB_ID()) >= 90
   BEGIN
     SET @ErrorMessage = 'The database ' + QUOTENAME(DB_NAME(DB_ID())) + ' has to be in compatibility level 90 or higher.' + CHAR(13) + CHAR(10) + ' '
-    RAISERROR(@ErrorMessage,16,1) WITH NOWAIT
+    RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
     SET @Error = @@ERROR
   END
 
   IF NOT (SELECT uses_ansi_nulls FROM sys.sql_modules WHERE [object_id] = @@PROCID) = 1
   BEGIN
     SET @ErrorMessage = 'ANSI_NULLS has to be set to ON for the stored procedure.' + CHAR(13) + CHAR(10) + ' '
-    RAISERROR(@ErrorMessage,16,1) WITH NOWAIT
+    RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
     SET @Error = @@ERROR
   END
 
   IF NOT (SELECT uses_quoted_identifier FROM sys.sql_modules WHERE [object_id] = @@PROCID) = 1
   BEGIN
     SET @ErrorMessage = 'QUOTED_IDENTIFIER has to be set to ON for the stored procedure.' + CHAR(13) + CHAR(10) + ' '
-    RAISERROR(@ErrorMessage,16,1) WITH NOWAIT
+    RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
     SET @Error = @@ERROR
   END
 
   IF @LogToTable = 'Y' AND NOT EXISTS (SELECT * FROM sys.objects objects INNER JOIN sys.schemas schemas ON objects.[schema_id] = schemas.[schema_id] WHERE objects.[type] = 'U' AND schemas.[name] = 'dbo' AND objects.[name] = 'CommandLog')
   BEGIN
     SET @ErrorMessage = 'The table CommandLog is missing. Download https://ola.hallengren.com/scripts/CommandLog.sql.' + CHAR(13) + CHAR(10) + ' '
-    RAISERROR(@ErrorMessage,16,1) WITH NOWAIT
+    RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
     SET @Error = @@ERROR
   END
 
@@ -104,42 +104,42 @@ BEGIN
   IF @Command IS NULL OR @Command = ''
   BEGIN
     SET @ErrorMessage = 'The value for the parameter @Command is not supported.' + CHAR(13) + CHAR(10) + ' '
-    RAISERROR(@ErrorMessage,16,1) WITH NOWAIT
+    RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
     SET @Error = @@ERROR
   END
 
   IF @CommandType IS NULL OR @CommandType = '' OR LEN(@CommandType) > 60
   BEGIN
     SET @ErrorMessage = 'The value for the parameter @CommandType is not supported.' + CHAR(13) + CHAR(10) + ' '
-    RAISERROR(@ErrorMessage,16,1) WITH NOWAIT
+    RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
     SET @Error = @@ERROR
   END
 
   IF @Mode NOT IN(1,2) OR @Mode IS NULL
   BEGIN
     SET @ErrorMessage = 'The value for the parameter @Mode is not supported.' + CHAR(13) + CHAR(10) + ' '
-    RAISERROR(@ErrorMessage,16,1) WITH NOWAIT
+    RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
     SET @Error = @@ERROR
   END
 
   IF @LockMessageSeverity NOT IN(10,16) OR @LockMessageSeverity IS NULL
   BEGIN
     SET @ErrorMessage = 'The value for the parameter @LockMessageSeverity is not supported.' + CHAR(13) + CHAR(10) + ' '
-    RAISERROR(@ErrorMessage,16,1) WITH NOWAIT
+    RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
     SET @Error = @@ERROR
   END
 
   IF @LogToTable NOT IN('Y','N') OR @LogToTable IS NULL
   BEGIN
     SET @ErrorMessage = 'The value for the parameter @LogToTable is not supported.' + CHAR(13) + CHAR(10) + ' '
-    RAISERROR(@ErrorMessage,16,1) WITH NOWAIT
+    RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
     SET @Error = @@ERROR
   END
 
   IF @Execute NOT IN('Y','N') OR @Execute IS NULL
   BEGIN
     SET @ErrorMessage = 'The value for the parameter @Execute is not supported.' + CHAR(13) + CHAR(10) + ' '
-    RAISERROR(@ErrorMessage,16,1) WITH NOWAIT
+    RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
     SET @Error = @@ERROR
   END
 
@@ -157,17 +157,15 @@ BEGIN
   SET @StartTimeSec = CONVERT(datetime,CONVERT(nvarchar,@StartTime,120),120)
 
   SET @StartMessage = 'Date and time: ' + CONVERT(nvarchar,@StartTimeSec,120)
-  RAISERROR(@StartMessage,10,1) WITH NOWAIT
+  RAISERROR('%s',10,1,@StartMessage) WITH NOWAIT
 
   SET @StartMessage = 'Command: ' + @Command
-  SET @StartMessage = REPLACE(@StartMessage,'%','%%')
-  RAISERROR(@StartMessage,10,1) WITH NOWAIT
+  RAISERROR('%s',10,1,@StartMessage) WITH NOWAIT
 
   IF @Comment IS NOT NULL
   BEGIN
     SET @StartMessage = 'Comment: ' + @Comment
-    SET @StartMessage = REPLACE(@StartMessage,'%','%%')
-    RAISERROR(@StartMessage,10,1) WITH NOWAIT
+    RAISERROR('%s',10,1,@StartMessage) WITH NOWAIT
   END
 
   IF @LogToTable = 'Y'
@@ -200,7 +198,7 @@ BEGIN
 
       SET @ErrorMessage = 'Msg ' + CAST(ERROR_NUMBER() AS nvarchar) + ', ' + ISNULL(ERROR_MESSAGE(),'')
       SET @Severity = CASE WHEN ERROR_NUMBER() IN(1205,1222) THEN @LockMessageSeverity ELSE 16 END
-      RAISERROR(@ErrorMessage,@Severity,1) WITH NOWAIT
+      RAISERROR('%s',@Severity,1,@ErrorMessage) WITH NOWAIT
 
       IF NOT (ERROR_NUMBER() IN(1205,1222) AND @LockMessageSeverity = 10)
       BEGIN
@@ -217,13 +215,13 @@ BEGIN
   SET @EndTimeSec = CONVERT(datetime,CONVERT(varchar,@EndTime,120),120)
 
   SET @EndMessage = 'Outcome: ' + CASE WHEN @Execute = 'N' THEN 'Not Executed' WHEN @Error = 0 THEN 'Succeeded' ELSE 'Failed' END
-  RAISERROR(@EndMessage,10,1) WITH NOWAIT
+  RAISERROR('%s',10,1,@EndMessage) WITH NOWAIT
 
   SET @EndMessage = 'Duration: ' + CASE WHEN DATEDIFF(ss,@StartTimeSec, @EndTimeSec)/(24*3600) > 0 THEN CAST(DATEDIFF(ss,@StartTimeSec, @EndTimeSec)/(24*3600) AS nvarchar) + '.' ELSE '' END + CONVERT(nvarchar,@EndTimeSec - @StartTimeSec,108)
-  RAISERROR(@EndMessage,10,1) WITH NOWAIT
+  RAISERROR('%s',10,1,@EndMessage) WITH NOWAIT
 
   SET @EndMessage = 'Date and time: ' + CONVERT(nvarchar,@EndTimeSec,120) + CHAR(13) + CHAR(10) + ' '
-  RAISERROR(@EndMessage,10,1) WITH NOWAIT
+  RAISERROR('%s',10,1,@EndMessage) WITH NOWAIT
 
   IF @LogToTable = 'Y'
   BEGIN
