@@ -10,10 +10,10 @@ assignees: ''
 **Description of the issue**
 
 **SQL Server version and edition**
-```SELECT @@VERSION```
+Execute ```SELECT @@VERSION```
 
 **Version of the script**
-https://ola.hallengren.com/frequently-asked-questions.html#VersionCheck
+Check the header of the stored procedures
 
 **What command are you executing?**
 
