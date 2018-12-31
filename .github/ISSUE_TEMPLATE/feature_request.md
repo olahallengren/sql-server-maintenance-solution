@@ -7,5 +7,5 @@ assignees: ''
 
 ---
 
-**Description of the feature that you would like to see**
+**Description of the feature**
 This can be a new feature, or a change to an existing feature
