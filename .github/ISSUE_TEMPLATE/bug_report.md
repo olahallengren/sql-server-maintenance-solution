@@ -9,7 +9,8 @@ assignees: ''
 
 Description of the issue:
 
-SQL Server version and edition (SELECT @@VERSION):
+SQL Server version and edition:
+SELECT @@VERSION
 
 Version of the SQL Server Maintenance Solution:
 
