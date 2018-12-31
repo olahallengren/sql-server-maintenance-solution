@@ -7,14 +7,14 @@ assignees: ''
 
 ---
 
-Description of the issue:
+**Description of the issue**
 
-SQL Server version and edition:
+**SQL Server version and edition**
 ```SELECT @@VERSION```
 
-Version of the SQL Server Maintenance Solution:
+**Version of the SQL Server Maintenance Solution**
 https://ola.hallengren.com/frequently-asked-questions.html#VersionCheck
 
-What command are you executing:
+**What command are you executing**
 
-What output are you getting?
+**What output are you getting**
