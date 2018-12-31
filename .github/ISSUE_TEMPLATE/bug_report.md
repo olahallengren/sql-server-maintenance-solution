@@ -2,7 +2,7 @@
 name: Bug report
 about: Create a report to help us improve
 title: ''
-labels: ''
+labels: bug_report
 assignees: ''
 
 ---
@@ -13,6 +13,7 @@ SQL Server version and edition:
 SELECT @@VERSION
 
 Version of the SQL Server Maintenance Solution:
+https://ola.hallengren.com/frequently-asked-questions.html#VersionCheck
 
 What command are you executing:
 
