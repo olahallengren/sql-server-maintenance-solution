@@ -8,4 +8,4 @@ assignees: ''
 ---
 
 **Description of the feature**
-This can be a new feature, or a change to an existing feature
+It can be a new feature, or a change to an existing feature
