@@ -7,7 +7,12 @@ assignees: ''
 
 ---
 
-**Describe the bug**
-A clear and concise description of what the bug is.
+Description of the issue:
 
-**SQL Server version and edition (SELECT @@VERSION)**
+SQL Server version and edition (SELECT @@VERSION):
+
+Version of the SQL Server Maintenance Solution:
+
+What command are you executing:
+
+What output are you getting?
