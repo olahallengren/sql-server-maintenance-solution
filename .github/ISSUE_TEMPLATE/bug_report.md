@@ -13,7 +13,7 @@ assignees: ''
 Execute ```SELECT @@VERSION```
 
 **Version of the script**
-Check the header of the stored procedures
+Check the header of the stored procedure
 
 **What command are you executing?**
 
