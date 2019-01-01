@@ -73,7 +73,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2018-12-30 11:14:12                                                               //--
+  --// Version: 2019-01-01 15:33:12                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -167,7 +167,7 @@ BEGIN
                               Mirror bit,
                               Completed bit)
 
-  DECLARE @URLs TABLE (ID int IDENTITY PRIMARY KEY,
+  DECLARE @URLs TABLE (ID int PRIMARY KEY,
                        DirectoryPath nvarchar(max),
                        Mirror bit)
 
@@ -224,7 +224,8 @@ BEGIN
 
   DECLARE @CurrentURLs TABLE (ID int PRIMARY KEY,
                               DirectoryPath nvarchar(max),
-                              Mirror bit)
+                              Mirror bit,
+                              DirectoryNumber int)
 
   DECLARE @CurrentFiles TABLE ([Type] nvarchar(max),
                                FilePath nvarchar(max),
@@ -841,13 +842,83 @@ BEGIN
   --// Select URLs                                                                                //--
   ----------------------------------------------------------------------------------------------------
 
-  INSERT INTO @URLs (DirectoryPath, Mirror)
-  SELECT @URL, 0
-  WHERE @URL IS NOT NULL
+  SET @URL = REPLACE(@URL, CHAR(10), '')
+  SET @URL = REPLACE(@URL, CHAR(13), '')
 
-  INSERT INTO @URLs (DirectoryPath, Mirror)
-  SELECT @MirrorURL, 1
+  WHILE CHARINDEX(', ',@URL) > 0 SET @URL = REPLACE(@URL,', ',',')
+  WHILE CHARINDEX(' ,',@URL) > 0 SET @URL = REPLACE(@URL,' ,',',')
+
+  SET @URL = LTRIM(RTRIM(@URL));
+
+  WITH URLs (StartPosition, EndPosition, [URL]) AS
+  (
+  SELECT 1 AS StartPosition,
+          ISNULL(NULLIF(CHARINDEX(',', @URL, 1), 0), LEN(@URL) + 1) AS EndPosition,
+          SUBSTRING(@URL, 1, ISNULL(NULLIF(CHARINDEX(',', @URL, 1), 0), LEN(@URL) + 1) - 1) AS [URL]
+  WHERE @URL IS NOT NULL
+  UNION ALL
+  SELECT CAST(EndPosition AS int) + 1 AS StartPosition,
+          ISNULL(NULLIF(CHARINDEX(',', @URL, EndPosition + 1), 0), LEN(@URL) + 1) AS EndPosition,
+          SUBSTRING(@URL, EndPosition + 1, ISNULL(NULLIF(CHARINDEX(',', @URL, EndPosition + 1), 0), LEN(@URL) + 1) - EndPosition - 1) AS [URL]
+  FROM URLs
+  WHERE EndPosition < LEN(@URL) + 1
+  )
+  INSERT INTO @URLs (ID, DirectoryPath, Mirror)
+  SELECT ROW_NUMBER() OVER(ORDER BY StartPosition ASC) AS ID,
+          [URL],
+          0
+  FROM URLs
+  OPTION (MAXRECURSION 0)
+
+  SET @MirrorURL = REPLACE(@MirrorURL, CHAR(10), '')
+  SET @MirrorURL = REPLACE(@MirrorURL, CHAR(13), '')
+
+  WHILE CHARINDEX(', ',@MirrorURL) > 0 SET @MirrorURL = REPLACE(@MirrorURL,', ',',')
+  WHILE CHARINDEX(' ,',@MirrorURL) > 0 SET @MirrorURL = REPLACE(@MirrorURL,' ,',',')
+
+  SET @MirrorURL = LTRIM(RTRIM(@MirrorURL));
+
+  WITH URLs (StartPosition, EndPosition, [URL]) AS
+  (
+  SELECT 1 AS StartPosition,
+         ISNULL(NULLIF(CHARINDEX(',', @MirrorURL, 1), 0), LEN(@MirrorURL) + 1) AS EndPosition,
+         SUBSTRING(@MirrorURL, 1, ISNULL(NULLIF(CHARINDEX(',', @MirrorURL, 1), 0), LEN(@MirrorURL) + 1) - 1) AS [URL]
   WHERE @MirrorURL IS NOT NULL
+  UNION ALL
+  SELECT CAST(EndPosition AS int) + 1 AS StartPosition,
+         ISNULL(NULLIF(CHARINDEX(',', @MirrorURL, EndPosition + 1), 0), LEN(@MirrorURL) + 1) AS EndPosition,
+         SUBSTRING(@MirrorURL, EndPosition + 1, ISNULL(NULLIF(CHARINDEX(',', @MirrorURL, EndPosition + 1), 0), LEN(@MirrorURL) + 1) - EndPosition - 1) AS [URL]
+  FROM URLs
+  WHERE EndPosition < LEN(@MirrorURL) + 1
+  )
+  INSERT INTO @URLs (ID, DirectoryPath, Mirror)
+  SELECT (SELECT COUNT(*) FROM @URLs) + ROW_NUMBER() OVER(ORDER BY StartPosition ASC) AS ID,
+         [URL],
+         1
+  FROM URLs
+  OPTION (MAXRECURSION 0)
+
+  ----------------------------------------------------------------------------------------------------
+  --// Check URLs                                                                          //--
+  ----------------------------------------------------------------------------------------------------
+
+  IF EXISTS(SELECT * FROM @URLs WHERE Mirror = 0 AND DirectoryPath NOT LIKE 'https://%/%')
+  OR EXISTS (SELECT * FROM @URLs GROUP BY DirectoryPath HAVING COUNT(*) <> 1)
+  OR ((SELECT COUNT(*) FROM @URLs WHERE Mirror = 0) <> (SELECT COUNT(*) FROM @URLs WHERE Mirror = 1) AND (SELECT COUNT(*) FROM @URLs WHERE Mirror = 1) > 0)
+  BEGIN
+    SET @ErrorMessage = 'The value for the parameter @URL is not supported.' + CHAR(13) + CHAR(10) + ' '
+    RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
+    SET @Error = @@ERROR
+  END
+
+  IF EXISTS(SELECT * FROM @URLs WHERE Mirror = 1 AND DirectoryPath NOT LIKE 'https://%/%')
+  OR EXISTS (SELECT * FROM @URLs GROUP BY DirectoryPath HAVING COUNT(*) <> 1)
+  OR ((SELECT COUNT(*) FROM @URLs WHERE Mirror = 0) <> (SELECT COUNT(*) FROM @URLs WHERE Mirror = 1) AND (SELECT COUNT(*) FROM @URLs WHERE Mirror = 1) > 0)
+  BEGIN
+    SET @ErrorMessage = 'The value for the parameter @MirrorURL is not supported.' + CHAR(13) + CHAR(10) + ' '
+    RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
+    SET @Error = @@ERROR
+  END
 
   ----------------------------------------------------------------------------------------------------
   --// Get directory separator                                                                   //--
@@ -921,7 +992,11 @@ BEGIN
 
   IF @NumberOfFiles IS NULL
   BEGIN
-    SELECT @NumberOfFiles = CASE WHEN @URL IS NOT NULL THEN 1 WHEN @BackupSoftware = 'DATA_DOMAIN_BOOST' THEN 1 ELSE (SELECT COUNT(*) FROM @Directories WHERE Mirror = 0) END
+    SELECT @NumberOfFiles = CASE
+    WHEN @BackupSoftware = 'DATA_DOMAIN_BOOST' THEN 1
+    WHEN @URL IS NOT NULL THEN (SELECT COUNT(*) FROM @URLs WHERE Mirror = 0)
+    ELSE (SELECT COUNT(*) FROM @Directories WHERE Mirror = 0)
+    END
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -1082,7 +1157,7 @@ BEGIN
     SET @Error = @@ERROR
   END
 
-  IF @NumberOfFiles < 1 OR @NumberOfFiles > 64 OR (@NumberOfFiles > 32 AND @BackupSoftware = 'SQLBACKUP') OR @NumberOfFiles IS NULL OR @NumberOfFiles < (SELECT COUNT(*) FROM @Directories WHERE Mirror = 0) OR @NumberOfFiles % (SELECT NULLIF(COUNT(*),0) FROM @Directories WHERE Mirror = 0) > 0 OR (@URL IS NOT NULL AND @Credential IS NOT NULL AND @NumberOfFiles <> 1) OR (@NumberOfFiles > 1 AND @BackupSoftware IN('SQLBACKUP','SQLSAFE') AND EXISTS(SELECT * FROM @Directories WHERE Mirror = 1)) OR (@NumberOfFiles > 32 AND @BackupSoftware = 'DATA_DOMAIN_BOOST')
+  IF @NumberOfFiles < 1 OR @NumberOfFiles > 64 OR (@NumberOfFiles > 32 AND @BackupSoftware = 'SQLBACKUP') OR @NumberOfFiles IS NULL OR @NumberOfFiles < (SELECT COUNT(*) FROM @Directories WHERE Mirror = 0) OR @NumberOfFiles % (SELECT NULLIF(COUNT(*),0) FROM @Directories WHERE Mirror = 0) > 0 OR (@URL IS NOT NULL AND @Credential IS NOT NULL AND @NumberOfFiles <> 1) OR (@NumberOfFiles > 1 AND @BackupSoftware IN('SQLBACKUP','SQLSAFE') AND EXISTS(SELECT * FROM @Directories WHERE Mirror = 1)) OR (@NumberOfFiles > 32 AND @BackupSoftware = 'DATA_DOMAIN_BOOST') OR @NumberOfFiles < (SELECT COUNT(*) FROM @URLs WHERE Mirror = 0) OR @NumberOfFiles % (SELECT NULLIF(COUNT(*),0) FROM @URLs WHERE Mirror = 0) > 0
   BEGIN
     SET @ErrorMessage = 'The value for the parameter @NumberOfFiles is not supported.' + CHAR(13) + CHAR(10) + ' '
     RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
@@ -1173,7 +1248,7 @@ BEGIN
     SET @Error = @@ERROR
   END
 
-  IF (@URL IS NOT NULL AND @Directory IS NOT NULL) OR (@URL IS NOT NULL AND @MirrorDirectory IS NOT NULL) OR (@URL IS NOT NULL AND @Version < 11.03339) OR (@URL IS NOT NULL AND @BackupSoftware IS NOT NULL) OR (@URL NOT LIKE 'https://%/%')
+  IF (@URL IS NOT NULL AND @Directory IS NOT NULL) OR (@URL IS NOT NULL AND @MirrorDirectory IS NOT NULL) OR (@URL IS NOT NULL AND @Version < 11.03339) OR (@URL IS NOT NULL AND @BackupSoftware IS NOT NULL)
   BEGIN
     SET @ErrorMessage = 'The value for the parameter @URL is not supported.' + CHAR(13) + CHAR(10) + ' '
     RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
@@ -1201,7 +1276,7 @@ BEGIN
     SET @Error = @@ERROR
   END
 
-  IF (@MirrorURL IS NOT NULL AND @Directory IS NOT NULL) OR (@MirrorURL IS NOT NULL AND @MirrorDirectory IS NOT NULL) OR (@MirrorURL IS NOT NULL AND @Version < 11.03339) OR (@MirrorURL IS NOT NULL AND @BackupSoftware IS NOT NULL) OR (@MirrorURL NOT LIKE 'https://%/%') OR (@MirrorURL IS NOT NULL AND @URL IS NULL)
+  IF (@MirrorURL IS NOT NULL AND @Directory IS NOT NULL) OR (@MirrorURL IS NOT NULL AND @MirrorDirectory IS NOT NULL) OR (@MirrorURL IS NOT NULL AND @Version < 11.03339) OR (@MirrorURL IS NOT NULL AND @BackupSoftware IS NOT NULL) OR (@MirrorURL IS NOT NULL AND @URL IS NULL)
   BEGIN
     SET @ErrorMessage = 'The value for the parameter @MirrorURL is not supported.' + CHAR(13) + CHAR(10) + ' '
     RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
@@ -2123,10 +2198,11 @@ BEGIN
       FROM @Directories
       ORDER BY ID ASC
 
-      INSERT INTO @CurrentURLs (ID, DirectoryPath, Mirror)
+      INSERT INTO @CurrentURLs (ID, DirectoryPath, Mirror, DirectoryNumber)
       SELECT ROW_NUMBER() OVER (ORDER BY ID),
              DirectoryPath + CASE WHEN @CurrentDirectoryStructure IS NOT NULL THEN @DirectorySeparator + @CurrentDirectoryStructure ELSE '' END,
-             Mirror
+             Mirror,
+             ROW_NUMBER() OVER (PARTITION BY Mirror ORDER BY ID ASC)
       FROM @URLs
       ORDER BY ID ASC
 
@@ -2341,7 +2417,9 @@ BEGIN
 
           SELECT @CurrentDirectoryPath = DirectoryPath
           FROM @CurrentURLs
-          WHERE Mirror = 0
+          WHERE @CurrentFileNumber >= (DirectoryNumber - 1) * (SELECT @NumberOfFiles / COUNT(*) FROM @CurrentURLs WHERE Mirror = 0) + 1
+          AND @CurrentFileNumber <= DirectoryNumber * (SELECT @NumberOfFiles / COUNT(*) FROM @CurrentURLs WHERE Mirror = 0)
+          AND Mirror = 0
 
           SET @CurrentFileName = REPLACE(@CurrentDatabaseFileName, '{FileNumber}', CASE WHEN @NumberOfFiles > 1 AND @NumberOfFiles <= 9 THEN CAST(@CurrentFileNumber AS nvarchar) WHEN @NumberOfFiles >= 10 THEN RIGHT('0' + CAST(@CurrentFileNumber AS nvarchar),2) ELSE '' END)
 
@@ -2369,7 +2447,9 @@ BEGIN
 
           SELECT @CurrentDirectoryPath = DirectoryPath
           FROM @CurrentURLs
-          WHERE Mirror = 1
+          WHERE @CurrentFileNumber >= (DirectoryNumber - 1) * (SELECT @NumberOfFiles / COUNT(*) FROM @CurrentURLs WHERE Mirror = 0) + 1
+          AND @CurrentFileNumber <= DirectoryNumber * (SELECT @NumberOfFiles / COUNT(*) FROM @CurrentURLs WHERE Mirror = 0)
+          AND Mirror = 1
 
           SET @CurrentFileName = REPLACE(@CurrentDatabaseFileName, '{FileNumber}', CASE WHEN @NumberOfFiles > 1 AND @NumberOfFiles <= 9 THEN CAST(@CurrentFileNumber AS nvarchar) WHEN @NumberOfFiles >= 10 THEN RIGHT('0' + CAST(@CurrentFileNumber AS nvarchar),2) ELSE '' END)
 
