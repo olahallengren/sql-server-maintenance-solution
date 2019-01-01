@@ -51,7 +51,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2019-01-01 15:33:12                                                               //--
+  --// Version: 2019-01-01 19:33:57                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -111,6 +111,7 @@ BEGIN
   DECLARE @CurrentExtendedInfo07 xml
 
   DECLARE @CurrentIxID int
+  DECLARE @CurrentIxOrder int
   DECLARE @CurrentSchemaID int
   DECLARE @CurrentSchemaName nvarchar(max)
   DECLARE @CurrentObjectID int
@@ -1572,6 +1573,7 @@ BEGIN
       WHILE (GETDATE() < DATEADD(ss,@TimeLimit,@StartTime) OR @TimeLimit IS NULL)
       BEGIN
         SELECT TOP 1 @CurrentIxID = ID,
+                     @CurrentIxOrder = [Order],
                      @CurrentSchemaID = SchemaID,
                      @CurrentSchemaName = SchemaName,
                      @CurrentObjectID = ObjectID,
@@ -2077,6 +2079,7 @@ BEGIN
         SET Completed = 1
         WHERE Selected = 1
         AND Completed = 0
+        AND [Order] = @CurrentIxOrder
         AND ID = @CurrentIxID
 
         -- Clear variables
@@ -2100,6 +2103,7 @@ BEGIN
         SET @CurrentExtendedInfo07 = NULL
 
         SET @CurrentIxID = NULL
+        SET @CurrentIxOrder = NULL
         SET @CurrentSchemaID = NULL
         SET @CurrentSchemaName = NULL
         SET @CurrentObjectID = NULL
