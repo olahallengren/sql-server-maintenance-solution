@@ -3,6 +3,7 @@
 [![stars badge]][stars]
 [![forks badge]][forks]
 [![issues badge]][issues]
+[![bug_reports badge]][bug reports]
 
 ## Getting Started
 
@@ -33,8 +34,10 @@ Supported versions: SQL Server 2005, SQL Server 2008, SQL Server 2008 R2, SQL Se
 [stars badge]:https://img.shields.io/github/stars/olahallengren/sql-server-maintenance-solution.svg
 [forks badge]:https://img.shields.io/github/forks/olahallengren/sql-server-maintenance-solution.svg
 [issues badge]:https://img.shields.io/github/issues/olahallengren/sql-server-maintenance-solution.svg
+[bug_reports badge]:https://img.shields.io/github/issues/olahallengren/sql-server-maintenance-solution/bug_report.svg
 
 [licence]:https://github.com/olahallengren/sql-server-maintenance-solution/blob/master/LICENSE
 [stars]:https://github.com/olahallengren/sql-server-maintenance-solution/stargazers
 [forks]:https://github.com/olahallengren/sql-server-maintenance-solution/network
 [issues]:https://github.com/olahallengren/sql-server-maintenance-solution/issues
+[bug reports]:https://github.com/olahallengren/sql-server-maintenance-solution/issues?q=is%3Aopen+is%3Aissue+label%3Abug_report
