@@ -10,7 +10,7 @@ License: https://ola.hallengren.com/license.html
 
 GitHub: https://github.com/olahallengren/sql-server-maintenance-solution
 
-Version: 2019-01-01 19:33:57
+Version: 2019-01-05 12:03:54
 
 You can contact me by e-mail at ola@hallengren.com.
 
@@ -126,7 +126,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2019-01-01 19:33:57                                                               //--
+  --// Version: 2019-01-05 12:03:54                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -409,7 +409,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2019-01-01 19:33:57                                                               //--
+  --// Version: 2019-01-05 12:03:54                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -3540,7 +3540,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2019-01-01 19:33:57                                                               //--
+  --// Version: 2019-01-05 12:03:54                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -5266,7 +5266,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2019-01-01 19:33:57                                                               //--
+  --// Version: 2019-01-05 12:03:54                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -7443,7 +7443,9 @@ BEGIN
 
   DECLARE @TokenServer nvarchar(max)
   DECLARE @TokenJobID nvarchar(max)
+  DECLARE @TokenJobName nvarchar(max)
   DECLARE @TokenStepID nvarchar(max)
+  DECLARE @TokenStepName nvarchar(max)
   DECLARE @TokenDate nvarchar(max)
   DECLARE @TokenTime nvarchar(max)
   DECLARE @TokenLogDirectory nvarchar(max)
@@ -7509,6 +7511,12 @@ BEGIN
     SET @TokenStepID = '$' + '(STEPID)'
     SET @TokenDate = '$' + '(STRTDT)'
     SET @TokenTime = '$' + '(STRTTM)'
+  END
+
+  IF @Version >= 13
+  BEGIN
+    SET @TokenJobName = '$' + '(ESCAPE_SQUOTE(JOBNAME))'
+    SET @TokenStepName = '$' + '(ESCAPE_SQUOTE(STEPNAME))'
   END
 
   IF @Version >= 12 AND @HostPlatform = 'Windows'
@@ -7713,9 +7721,9 @@ BEGIN
 
     IF @AmazonRDS = 0 AND SERVERPROPERTY('EngineEdition') <> 8
     BEGIN
-      SET @CurrentOutputFileName = COALESCE(@OutputFileDirectory,@TokenLogDirectory,@LogDirectory) + @DirectorySeparator + ISNULL(@CurrentOutputFileNamePart01 + '_','') + ISNULL(@CurrentOutputFileNamePart02 + '_','') + @TokenJobID + '_' + @TokenStepID + '_' + @TokenDate + '_' + @TokenTime + '.txt'
-      IF LEN(@CurrentOutputFileName) > 200 SET @CurrentOutputFileName = COALESCE(@OutputFileDirectory,@TokenLogDirectory,@LogDirectory) + @DirectorySeparator + ISNULL(@CurrentOutputFileNamePart01 + '_','') + @TokenJobID + '_' + @TokenStepID + '_' + @TokenDate + '_' + @TokenTime + '.txt'
-      IF LEN(@CurrentOutputFileName) > 200 SET @CurrentOutputFileName = COALESCE(@OutputFileDirectory,@TokenLogDirectory,@LogDirectory) + @DirectorySeparator + @TokenJobID + '_' + @TokenStepID + '_' + @TokenDate + '_' + @TokenTime + '.txt'
+      SET @CurrentOutputFileName = COALESCE(@OutputFileDirectory,@TokenLogDirectory,@LogDirectory) + @DirectorySeparator + ISNULL(CASE WHEN @TokenJobName IS NULL THEN @CurrentOutputFileNamePart01 END + '_','') + ISNULL(CASE WHEN @TokenJobName IS NULL THEN @CurrentOutputFileNamePart02 END + '_','') + ISNULL(@TokenJobName,@TokenJobID) + '_' + @TokenStepID + '_' + @TokenDate + '_' + @TokenTime + '.txt'
+      IF LEN(@CurrentOutputFileName) > 200 SET @CurrentOutputFileName = COALESCE(@OutputFileDirectory,@TokenLogDirectory,@LogDirectory) + @DirectorySeparator + ISNULL(CASE WHEN @TokenJobName IS NULL THEN @CurrentOutputFileNamePart01 END + '_','') + ISNULL(@TokenJobName,@TokenJobID) + '_' + @TokenStepID + '_' + @TokenDate + '_' + @TokenTime + '.txt'
+      IF LEN(@CurrentOutputFileName) > 200 SET @CurrentOutputFileName = COALESCE(@OutputFileDirectory,@TokenLogDirectory,@LogDirectory) + @DirectorySeparator + ISNULL(@TokenJobName,@TokenJobID) + '_' + @TokenStepID + '_' + @TokenDate + '_' + @TokenTime + '.txt'
       IF LEN(@CurrentOutputFileName) > 200 SET @CurrentOutputFileName = NULL
     END
 
