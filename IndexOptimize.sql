@@ -51,7 +51,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2019-01-05 12:03:54                                                               //--
+  --// Version: 2019-01-06 10:58:01                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -232,15 +232,20 @@ BEGIN
 
   DECLARE @CurrentActionsAllowed TABLE ([Action] nvarchar(max))
 
-
   DECLARE @CurrentAlterIndexWithClauseArguments TABLE (ID int IDENTITY,
-                                                       Argument nvarchar(max))
+                                                       Argument nvarchar(max),
+                                                       Added bit DEFAULT 0)
 
+  DECLARE @CurrentAlterIndexArgumentID int
+  DECLARE @CurrentAlterIndexArgument nvarchar(max)
   DECLARE @CurrentAlterIndexWithClause nvarchar(max)
 
   DECLARE @CurrentUpdateStatisticsWithClauseArguments TABLE (ID int IDENTITY,
-                                                             Argument nvarchar(max))
+                                                             Argument nvarchar(max),
+                                                             Added bit DEFAULT 0)
 
+  DECLARE @CurrentUpdateStatisticsArgumentID int
+  DECLARE @CurrentUpdateStatisticsArgument nvarchar(max)
   DECLARE @CurrentUpdateStatisticsWithClause nvarchar(max)
 
   DECLARE @Error int
@@ -1986,9 +1991,25 @@ BEGIN
           BEGIN
             SET @CurrentAlterIndexWithClause = ' WITH ('
 
-            SELECT @CurrentAlterIndexWithClause = @CurrentAlterIndexWithClause + Argument + ', '
-            FROM @CurrentAlterIndexWithClauseArguments
-            ORDER BY ID ASC
+            WHILE (1 = 1)
+            BEGIN
+              SELECT TOP 1 @CurrentAlterIndexArgumentID = ID,
+                           @CurrentAlterIndexArgument = Argument
+              FROM @CurrentAlterIndexWithClauseArguments
+              WHERE Added = 0
+              ORDER BY ID ASC
+
+              IF @@ROWCOUNT = 0
+              BEGIN
+                BREAK
+              END
+
+              SET @CurrentAlterIndexWithClause = @CurrentAlterIndexWithClause + @CurrentAlterIndexArgument + ', '
+
+              UPDATE @CurrentAlterIndexWithClauseArguments
+              SET Added = 1
+              WHERE [ID] = @CurrentAlterIndexArgumentID
+            END
 
             SET @CurrentAlterIndexWithClause = RTRIM(@CurrentAlterIndexWithClause)
 
@@ -2055,9 +2076,25 @@ BEGIN
           BEGIN
             SET @CurrentUpdateStatisticsWithClause = ' WITH'
 
-            SELECT @CurrentUpdateStatisticsWithClause = @CurrentUpdateStatisticsWithClause + ' ' + Argument + ','
-            FROM @CurrentUpdateStatisticsWithClauseArguments
-            ORDER BY ID ASC
+            WHILE (1 = 1)
+            BEGIN
+              SELECT TOP 1 @CurrentUpdateStatisticsArgumentID = ID,
+                           @CurrentUpdateStatisticsArgument = Argument
+              FROM @CurrentUpdateStatisticsWithClauseArguments
+              WHERE Added = 0
+              ORDER BY ID ASC
+
+              IF @@ROWCOUNT = 0
+              BEGIN
+                BREAK
+              END
+
+              SET @CurrentUpdateStatisticsWithClause = @CurrentUpdateStatisticsWithClause + ' ' + @CurrentUpdateStatisticsArgument + ','
+
+              UPDATE @CurrentUpdateStatisticsWithClauseArguments
+              SET Added = 1
+              WHERE [ID] = @CurrentUpdateStatisticsArgumentID
+            END
 
             SET @CurrentUpdateStatisticsWithClause = LEFT(@CurrentUpdateStatisticsWithClause,LEN(@CurrentUpdateStatisticsWithClause) - 1)
           END
@@ -2142,7 +2179,11 @@ BEGIN
         SET @CurrentUpdateStatistics = NULL
         SET @CurrentStatisticsSample = NULL
         SET @CurrentStatisticsResample = NULL
+        SET @CurrentAlterIndexArgumentID = NULL
+        SET @CurrentAlterIndexArgument = NULL
         SET @CurrentAlterIndexWithClause = NULL
+        SET @CurrentUpdateStatisticsArgumentID = NULL
+        SET @CurrentUpdateStatisticsArgument = NULL
         SET @CurrentUpdateStatisticsWithClause = NULL
 
         DELETE FROM @CurrentActionsAllowed
