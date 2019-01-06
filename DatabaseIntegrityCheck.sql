@@ -37,7 +37,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2019-01-06 10:58:01                                                               //--
+  --// Version: 2019-01-06 19:21:46                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -829,7 +829,7 @@ BEGIN
   IF @@ROWCOUNT > 0
   BEGIN
     SET @ErrorMessage = 'The following databases in the @Databases parameter do not exist: ' + LEFT(@ErrorMessage,LEN(@ErrorMessage)-1) + '.' + CHAR(13) + CHAR(10) + ' '
-    RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
+    RAISERROR('%s',10,1,@ErrorMessage) WITH NOWAIT
     SET @Error = @@ERROR
   END
 
@@ -841,7 +841,7 @@ BEGIN
   IF @@ROWCOUNT > 0
   BEGIN
     SET @ErrorMessage = 'The following databases in the @FileGroups parameter do not exist: ' + LEFT(@ErrorMessage,LEN(@ErrorMessage)-1) + '.' + CHAR(13) + CHAR(10) + ' '
-    RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
+    RAISERROR('%s',10,1,@ErrorMessage) WITH NOWAIT
     SET @Error = @@ERROR
   END
 
@@ -853,7 +853,7 @@ BEGIN
   IF @@ROWCOUNT > 0
   BEGIN
     SET @ErrorMessage = 'The following databases in the @Objects parameter do not exist: ' + LEFT(@ErrorMessage,LEN(@ErrorMessage)-1) + '.' + CHAR(13) + CHAR(10) + ' '
-    RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
+    RAISERROR('%s',10,1,@ErrorMessage) WITH NOWAIT
     SET @Error = @@ERROR
   END
 
@@ -865,7 +865,7 @@ BEGIN
   IF @@ROWCOUNT > 0
   BEGIN
     SET @ErrorMessage = 'The following availability groups do not exist: ' + LEFT(@ErrorMessage,LEN(@ErrorMessage)-1) + '.' + CHAR(13) + CHAR(10) + ' '
-    RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
+    RAISERROR('%s',10,1,@ErrorMessage) WITH NOWAIT
     SET @Error = @@ERROR
   END
 
@@ -878,7 +878,7 @@ BEGIN
   IF @@ROWCOUNT > 0
   BEGIN
     SET @ErrorMessage = 'The following databases have been selected in the @FileGroups parameter, but not in the @Databases or @AvailabilityGroups parameters: ' + LEFT(@ErrorMessage,LEN(@ErrorMessage)-1) + '.' + CHAR(13) + CHAR(10) + ' '
-    RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
+    RAISERROR('%s',10,1,@ErrorMessage) WITH NOWAIT
     SET @Error = @@ERROR
   END
 
@@ -891,7 +891,7 @@ BEGIN
   IF @@ROWCOUNT > 0
   BEGIN
     SET @ErrorMessage = 'The following databases have been selected in the @Objects parameter, but not in the @Databases or @AvailabilityGroups parameters: ' + LEFT(@ErrorMessage,LEN(@ErrorMessage)-1) + '.' + CHAR(13) + CHAR(10) + ' '
-    RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
+    RAISERROR('%s',10,1,@ErrorMessage) WITH NOWAIT
     SET @Error = @@ERROR
   END
 
@@ -1374,7 +1374,7 @@ BEGIN
         IF @@ROWCOUNT > 0
         BEGIN
           SET @ErrorMessage = 'The following file groups do not exist: ' + LEFT(@ErrorMessage,LEN(@ErrorMessage)-1) + '.' + CHAR(13) + CHAR(10) + ' '
-          RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
+          RAISERROR('%s',10,1,@ErrorMessage) WITH NOWAIT
           SET @Error = @@ERROR
         END
 
@@ -1532,7 +1532,7 @@ BEGIN
         IF @@ROWCOUNT > 0
         BEGIN
           SET @ErrorMessage = 'The following objects do not exist: ' + LEFT(@ErrorMessage,LEN(@ErrorMessage)-1) + '.' + CHAR(13) + CHAR(10) + ' '
-          RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
+          RAISERROR('%s',10,1,@ErrorMessage) WITH NOWAIT
           SET @Error = @@ERROR
         END
 
