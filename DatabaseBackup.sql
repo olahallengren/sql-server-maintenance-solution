@@ -73,7 +73,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2019-01-11 21:26:19                                                               //--
+  --// Version: 2019-01-12 12:45:42                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -238,8 +238,12 @@ BEGIN
   DECLARE @Error int
   DECLARE @ReturnCode int
 
+  DECLARE @EmptyLine nvarchar(max)
+
   SET @Error = 0
   SET @ReturnCode = 0
+
+  SET @EmptyLine = CHAR(9)
 
   SET @Version = CAST(LEFT(CAST(SERVERPROPERTY('ProductVersion') AS nvarchar(max)),CHARINDEX('.',CAST(SERVERPROPERTY('ProductVersion') AS nvarchar(max))) - 1) + '.' + REPLACE(RIGHT(CAST(SERVERPROPERTY('ProductVersion') AS nvarchar(max)), LEN(CAST(SERVERPROPERTY('ProductVersion') AS nvarchar(max))) - CHARINDEX('.',CAST(SERVERPROPERTY('ProductVersion') AS nvarchar(max)))),'.','') AS numeric(18,10))
 
@@ -344,8 +348,10 @@ BEGIN
   SET @StartMessage = 'Version: ' + @VersionTimestamp
   RAISERROR('%s',10,1,@StartMessage) WITH NOWAIT
 
-  SET @StartMessage = 'Source: https://ola.hallengren.com' + CHAR(13) + CHAR(10) + ' '
+  SET @StartMessage = 'Source: https://ola.hallengren.com'
   RAISERROR('%s',10,1,@StartMessage) WITH NOWAIT
+
+  RAISERROR(@EmptyLine,10,1) WITH NOWAIT
 
   ----------------------------------------------------------------------------------------------------
   --// Check core requirements                                                                    //--
@@ -353,72 +359,82 @@ BEGIN
 
   IF NOT (SELECT [compatibility_level] FROM sys.databases WHERE database_id = DB_ID()) >= 90
   BEGIN
-    SET @ErrorMessage = 'The database ' + QUOTENAME(DB_NAME(DB_ID())) + ' has to be in compatibility level 90 or higher.' + CHAR(13) + CHAR(10) + ' '
+    SET @ErrorMessage = 'The database ' + QUOTENAME(DB_NAME(DB_ID())) + ' has to be in compatibility level 90 or higher.'
     RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
     SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
   IF NOT (SELECT uses_ansi_nulls FROM sys.sql_modules WHERE [object_id] = @@PROCID) = 1
   BEGIN
-    SET @ErrorMessage = 'ANSI_NULLS has to be set to ON for the stored procedure.' + CHAR(13) + CHAR(10) + ' '
+    SET @ErrorMessage = 'ANSI_NULLS has to be set to ON for the stored procedure.'
     RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
     SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
   IF NOT (SELECT uses_quoted_identifier FROM sys.sql_modules WHERE [object_id] = @@PROCID) = 1
   BEGIN
-    SET @ErrorMessage = 'QUOTED_IDENTIFIER has to be set to ON for the stored procedure.' + CHAR(13) + CHAR(10) + ' '
+    SET @ErrorMessage = 'QUOTED_IDENTIFIER has to be set to ON for the stored procedure.'
     RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
     SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
   IF NOT EXISTS (SELECT * FROM sys.objects objects INNER JOIN sys.schemas schemas ON objects.[schema_id] = schemas.[schema_id] WHERE objects.[type] = 'P' AND schemas.[name] = 'dbo' AND objects.[name] = 'CommandExecute')
   BEGIN
-    SET @ErrorMessage = 'The stored procedure CommandExecute is missing. Download https://ola.hallengren.com/scripts/CommandExecute.sql.' + CHAR(13) + CHAR(10) + ' '
+    SET @ErrorMessage = 'The stored procedure CommandExecute is missing. Download https://ola.hallengren.com/scripts/CommandExecute.sql.'
     RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
     SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
   IF EXISTS (SELECT * FROM sys.objects objects INNER JOIN sys.schemas schemas ON objects.[schema_id] = schemas.[schema_id] WHERE objects.[type] = 'P' AND schemas.[name] = 'dbo' AND objects.[name] = 'CommandExecute' AND OBJECT_DEFINITION(objects.[object_id]) NOT LIKE '%@LockMessageSeverity%')
   BEGIN
-    SET @ErrorMessage = 'The stored procedure CommandExecute needs to be updated. Download https://ola.hallengren.com/scripts/CommandExecute.sql.' + CHAR(13) + CHAR(10) + ' '
+    SET @ErrorMessage = 'The stored procedure CommandExecute needs to be updated. Download https://ola.hallengren.com/scripts/CommandExecute.sql.'
     RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
     SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
   IF @LogToTable = 'Y' AND NOT EXISTS (SELECT * FROM sys.objects objects INNER JOIN sys.schemas schemas ON objects.[schema_id] = schemas.[schema_id] WHERE objects.[type] = 'U' AND schemas.[name] = 'dbo' AND objects.[name] = 'CommandLog')
   BEGIN
-    SET @ErrorMessage = 'The table CommandLog is missing. Download https://ola.hallengren.com/scripts/CommandLog.sql.' + CHAR(13) + CHAR(10) + ' '
+    SET @ErrorMessage = 'The table CommandLog is missing. Download https://ola.hallengren.com/scripts/CommandLog.sql.'
     RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
     SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
   IF @DatabasesInParallel = 'Y' AND NOT EXISTS (SELECT * FROM sys.objects objects INNER JOIN sys.schemas schemas ON objects.[schema_id] = schemas.[schema_id] WHERE objects.[type] = 'U' AND schemas.[name] = 'dbo' AND objects.[name] = 'Queue')
   BEGIN
-    SET @ErrorMessage = 'The table Queue is missing. Download https://ola.hallengren.com/scripts/Queue.sql.' + CHAR(13) + CHAR(10) + ' '
+    SET @ErrorMessage = 'The table Queue is missing. Download https://ola.hallengren.com/scripts/Queue.sql.'
     RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
     SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
   IF @DatabasesInParallel = 'Y' AND NOT EXISTS (SELECT * FROM sys.objects objects INNER JOIN sys.schemas schemas ON objects.[schema_id] = schemas.[schema_id] WHERE objects.[type] = 'U' AND schemas.[name] = 'dbo' AND objects.[name] = 'QueueDatabase')
   BEGIN
-    SET @ErrorMessage = 'The table QueueDatabase is missing. Download https://ola.hallengren.com/scripts/QueueDatabase.sql.' + CHAR(13) + CHAR(10) + ' '
+    SET @ErrorMessage = 'The table QueueDatabase is missing. Download https://ola.hallengren.com/scripts/QueueDatabase.sql.'
     RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
     SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
   IF @@TRANCOUNT <> 0
   BEGIN
-    SET @ErrorMessage = 'The transaction count is not 0.' + CHAR(13) + CHAR(10) + ' '
+    SET @ErrorMessage = 'The transaction count is not 0.'
     RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
     SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
   IF @AmazonRDS = 1
   BEGIN
-    SET @ErrorMessage = 'The stored procedure DatabaseBackup is not supported on Amazon RDS.' + CHAR(13) + CHAR(10) + ' '
+    SET @ErrorMessage = 'The stored procedure DatabaseBackup is not supported on Amazon RDS.'
     RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
     SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
   IF @Error <> 0
@@ -549,9 +565,10 @@ BEGIN
 
   IF @Databases IS NOT NULL AND (NOT EXISTS(SELECT * FROM @SelectedDatabases) OR EXISTS(SELECT * FROM @SelectedDatabases WHERE DatabaseName IS NULL OR DatabaseName = ''))
   BEGIN
-    SET @ErrorMessage = 'The value for the parameter @Databases is not supported.' + CHAR(13) + CHAR(10) + ' '
+    SET @ErrorMessage = 'The value for the parameter @Databases is not supported.'
     RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
     SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -645,23 +662,26 @@ BEGIN
 
   IF @AvailabilityGroups IS NOT NULL AND (NOT EXISTS(SELECT * FROM @SelectedAvailabilityGroups) OR EXISTS(SELECT * FROM @SelectedAvailabilityGroups WHERE AvailabilityGroupName IS NULL OR AvailabilityGroupName = '') OR @Version < 11 OR SERVERPROPERTY('IsHadrEnabled') = 0)
   BEGIN
-    SET @ErrorMessage = 'The value for the parameter @AvailabilityGroups is not supported.' + CHAR(13) + CHAR(10) + ' '
+    SET @ErrorMessage = 'The value for the parameter @AvailabilityGroups is not supported.'
     RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
     SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
   IF (@Databases IS NULL AND @AvailabilityGroups IS NULL)
   BEGIN
-    SET @ErrorMessage = 'You need to specify one of the parameters @Databases and @AvailabilityGroups.' + CHAR(13) + CHAR(10) + ' '
+    SET @ErrorMessage = 'You need to specify one of the parameters @Databases and @AvailabilityGroups.'
     RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
     SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
   IF (@Databases IS NOT NULL AND @AvailabilityGroups IS NOT NULL)
   BEGIN
-    SET @ErrorMessage = 'You can only specify one of the parameters @Databases and @AvailabilityGroups.' + CHAR(13) + CHAR(10) + ' '
+    SET @ErrorMessage = 'You can only specify one of the parameters @Databases and @AvailabilityGroups.'
     RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
     SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -676,9 +696,10 @@ BEGIN
   ORDER BY DatabaseName ASC
   IF @@ROWCOUNT > 0
   BEGIN
-    SET @ErrorMessage = 'The names of the following databases are not supported: ' + LEFT(@ErrorMessage,LEN(@ErrorMessage)-1) + '.' + CHAR(13) + CHAR(10) + ' '
+    SET @ErrorMessage = 'The names of the following databases are not supported: ' + LEFT(@ErrorMessage,LEN(@ErrorMessage)-1) + '.'
     RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
     SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
   SET @ErrorMessage = ''
@@ -691,9 +712,10 @@ BEGIN
   OPTION (RECOMPILE)
   IF @@ROWCOUNT > 0
   BEGIN
-    SET @ErrorMessage = 'The names of the following databases are not unique in the file system: ' + LEFT(@ErrorMessage,LEN(@ErrorMessage)-1) + '.' + CHAR(13) + CHAR(10) + ' '
+    SET @ErrorMessage = 'The names of the following databases are not unique in the file system: ' + LEFT(@ErrorMessage,LEN(@ErrorMessage)-1) + '.'
     RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
     SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -788,17 +810,19 @@ BEGIN
 
   IF EXISTS(SELECT * FROM @Directories WHERE Mirror = 0 AND (NOT (DirectoryPath LIKE '_:' OR DirectoryPath LIKE '_:\%' OR DirectoryPath LIKE '\\%\%' OR (DirectoryPath LIKE '/%/%' AND @HostPlatform = 'Linux') OR (DirectoryPath LIKE '.' AND @HostPlatform = 'Linux')) OR DirectoryPath IS NULL OR LEFT(DirectoryPath,1) = ' ' OR RIGHT(DirectoryPath,1) = ' ')) OR EXISTS (SELECT * FROM @Directories GROUP BY DirectoryPath HAVING COUNT(*) <> 1) OR ((SELECT COUNT(*) FROM @Directories WHERE Mirror = 0) <> (SELECT COUNT(*) FROM @Directories WHERE Mirror = 1) AND (SELECT COUNT(*) FROM @Directories WHERE Mirror = 1) > 0) OR (@Directory IS NOT NULL AND SERVERPROPERTY('EngineEdition') = 8) OR (@Directory IS NOT NULL AND @BackupSoftware = 'DATA_DOMAIN_BOOST')
   BEGIN
-    SET @ErrorMessage = 'The value for the parameter @Directory is not supported.' + CHAR(13) + CHAR(10) + ' '
+    SET @ErrorMessage = 'The value for the parameter @Directory is not supported.'
     RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
     SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
     SET @DirectoryCheck = 0
   END
 
   IF EXISTS(SELECT * FROM @Directories WHERE Mirror = 1 AND (NOT (DirectoryPath LIKE '_:' OR DirectoryPath LIKE '_:\%' OR DirectoryPath LIKE '\\%\%' OR (DirectoryPath LIKE '/%/%' AND @HostPlatform = 'Linux') OR (DirectoryPath LIKE '.' AND @HostPlatform = 'Linux')) OR DirectoryPath IS NULL OR LEFT(DirectoryPath,1) = ' ' OR RIGHT(DirectoryPath,1) = ' ')) OR EXISTS (SELECT * FROM @Directories GROUP BY DirectoryPath HAVING COUNT(*) <> 1) OR ((SELECT COUNT(*) FROM @Directories WHERE Mirror = 0) <> (SELECT COUNT(*) FROM @Directories WHERE Mirror = 1) AND (SELECT COUNT(*) FROM @Directories WHERE Mirror = 1) > 0) OR (@BackupSoftware IN('SQLBACKUP','SQLSAFE') AND (SELECT COUNT(*) FROM @Directories WHERE Mirror = 1) > 1) OR (@BackupSoftware IS NULL AND EXISTS(SELECT * FROM @Directories WHERE Mirror = 1) AND SERVERPROPERTY('EngineEdition') <> 3) OR (@MirrorDirectory IS NOT NULL AND SERVERPROPERTY('EngineEdition') = 8) OR (@MirrorDirectory IS NOT NULL AND @BackupSoftware = 'DATA_DOMAIN_BOOST')
   BEGIN
-    SET @ErrorMessage = 'The value for the parameter @MirrorDirectory is not supported.' + CHAR(13) + CHAR(10) + ' '
+    SET @ErrorMessage = 'The value for the parameter @MirrorDirectory is not supported.'
     RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
     SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
     SET @DirectoryCheck = 0
   END
 
@@ -822,9 +846,10 @@ BEGIN
 
       IF NOT EXISTS (SELECT * FROM @DirectoryInfo WHERE FileExists = 0 AND FileIsADirectory = 1 AND ParentDirectoryExists = 1)
       BEGIN
-        SET @ErrorMessage = 'The directory ' + @CurrentRootDirectoryPath + ' does not exist.' + CHAR(13) + CHAR(10) + ' '
+        SET @ErrorMessage = 'The directory ' + @CurrentRootDirectoryPath + ' does not exist.'
         RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
         SET @Error = @@ERROR
+        RAISERROR(@EmptyLine,10,1) WITH NOWAIT
       END
 
       UPDATE @Directories
@@ -906,18 +931,20 @@ BEGIN
   OR EXISTS (SELECT * FROM @URLs GROUP BY DirectoryPath HAVING COUNT(*) <> 1)
   OR ((SELECT COUNT(*) FROM @URLs WHERE Mirror = 0) <> (SELECT COUNT(*) FROM @URLs WHERE Mirror = 1) AND (SELECT COUNT(*) FROM @URLs WHERE Mirror = 1) > 0)
   BEGIN
-    SET @ErrorMessage = 'The value for the parameter @URL is not supported.' + CHAR(13) + CHAR(10) + ' '
+    SET @ErrorMessage = 'The value for the parameter @URL is not supported.'
     RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
     SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
   IF EXISTS(SELECT * FROM @URLs WHERE Mirror = 1 AND DirectoryPath NOT LIKE 'https://%/%')
   OR EXISTS (SELECT * FROM @URLs GROUP BY DirectoryPath HAVING COUNT(*) <> 1)
   OR ((SELECT COUNT(*) FROM @URLs WHERE Mirror = 0) <> (SELECT COUNT(*) FROM @URLs WHERE Mirror = 1) AND (SELECT COUNT(*) FROM @URLs WHERE Mirror = 1) > 0)
   BEGIN
-    SET @ErrorMessage = 'The value for the parameter @MirrorURL is not supported.' + CHAR(13) + CHAR(10) + ' '
+    SET @ErrorMessage = 'The value for the parameter @MirrorURL is not supported.'
     RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
     SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -1005,467 +1032,533 @@ BEGIN
 
   IF @BackupType NOT IN ('FULL','DIFF','LOG') OR @BackupType IS NULL
   BEGIN
-    SET @ErrorMessage = 'The value for the parameter @BackupType is not supported.' + CHAR(13) + CHAR(10) + ' '
+    SET @ErrorMessage = 'The value for the parameter @BackupType is not supported.'
     RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
     SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
   IF SERVERPROPERTY('EngineEdition') = 8 AND NOT (@BackupType = 'FULL' AND @CopyOnly = 'Y')
   BEGIN
-    SET @ErrorMessage = 'SQL Database Managed Instance only supports COPY_ONLY full backups.' + CHAR(13) + CHAR(10) + ' '
+    SET @ErrorMessage = 'SQL Database Managed Instance only supports COPY_ONLY full backups.'
     RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
     SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
   IF @Verify NOT IN ('Y','N') OR @Verify IS NULL OR (@BackupSoftware = 'SQLSAFE' AND @Encrypt = 'Y' AND @Verify = 'Y') OR (@Verify = 'Y' AND @BackupSoftware = 'DATA_DOMAIN_BOOST')
   BEGIN
-    SET @ErrorMessage = 'The value for the parameter @Verify is not supported.' + CHAR(13) + CHAR(10) + ' '
+    SET @ErrorMessage = 'The value for the parameter @Verify is not supported.'
     RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
     SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
   IF @CleanupTime < 0
   BEGIN
-    SET @ErrorMessage = 'The value for the parameter @CleanupTime is not supported.' + CHAR(13) + CHAR(10) + ' '
+    SET @ErrorMessage = 'The value for the parameter @CleanupTime is not supported.'
     RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
     SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
   IF @CleanupTime IS NOT NULL AND @URL IS NOT NULL
   BEGIN
-    SET @ErrorMessage = 'The value for the parameter @CleanupTime is not supported. Cleanup is not supported on Azure Blob Storage.' + CHAR(13) + CHAR(10) + ' '
+    SET @ErrorMessage = 'The value for the parameter @CleanupTime is not supported. Cleanup is not supported on Azure Blob Storage.'
     RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
     SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
   IF @CleanupTime IS NOT NULL AND @HostPlatform = 'Linux'
   BEGIN
-    SET @ErrorMessage = 'The value for the parameter @CleanupTime is not supported. Cleanup is not supported on Linux.' + CHAR(13) + CHAR(10) + ' '
+    SET @ErrorMessage = 'The value for the parameter @CleanupTime is not supported. Cleanup is not supported on Linux.'
     RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
     SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
   IF @CleanupTime IS NOT NULL AND ((@DirectoryStructure NOT LIKE '%{DatabaseName}%' OR @DirectoryStructure IS NULL) OR (SERVERPROPERTY('IsHadrEnabled') = 1 AND (@AvailabilityGroupDirectoryStructure NOT LIKE '%{DatabaseName}%' OR @AvailabilityGroupDirectoryStructure IS NULL)))
   BEGIN
-    SET @ErrorMessage = 'The value for the parameter @CleanupTime is not supported. Cleanup is not supported if the token {DatabaseName} is not part of the directory.' + CHAR(13) + CHAR(10) + ' '
+    SET @ErrorMessage = 'The value for the parameter @CleanupTime is not supported. Cleanup is not supported if the token {DatabaseName} is not part of the directory.'
     RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
     SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
   IF @CleanupTime IS NOT NULL AND ((@DirectoryStructure NOT LIKE '%{BackupType}%' OR @DirectoryStructure IS NULL) OR (SERVERPROPERTY('IsHadrEnabled') = 1 AND (@AvailabilityGroupDirectoryStructure NOT LIKE '%{BackupType}%' OR @AvailabilityGroupDirectoryStructure IS NULL)))
   BEGIN
-    SET @ErrorMessage = 'The value for the parameter @CleanupTime is not supported. Cleanup is not supported if the token {BackupType} is not part of the directory.' + CHAR(13) + CHAR(10) + ' '
+    SET @ErrorMessage = 'The value for the parameter @CleanupTime is not supported. Cleanup is not supported if the token {BackupType} is not part of the directory.'
     RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
     SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
   IF @CleanupTime IS NOT NULL AND @CopyOnly = 'Y' AND ((@DirectoryStructure NOT LIKE '%{CopyOnly}%' OR @DirectoryStructure IS NULL) OR (SERVERPROPERTY('IsHadrEnabled') = 1 AND (@AvailabilityGroupDirectoryStructure NOT LIKE '%{CopyOnly}%' OR @AvailabilityGroupDirectoryStructure IS NULL)))
   BEGIN
-    SET @ErrorMessage = 'The value for the parameter @CleanupTime is not supported. Cleanup is not supported if the token {CopyOnly} is not part of the directory.' + CHAR(13) + CHAR(10) + ' '
+    SET @ErrorMessage = 'The value for the parameter @CleanupTime is not supported. Cleanup is not supported if the token {CopyOnly} is not part of the directory.'
     RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
     SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
   IF @CleanupMode NOT IN('BEFORE_BACKUP','AFTER_BACKUP') OR @CleanupMode IS NULL
   BEGIN
-    SET @ErrorMessage = 'The value for the parameter @CleanupMode is not supported.' + CHAR(13) + CHAR(10) + ' '
+    SET @ErrorMessage = 'The value for the parameter @CleanupMode is not supported.'
     RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
     SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
   IF @Compress NOT IN ('Y','N') OR @Compress IS NULL OR (@Compress = 'Y' AND @BackupSoftware IS NULL AND NOT ((@Version >= 10 AND @Version < 10.5 AND SERVERPROPERTY('EngineEdition') = 3) OR (@Version >= 10.5 AND (SERVERPROPERTY('EngineEdition') IN (3, 8) OR SERVERPROPERTY('EditionID') IN (-1534726760, 284895786))))) OR (@Compress = 'N' AND @BackupSoftware IN ('LITESPEED','SQLBACKUP','SQLSAFE') AND (@CompressionLevel IS NULL OR @CompressionLevel >= 1)) OR (@Compress = 'Y' AND @BackupSoftware IN ('LITESPEED','SQLBACKUP','SQLSAFE') AND @CompressionLevel = 0)
   BEGIN
-    SET @ErrorMessage = 'The value for the parameter @Compress is not supported.' + CHAR(13) + CHAR(10) + ' '
+    SET @ErrorMessage = 'The value for the parameter @Compress is not supported.'
     RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
     SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
   IF @CopyOnly NOT IN ('Y','N') OR @CopyOnly IS NULL
   BEGIN
-    SET @ErrorMessage = 'The value for the parameter @CopyOnly is not supported.' + CHAR(13) + CHAR(10) + ' '
+    SET @ErrorMessage = 'The value for the parameter @CopyOnly is not supported.'
     RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
     SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
   IF @ChangeBackupType NOT IN ('Y','N') OR @ChangeBackupType IS NULL
   BEGIN
-    SET @ErrorMessage = 'The value for the parameter @ChangeBackupType is not supported.' + CHAR(13) + CHAR(10) + ' '
+    SET @ErrorMessage = 'The value for the parameter @ChangeBackupType is not supported.'
     RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
     SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
   IF @BackupSoftware NOT IN ('LITESPEED','SQLBACKUP','SQLSAFE','DATA_DOMAIN_BOOST') OR (@BackupSoftware IS NOT NULL AND @HostPlatform = 'Linux')
   BEGIN
-    SET @ErrorMessage = 'The value for the parameter @BackupSoftware is not supported.' + CHAR(13) + CHAR(10) + ' '
+    SET @ErrorMessage = 'The value for the parameter @BackupSoftware is not supported.'
     RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
     SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
   IF @BackupSoftware = 'LITESPEED' AND NOT EXISTS (SELECT * FROM [master].sys.objects WHERE [type] = 'X' AND [name] = 'xp_backup_database')
   BEGIN
-    SET @ErrorMessage = 'LiteSpeed for SQL Server is not installed. Download https://www.quest.com/products/litespeed-for-sql-server/.' + CHAR(13) + CHAR(10) + ' '
+    SET @ErrorMessage = 'LiteSpeed for SQL Server is not installed. Download https://www.quest.com/products/litespeed-for-sql-server/.'
     RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
     SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
   IF @BackupSoftware = 'SQLBACKUP' AND NOT EXISTS (SELECT * FROM [master].sys.objects WHERE [type] = 'X' AND [name] = 'sqlbackup')
   BEGIN
-    SET @ErrorMessage = 'Red Gate SQL Backup Pro is not installed. Download https://www.red-gate.com/products/dba/sql-backup/.' + CHAR(13) + CHAR(10) + ' '
+    SET @ErrorMessage = 'Red Gate SQL Backup Pro is not installed. Download https://www.red-gate.com/products/dba/sql-backup/.'
     RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
     SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
   IF @BackupSoftware = 'SQLSAFE' AND NOT EXISTS (SELECT * FROM [master].sys.objects WHERE [type] = 'X' AND [name] = 'xp_ss_backup')
   BEGIN
-    SET @ErrorMessage = 'Idera SQL Safe Backup is not installed. Download https://www.idera.com/productssolutions/sqlserver/sqlsafebackup.' + CHAR(13) + CHAR(10) + ' '
+    SET @ErrorMessage = 'Idera SQL Safe Backup is not installed. Download https://www.idera.com/productssolutions/sqlserver/sqlsafebackup.'
     RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
     SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
   IF @BackupSoftware = 'DATA_DOMAIN_BOOST' AND NOT EXISTS (SELECT * FROM [master].sys.objects WHERE [type] = 'PC' AND [name] = 'emc_run_backup')
   BEGIN
-    SET @ErrorMessage = 'EMC Data Domain Boost is not installed. Download https://www.emc.com/en-us/data-protection/data-domain.htm.' + CHAR(13) + CHAR(10) + ' '
+    SET @ErrorMessage = 'EMC Data Domain Boost is not installed. Download https://www.emc.com/en-us/data-protection/data-domain.htm.'
     RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
     SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
   IF @CheckSum NOT IN ('Y','N') OR @CheckSum IS NULL
   BEGIN
-    SET @ErrorMessage = 'The value for the parameter @CheckSum is not supported.' + CHAR(13) + CHAR(10) + ' '
+    SET @ErrorMessage = 'The value for the parameter @CheckSum is not supported.'
     RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
     SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
   IF @BlockSize NOT IN (512,1024,2048,4096,8192,16384,32768,65536) OR (@BlockSize IS NOT NULL AND @BackupSoftware = 'SQLBACKUP') OR (@BlockSize IS NOT NULL AND @BackupSoftware = 'SQLSAFE') OR (@BlockSize IS NOT NULL AND @URL IS NOT NULL AND @Credential IS NOT NULL) OR (@BlockSize IS NOT NULL AND @BackupSoftware = 'DATA_DOMAIN_BOOST')
   BEGIN
-    SET @ErrorMessage = 'The value for the parameter @BlockSize is not supported.' + CHAR(13) + CHAR(10) + ' '
+    SET @ErrorMessage = 'The value for the parameter @BlockSize is not supported.'
     RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
     SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
   IF @BufferCount <= 0 OR @BufferCount > 2147483647 OR (@BufferCount IS NOT NULL AND @BackupSoftware = 'SQLBACKUP') OR (@BufferCount IS NOT NULL AND @BackupSoftware = 'SQLSAFE')
   BEGIN
-    SET @ErrorMessage = 'The value for the parameter @BufferCount is not supported.' + CHAR(13) + CHAR(10) + ' '
+    SET @ErrorMessage = 'The value for the parameter @BufferCount is not supported.'
     RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
     SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
   IF @MaxTransferSize < 65536 OR @MaxTransferSize > 4194304 OR (@MaxTransferSize > 1048576 AND @BackupSoftware = 'SQLBACKUP') OR (@MaxTransferSize IS NOT NULL AND @BackupSoftware = 'SQLSAFE') OR (@MaxTransferSize IS NOT NULL AND @URL IS NOT NULL AND @Credential IS NOT NULL) OR (@MaxTransferSize IS NOT NULL AND @BackupSoftware = 'DATA_DOMAIN_BOOST')
   BEGIN
-    SET @ErrorMessage = 'The value for the parameter @MaxTransferSize is not supported.' + CHAR(13) + CHAR(10) + ' '
+    SET @ErrorMessage = 'The value for the parameter @MaxTransferSize is not supported.'
     RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
     SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
   IF @NumberOfFiles < 1 OR @NumberOfFiles > 64 OR (@NumberOfFiles > 32 AND @BackupSoftware = 'SQLBACKUP') OR @NumberOfFiles IS NULL OR @NumberOfFiles < (SELECT COUNT(*) FROM @Directories WHERE Mirror = 0) OR @NumberOfFiles % (SELECT NULLIF(COUNT(*),0) FROM @Directories WHERE Mirror = 0) > 0 OR (@URL IS NOT NULL AND @Credential IS NOT NULL AND @NumberOfFiles <> 1) OR (@NumberOfFiles > 1 AND @BackupSoftware IN('SQLBACKUP','SQLSAFE') AND EXISTS(SELECT * FROM @Directories WHERE Mirror = 1)) OR (@NumberOfFiles > 32 AND @BackupSoftware = 'DATA_DOMAIN_BOOST') OR @NumberOfFiles < (SELECT COUNT(*) FROM @URLs WHERE Mirror = 0) OR @NumberOfFiles % (SELECT NULLIF(COUNT(*),0) FROM @URLs WHERE Mirror = 0) > 0
   BEGIN
-    SET @ErrorMessage = 'The value for the parameter @NumberOfFiles is not supported.' + CHAR(13) + CHAR(10) + ' '
+    SET @ErrorMessage = 'The value for the parameter @NumberOfFiles is not supported.'
     RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
     SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
   IF (@BackupSoftware IS NULL AND @CompressionLevel IS NOT NULL) OR (@BackupSoftware = 'LITESPEED' AND (@CompressionLevel < 0 OR @CompressionLevel > 8)) OR (@BackupSoftware = 'SQLBACKUP' AND (@CompressionLevel < 0 OR @CompressionLevel > 4)) OR (@BackupSoftware = 'SQLSAFE' AND (@CompressionLevel < 1 OR @CompressionLevel > 4)) OR (@CompressionLevel IS NOT NULL AND @BackupSoftware = 'DATA_DOMAIN_BOOST')
   BEGIN
-    SET @ErrorMessage = 'The value for the parameter @CompressionLevel is not supported.' + CHAR(13) + CHAR(10) + ' '
+    SET @ErrorMessage = 'The value for the parameter @CompressionLevel is not supported.'
     RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
     SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
   IF LEN(@Description) > 255 OR (@BackupSoftware = 'LITESPEED' AND LEN(@Description) > 128) OR (@BackupSoftware = 'DATA_DOMAIN_BOOST' AND LEN(@Description) > 254)
   BEGIN
-    SET @ErrorMessage = 'The value for the parameter @Description is not supported.' + CHAR(13) + CHAR(10) + ' '
+    SET @ErrorMessage = 'The value for the parameter @Description is not supported.'
     RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
     SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
   IF @Threads IS NOT NULL AND (@BackupSoftware NOT IN('LITESPEED','SQLBACKUP','SQLSAFE') OR @BackupSoftware IS NULL) OR (@BackupSoftware = 'LITESPEED' AND (@Threads < 1 OR @Threads > 32)) OR (@BackupSoftware = 'SQLBACKUP' AND (@Threads < 2 OR @Threads > 32)) OR (@BackupSoftware = 'SQLSAFE' AND (@Threads < 1 OR @Threads > 64))
   BEGIN
-    SET @ErrorMessage = 'The value for the parameter @Threads is not supported.' + CHAR(13) + CHAR(10) + ' '
+    SET @ErrorMessage = 'The value for the parameter @Threads is not supported.'
     RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
     SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
   IF @Throttle IS NOT NULL AND (@BackupSoftware NOT IN('LITESPEED') OR @BackupSoftware IS NULL) OR @Throttle < 1 OR @Throttle > 100
   BEGIN
-    SET @ErrorMessage = 'The value for the parameter @Throttle is not supported.' + CHAR(13) + CHAR(10) + ' '
+    SET @ErrorMessage = 'The value for the parameter @Throttle is not supported.'
     RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
     SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
   IF @Encrypt NOT IN('Y','N') OR @Encrypt IS NULL OR (@Encrypt = 'Y' AND @BackupSoftware IS NULL AND NOT (@Version >= 12 AND (SERVERPROPERTY('EngineEdition') = 3) OR SERVERPROPERTY('EditionID') IN(-1534726760, 284895786))) OR (@Encrypt = 'Y' AND @BackupSoftware = 'DATA_DOMAIN_BOOST')
   BEGIN
-    SET @ErrorMessage = 'The value for the parameter @Encrypt is not supported.' + CHAR(13) + CHAR(10) + ' '
+    SET @ErrorMessage = 'The value for the parameter @Encrypt is not supported.'
     RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
     SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
   IF (@BackupSoftware IS NULL AND @Encrypt = 'Y' AND (@EncryptionAlgorithm NOT IN('AES_128','AES_192','AES_256','TRIPLE_DES_3KEY') OR @EncryptionAlgorithm IS NULL)) OR (@BackupSoftware = 'LITESPEED' AND @Encrypt = 'Y' AND (@EncryptionAlgorithm NOT IN('RC2_40','RC2_56','RC2_112','RC2_128','TRIPLE_DES_3KEY','RC4_128','AES_128','AES_192','AES_256') OR @EncryptionAlgorithm IS NULL)) OR (@BackupSoftware = 'SQLBACKUP' AND @Encrypt = 'Y' AND (@EncryptionAlgorithm NOT IN('AES_128','AES_256') OR @EncryptionAlgorithm IS NULL)) OR (@BackupSoftware = 'SQLSAFE' AND @Encrypt = 'Y' AND (@EncryptionAlgorithm NOT IN('AES_128','AES_256') OR @EncryptionAlgorithm IS NULL)) OR (@EncryptionAlgorithm IS NOT NULL AND @BackupSoftware = 'DATA_DOMAIN_BOOST')
   BEGIN
-    SET @ErrorMessage = 'The value for the parameter @EncryptionAlgorithm is not supported.' + CHAR(13) + CHAR(10) + ' '
+    SET @ErrorMessage = 'The value for the parameter @EncryptionAlgorithm is not supported.'
     RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
     SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
   IF (NOT (@BackupSoftware IS NULL AND @Encrypt = 'Y') AND @ServerCertificate IS NOT NULL) OR (@BackupSoftware IS NULL AND @Encrypt = 'Y' AND @ServerCertificate IS NULL AND @ServerAsymmetricKey IS NULL) OR (@BackupSoftware IS NULL AND @Encrypt = 'Y' AND @ServerCertificate IS NOT NULL AND @ServerAsymmetricKey IS NOT NULL) OR (@ServerCertificate IS NOT NULL AND NOT EXISTS(SELECT * FROM master.sys.certificates WHERE name = @ServerCertificate))
   BEGIN
-    SET @ErrorMessage = 'The value for the parameter @ServerCertificate is not supported.' + CHAR(13) + CHAR(10) + ' '
+    SET @ErrorMessage = 'The value for the parameter @ServerCertificate is not supported.'
     RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
     SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
   IF (NOT (@BackupSoftware IS NULL AND @Encrypt = 'Y') AND @ServerAsymmetricKey IS NOT NULL) OR (@BackupSoftware IS NULL AND @Encrypt = 'Y' AND @ServerAsymmetricKey IS NULL AND @ServerCertificate IS NULL) OR (@BackupSoftware IS NULL AND @Encrypt = 'Y' AND @ServerAsymmetricKey IS NOT NULL AND @ServerCertificate IS NOT NULL) OR (@ServerAsymmetricKey IS NOT NULL AND NOT EXISTS(SELECT * FROM master.sys.asymmetric_keys WHERE name = @ServerAsymmetricKey))
   BEGIN
-    SET @ErrorMessage = 'The value for the parameter @ServerAsymmetricKey is not supported.' + CHAR(13) + CHAR(10) + ' '
+    SET @ErrorMessage = 'The value for the parameter @ServerAsymmetricKey is not supported.'
     RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
     SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
   IF (@EncryptionKey IS NOT NULL AND @BackupSoftware IS NULL) OR (@EncryptionKey IS NOT NULL AND @Encrypt = 'N') OR (@EncryptionKey IS NULL AND @Encrypt = 'Y' AND @BackupSoftware IN('LITESPEED','SQLBACKUP','SQLSAFE')) OR (@EncryptionKey IS NOT NULL AND @BackupSoftware = 'DATA_DOMAIN_BOOST')
   BEGIN
-    SET @ErrorMessage = 'The value for the parameter @EncryptionKey is not supported.' + CHAR(13) + CHAR(10) + ' '
+    SET @ErrorMessage = 'The value for the parameter @EncryptionKey is not supported.'
     RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
     SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
   IF @ReadWriteFileGroups NOT IN('Y','N') OR @ReadWriteFileGroups IS NULL OR (@ReadWriteFileGroups = 'Y' AND @BackupType = 'LOG')
   BEGIN
-    SET @ErrorMessage = 'The value for the parameter @ReadWriteFileGroups is not supported.' + CHAR(13) + CHAR(10) + ' '
+    SET @ErrorMessage = 'The value for the parameter @ReadWriteFileGroups is not supported.'
     RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
     SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
   IF @OverrideBackupPreference NOT IN('Y','N') OR @OverrideBackupPreference IS NULL
   BEGIN
-    SET @ErrorMessage = 'The value for the parameter @OverrideBackupPreference is not supported.' + CHAR(13) + CHAR(10) + ' '
+    SET @ErrorMessage = 'The value for the parameter @OverrideBackupPreference is not supported.'
     RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
     SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
   IF @NoRecovery NOT IN('Y','N') OR @NoRecovery IS NULL OR (@NoRecovery = 'Y' AND @BackupType <> 'LOG') OR (@NoRecovery = 'Y' AND @BackupSoftware = 'SQLSAFE')
   BEGIN
-    SET @ErrorMessage = 'The value for the parameter @NoRecovery is not supported.' + CHAR(13) + CHAR(10) + ' '
+    SET @ErrorMessage = 'The value for the parameter @NoRecovery is not supported.'
     RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
     SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
   IF (@URL IS NOT NULL AND @Directory IS NOT NULL) OR (@URL IS NOT NULL AND @MirrorDirectory IS NOT NULL) OR (@URL IS NOT NULL AND @Version < 11.03339) OR (@URL IS NOT NULL AND @BackupSoftware IS NOT NULL)
   BEGIN
-    SET @ErrorMessage = 'The value for the parameter @URL is not supported.' + CHAR(13) + CHAR(10) + ' '
+    SET @ErrorMessage = 'The value for the parameter @URL is not supported.'
     RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
     SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
   IF (@Credential IS NULL AND @URL IS NOT NULL AND NOT (@Version >= 13 OR SERVERPROPERTY('EngineEdition') = 8)) OR (@Credential IS NOT NULL AND @URL IS NULL) OR (@URL IS NOT NULL AND @Credential IS NULL AND NOT EXISTS(SELECT * FROM sys.credentials WHERE UPPER(credential_identity) = 'SHARED ACCESS SIGNATURE')) OR (@Credential IS NOT NULL AND NOT EXISTS(SELECT * FROM sys.credentials WHERE name = @Credential))
   BEGIN
-    SET @ErrorMessage = 'The value for the parameter @Credential is not supported.' + CHAR(13) + CHAR(10) + ' '
+    SET @ErrorMessage = 'The value for the parameter @Credential is not supported.'
     RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
     SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
   IF @MirrorCleanupTime < 0 OR (@MirrorCleanupTime IS NOT NULL AND @MirrorDirectory IS NULL)
   BEGIN
-    SET @ErrorMessage = 'The value for the parameter @MirrorCleanupTime is not supported.' + CHAR(13) + CHAR(10) + ' '
+    SET @ErrorMessage = 'The value for the parameter @MirrorCleanupTime is not supported.'
     RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
     SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
   IF @MirrorCleanupMode NOT IN('BEFORE_BACKUP','AFTER_BACKUP') OR @MirrorCleanupMode IS NULL
   BEGIN
-    SET @ErrorMessage = 'The value for the parameter @MirrorCleanupMode is not supported.' + CHAR(13) + CHAR(10) + ' '
+    SET @ErrorMessage = 'The value for the parameter @MirrorCleanupMode is not supported.'
     RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
     SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
   IF (@MirrorURL IS NOT NULL AND @Directory IS NOT NULL) OR (@MirrorURL IS NOT NULL AND @MirrorDirectory IS NOT NULL) OR (@MirrorURL IS NOT NULL AND @Version < 11.03339) OR (@MirrorURL IS NOT NULL AND @BackupSoftware IS NOT NULL) OR (@MirrorURL IS NOT NULL AND @URL IS NULL)
   BEGIN
-    SET @ErrorMessage = 'The value for the parameter @MirrorURL is not supported.' + CHAR(13) + CHAR(10) + ' '
+    SET @ErrorMessage = 'The value for the parameter @MirrorURL is not supported.'
     RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
     SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
   IF @Updateability NOT IN('READ_ONLY','READ_WRITE','ALL') OR @Updateability IS NULL
   BEGIN
-    SET @ErrorMessage = 'The value for the parameter @Updateability is not supported.' + CHAR(13) + CHAR(10) + ' '
+    SET @ErrorMessage = 'The value for the parameter @Updateability is not supported.'
     RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
     SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
   IF @AdaptiveCompression NOT IN('SIZE','SPEED') OR (@AdaptiveCompression IS NOT NULL AND (@BackupSoftware NOT IN('LITESPEED') OR @BackupSoftware IS NULL))
   BEGIN
-    SET @ErrorMessage = 'The value for the parameter @AdaptiveCompression is not supported.' + CHAR(13) + CHAR(10) + ' '
+    SET @ErrorMessage = 'The value for the parameter @AdaptiveCompression is not supported.'
     RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
     SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
   IF (@ModificationLevel IS NOT NULL AND NOT ((@Version >= 12.06024 AND @Version < 13) OR @Version >= 13.05026)) OR (@ModificationLevel IS NOT NULL AND @ChangeBackupType = 'N') OR (@ModificationLevel IS NOT NULL AND @BackupType <> 'DIFF')
   BEGIN
-    SET @ErrorMessage = 'The value for the parameter @ModificationLevel is not supported.' + CHAR(13) + CHAR(10) + ' '
+    SET @ErrorMessage = 'The value for the parameter @ModificationLevel is not supported.'
     RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
     SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
   IF (@LogSizeSinceLastLogBackup IS NOT NULL AND NOT ((@Version >= 12.06024 AND @Version < 13) OR @Version >= 13.05026)) OR (@LogSizeSinceLastLogBackup IS NOT NULL AND @TimeSinceLastLogBackup IS NULL) OR (@LogSizeSinceLastLogBackup IS NULL AND @TimeSinceLastLogBackup IS NOT NULL) OR (@LogSizeSinceLastLogBackup IS NOT NULL AND @BackupType <> 'LOG')
   BEGIN
-    SET @ErrorMessage = 'The value for the parameter @LogSizeSinceLastLogBackup is not supported.' + CHAR(13) + CHAR(10) + ' '
+    SET @ErrorMessage = 'The value for the parameter @LogSizeSinceLastLogBackup is not supported.'
     RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
     SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
   IF (@TimeSinceLastLogBackup IS NOT NULL AND NOT ((@Version >= 12.06024 AND @Version < 13) OR @Version >= 13.05026)) OR (@TimeSinceLastLogBackup IS NOT NULL AND @LogSizeSinceLastLogBackup IS NULL) OR (@TimeSinceLastLogBackup IS NULL AND @LogSizeSinceLastLogBackup IS NOT NULL) OR (@TimeSinceLastLogBackup IS NOT NULL AND @BackupType <> 'LOG')
   BEGIN
-    SET @ErrorMessage = 'The value for the parameter @TimeSinceLastLogBackup is not supported.' + CHAR(13) + CHAR(10) + ' '
+    SET @ErrorMessage = 'The value for the parameter @TimeSinceLastLogBackup is not supported.'
     RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
     SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
   IF (@DataDomainBoostHost IS NOT NULL AND (@BackupSoftware <> 'DATA_DOMAIN_BOOST' OR @BackupSoftware IS NULL)) OR (@DataDomainBoostHost IS NULL AND @BackupSoftware = 'DATA_DOMAIN_BOOST')
   BEGIN
-    SET @ErrorMessage = 'The value for the parameter @DataDomainBoostHost is not supported.' + CHAR(13) + CHAR(10) + ' '
+    SET @ErrorMessage = 'The value for the parameter @DataDomainBoostHost is not supported.'
     RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
     SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
   IF (@DataDomainBoostUser IS NOT NULL AND (@BackupSoftware <> 'DATA_DOMAIN_BOOST' OR @BackupSoftware IS NULL)) OR (@DataDomainBoostUser IS NULL AND @BackupSoftware = 'DATA_DOMAIN_BOOST')
   BEGIN
-    SET @ErrorMessage = 'The value for the parameter @DataDomainBoostUser is not supported.' + CHAR(13) + CHAR(10) + ' '
+    SET @ErrorMessage = 'The value for the parameter @DataDomainBoostUser is not supported.'
     RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
     SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
   IF (@DataDomainBoostDevicePath IS NOT NULL AND (@BackupSoftware <> 'DATA_DOMAIN_BOOST' OR @BackupSoftware IS NULL)) OR (@DataDomainBoostDevicePath IS NULL AND @BackupSoftware = 'DATA_DOMAIN_BOOST')
   BEGIN
-    SET @ErrorMessage = 'The value for the parameter @DataDomainBoostDevicePath is not supported.' + CHAR(13) + CHAR(10) + ' '
+    SET @ErrorMessage = 'The value for the parameter @DataDomainBoostDevicePath is not supported.'
     RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
     SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
   IF @DataDomainBoostLockboxPath IS NOT NULL AND (@BackupSoftware <> 'DATA_DOMAIN_BOOST' OR @BackupSoftware IS NULL)
   BEGIN
-    SET @ErrorMessage = 'The value for the parameter @DataDomainBoostLockboxPath is not supported.' + CHAR(13) + CHAR(10) + ' '
+    SET @ErrorMessage = 'The value for the parameter @DataDomainBoostLockboxPath is not supported.'
     RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
     SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
   IF @DirectoryStructure = ''
   BEGIN
-    SET @ErrorMessage = 'The value for the parameter @DirectoryStructure is not supported.' + CHAR(13) + CHAR(10) + ' '
+    SET @ErrorMessage = 'The value for the parameter @DirectoryStructure is not supported.'
     RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
     SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
   IF @AvailabilityGroupDirectoryStructure = ''
   BEGIN
-    SET @ErrorMessage = 'The value for the parameter @AvailabilityGroupDirectoryStructure is not supported.' + CHAR(13) + CHAR(10) + ' '
+    SET @ErrorMessage = 'The value for the parameter @AvailabilityGroupDirectoryStructure is not supported.'
     RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
     SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
   IF @FileName IS NULL OR @FileName = '' OR @FileName NOT LIKE '%.{FileExtension}' OR (@NumberOfFiles > 1 AND @FileName NOT LIKE '%{FileNumber}%') OR @FileName LIKE '%{DirectorySeperator}%' OR @FileName LIKE '%/%' OR @FileName LIKE '%\%'
   BEGIN
-    SET @ErrorMessage = 'The value for the parameter @FileName is not supported.' + CHAR(13) + CHAR(10) + ' '
+    SET @ErrorMessage = 'The value for the parameter @FileName is not supported.'
     RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
     SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
   IF (SERVERPROPERTY('IsHadrEnabled') = 1 AND @AvailabilityGroupFileName IS NULL) OR @AvailabilityGroupFileName = '' OR @AvailabilityGroupFileName NOT LIKE '%.{FileExtension}' OR (@NumberOfFiles > 1 AND @AvailabilityGroupFileName NOT LIKE '%{FileNumber}%') OR @AvailabilityGroupFileName LIKE '%{DirectorySeperator}%' OR @AvailabilityGroupFileName LIKE '%/%' OR @AvailabilityGroupFileName LIKE '%\%'
   BEGIN
-    SET @ErrorMessage = 'The value for the parameter @AvailabilityGroupFileName is not supported.' + CHAR(13) + CHAR(10) + ' '
+    SET @ErrorMessage = 'The value for the parameter @AvailabilityGroupFileName is not supported.'
     RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
     SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
   IF REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(@DirectoryStructure,'{DirectorySeparator}',''),'{ServerName}',''),'{InstanceName}',''),'{ServiceName}',''),'{ClusterName}',''),'{AvailabilityGroupName}',''),'{DatabaseName}',''),'{BackupType}',''),'{Partial}',''),'{CopyOnly}',''),'{Description}',''),'{Year}',''),'{Month}',''),'{Day}',''),'{Hour}',''),'{Minute}',''),'{Second}',''),'{Millisecond}',''),'{MajorVersion}',''),'{MinorVersion}','') LIKE '%{%'
   OR REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(@DirectoryStructure,'{DirectorySeparator}',''),'{ServerName}',''),'{InstanceName}',''),'{ServiceName}',''),'{ClusterName}',''),'{AvailabilityGroupName}',''),'{DatabaseName}',''),'{BackupType}',''),'{Partial}',''),'{CopyOnly}',''),'{Description}',''),'{Year}',''),'{Month}',''),'{Day}',''),'{Hour}',''),'{Minute}',''),'{Second}',''),'{Millisecond}',''),'{MajorVersion}',''),'{MinorVersion}','') LIKE '%}%'
   BEGIN
-    SET @ErrorMessage = 'The parameter @DirectoryStructure contains one or more tokens that are not supported.' + CHAR(13) + CHAR(10) + ' '
+    SET @ErrorMessage = 'The parameter @DirectoryStructure contains one or more tokens that are not supported.'
     RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
     SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
   IF REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(@AvailabilityGroupDirectoryStructure,'{DirectorySeparator}',''),'{ServerName}',''),'{InstanceName}',''),'{ServiceName}',''),'{ClusterName}',''),'{AvailabilityGroupName}',''),'{DatabaseName}',''),'{BackupType}',''),'{Partial}',''),'{CopyOnly}',''),'{Description}',''),'{Year}',''),'{Month}',''),'{Day}',''),'{Hour}',''),'{Minute}',''),'{Second}',''),'{Millisecond}',''),'{MajorVersion}',''),'{MinorVersion}','') LIKE '%{%'
   OR REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(@AvailabilityGroupDirectoryStructure,'{DirectorySeparator}',''),'{ServerName}',''),'{InstanceName}',''),'{ServiceName}',''),'{ClusterName}',''),'{AvailabilityGroupName}',''),'{DatabaseName}',''),'{BackupType}',''),'{Partial}',''),'{CopyOnly}',''),'{Description}',''),'{Year}',''),'{Month}',''),'{Day}',''),'{Hour}',''),'{Minute}',''),'{Second}',''),'{Millisecond}',''),'{MajorVersion}',''),'{MinorVersion}','') LIKE '%}%'
   BEGIN
-    SET @ErrorMessage = 'The parameter @AvailabilityGroupDirectoryStructure contains one or more tokens that are not supported.' + CHAR(13) + CHAR(10) + ' '
+    SET @ErrorMessage = 'The parameter @AvailabilityGroupDirectoryStructure contains one or more tokens that are not supported.'
     RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
     SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
   IF REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(@FileName,'{DirectorySeparator}',''),'{ServerName}',''),'{InstanceName}',''),'{ServiceName}',''),'{ClusterName}',''),'{AvailabilityGroupName}',''),'{DatabaseName}',''),'{BackupType}',''),'{Partial}',''),'{CopyOnly}',''),'{Description}',''),'{Year}',''),'{Month}',''),'{Day}',''),'{Hour}',''),'{Minute}',''),'{Second}',''),'{Millisecond}',''),'{FileNumber}',''),'{FileExtension}',''),'{MajorVersion}',''),'{MinorVersion}','') LIKE '%{%'
   OR REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(@FileName,'{DirectorySeparator}',''),'{ServerName}',''),'{InstanceName}',''),'{ServiceName}',''),'{ClusterName}',''),'{AvailabilityGroupName}',''),'{DatabaseName}',''),'{BackupType}',''),'{Partial}',''),'{CopyOnly}',''),'{Description}',''),'{Year}',''),'{Month}',''),'{Day}',''),'{Hour}',''),'{Minute}',''),'{Second}',''),'{Millisecond}',''),'{FileNumber}',''),'{FileExtension}',''),'{MajorVersion}',''),'{MinorVersion}','') LIKE '%}%'
   BEGIN
-    SET @ErrorMessage = 'The parameter @FileName contains one or more tokens that are not supported.' + CHAR(13) + CHAR(10) + ' '
+    SET @ErrorMessage = 'The parameter @FileName contains one or more tokens that are not supported.'
     RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
     SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
   IF REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(@AvailabilityGroupFileName,'{DirectorySeparator}',''),'{ServerName}',''),'{InstanceName}',''),'{ServiceName}',''),'{ClusterName}',''),'{AvailabilityGroupName}',''),'{DatabaseName}',''),'{BackupType}',''),'{Partial}',''),'{CopyOnly}',''),'{Description}',''),'{Year}',''),'{Month}',''),'{Day}',''),'{Hour}',''),'{Minute}',''),'{Second}',''),'{Millisecond}',''),'{FileNumber}',''),'{FileExtension}',''),'{MajorVersion}',''),'{MinorVersion}','') LIKE '%{%'
   OR REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(@AvailabilityGroupFileName,'{DirectorySeparator}',''),'{ServerName}',''),'{InstanceName}',''),'{ServiceName}',''),'{ClusterName}',''),'{AvailabilityGroupName}',''),'{DatabaseName}',''),'{BackupType}',''),'{Partial}',''),'{CopyOnly}',''),'{Description}',''),'{Year}',''),'{Month}',''),'{Day}',''),'{Hour}',''),'{Minute}',''),'{Second}',''),'{Millisecond}',''),'{FileNumber}',''),'{FileExtension}',''),'{MajorVersion}',''),'{MinorVersion}','') LIKE '%}%'
   BEGIN
-    SET @ErrorMessage = 'The parameter @AvailabilityGroupFileName contains one or more tokens that are not supported.' + CHAR(13) + CHAR(10) + ' '
+    SET @ErrorMessage = 'The parameter @AvailabilityGroupFileName contains one or more tokens that are not supported.'
     RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
     SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
   IF @FileExtensionFull LIKE '%.%'
   BEGIN
-    SET @ErrorMessage = 'The value for the parameter @FileExtensionFull is not supported.' + CHAR(13) + CHAR(10) + ' '
+    SET @ErrorMessage = 'The value for the parameter @FileExtensionFull is not supported.'
     RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
     SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
   IF @FileExtensionDiff LIKE '%.%'
   BEGIN
-    SET @ErrorMessage = 'The value for the parameter @FileExtensionDiff is not supported.' + CHAR(13) + CHAR(10) + ' '
+    SET @ErrorMessage = 'The value for the parameter @FileExtensionDiff is not supported.'
     RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
     SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
   IF @FileExtensionLog LIKE '%.%'
   BEGIN
-    SET @ErrorMessage = 'The value for the parameter @FileExtensionLog is not supported.' + CHAR(13) + CHAR(10) + ' '
+    SET @ErrorMessage = 'The value for the parameter @FileExtensionLog is not supported.'
     RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
     SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
   IF @Init NOT IN('Y','N') OR @Init IS NULL OR (@Init = 'Y' AND @BackupType = 'LOG') OR (@Init = 'Y' AND @BackupSoftware = 'DATA_DOMAIN_BOOST')
   BEGIN
-    SET @ErrorMessage = 'The value for the parameter @Init is not supported.' + CHAR(13) + CHAR(10) + ' '
+    SET @ErrorMessage = 'The value for the parameter @Init is not supported.'
     RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
     SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
   IF @DatabaseOrder NOT IN('DATABASE_NAME_ASC','DATABASE_NAME_DESC','DATABASE_SIZE_ASC','DATABASE_SIZE_DESC','LOG_SIZE_SINCE_LAST_LOG_BACKUP_ASC','LOG_SIZE_SINCE_LAST_LOG_BACKUP_DESC') OR (@DatabaseOrder IN('LOG_SIZE_SINCE_LAST_LOG_BACKUP_ASC','LOG_SIZE_SINCE_LAST_LOG_BACKUP_DESC') AND NOT ((@Version >= 12.06024 AND @Version < 13) OR @Version >= 13.05026 OR SERVERPROPERTY('EngineEdition') = 8)) OR (@DatabaseOrder IS NOT NULL AND SERVERPROPERTY('EngineEdition') = 5)
   BEGIN
-    SET @ErrorMessage = 'The value for the parameter @DatabaseOrder is not supported.' + CHAR(13) + CHAR(10) + ' '
+    SET @ErrorMessage = 'The value for the parameter @DatabaseOrder is not supported.'
     RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
     SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
   IF @DatabasesInParallel NOT IN('Y','N') OR @DatabasesInParallel IS NULL OR (@DatabasesInParallel = 'Y' AND SERVERPROPERTY('EngineEdition') = 5)
   BEGIN
-    SET @ErrorMessage = 'The value for the parameter @DatabasesInParallel is not supported.' + CHAR(13) + CHAR(10) + ' '
+    SET @ErrorMessage = 'The value for the parameter @DatabasesInParallel is not supported.'
     RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
     SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
   IF @LogToTable NOT IN('Y','N') OR @LogToTable IS NULL
   BEGIN
-    SET @ErrorMessage = 'The value for the parameter @LogToTable is not supported.' + CHAR(13) + CHAR(10) + ' '
+    SET @ErrorMessage = 'The value for the parameter @LogToTable is not supported.'
     RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
     SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
   IF @Execute NOT IN('Y','N') OR @Execute IS NULL
   BEGIN
-    SET @ErrorMessage = 'The value for the parameter @Execute is not supported.' + CHAR(13) + CHAR(10) + ' '
+    SET @ErrorMessage = 'The value for the parameter @Execute is not supported.'
     RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
     SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
   IF @Error <> 0
   BEGIN
-    SET @ErrorMessage = 'The documentation is available at https://ola.hallengren.com/sql-server-backup.html.' + CHAR(13) + CHAR(10) + ' '
+    SET @ErrorMessage = 'The documentation is available at https://ola.hallengren.com/sql-server-backup.html.'
     RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
     SET @ReturnCode = @Error
     GOTO Logging
   END
@@ -1481,9 +1574,10 @@ BEGIN
   AND DatabaseName NOT IN (SELECT DatabaseName FROM @tmpDatabases)
   IF @@ROWCOUNT > 0
   BEGIN
-    SET @ErrorMessage = 'The following databases in the @Databases parameter do not exist: ' + LEFT(@ErrorMessage,LEN(@ErrorMessage)-1) + '.' + CHAR(13) + CHAR(10) + ' '
+    SET @ErrorMessage = 'The following databases in the @Databases parameter do not exist: ' + LEFT(@ErrorMessage,LEN(@ErrorMessage)-1) + '.'
     RAISERROR('%s',10,1,@ErrorMessage) WITH NOWAIT
     SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
   SET @ErrorMessage = ''
@@ -1493,9 +1587,10 @@ BEGIN
   AND AvailabilityGroupName NOT IN (SELECT AvailabilityGroupName FROM @tmpAvailabilityGroups)
   IF @@ROWCOUNT > 0
   BEGIN
-    SET @ErrorMessage = 'The following availability groups do not exist: ' + LEFT(@ErrorMessage,LEN(@ErrorMessage)-1) + '.' + CHAR(13) + CHAR(10) + ' '
+    SET @ErrorMessage = 'The following availability groups do not exist: ' + LEFT(@ErrorMessage,LEN(@ErrorMessage)-1) + '.'
     RAISERROR('%s',10,1,@ErrorMessage) WITH NOWAIT
     SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -1504,9 +1599,10 @@ BEGIN
 
   IF @@SERVERNAME <> CAST(SERVERPROPERTY('ServerName') AS nvarchar(max)) AND SERVERPROPERTY('IsHadrEnabled') = 1
   BEGIN
-    SET @ErrorMessage = 'The @@SERVERNAME does not match SERVERPROPERTY(''ServerName''). See ' + CASE WHEN SERVERPROPERTY('IsClustered') = 0 THEN 'https://docs.microsoft.com/en-us/sql/database-engine/install-windows/rename-a-computer-that-hosts-a-stand-alone-instance-of-sql-server' WHEN SERVERPROPERTY('IsClustered') = 1 THEN 'https://docs.microsoft.com/en-us/sql/sql-server/failover-clusters/install/rename-a-sql-server-failover-cluster-instance' END + '.' + CHAR(13) + CHAR(10) + ' '
+    SET @ErrorMessage = 'The @@SERVERNAME does not match SERVERPROPERTY(''ServerName''). See ' + CASE WHEN SERVERPROPERTY('IsClustered') = 0 THEN 'https://docs.microsoft.com/en-us/sql/database-engine/install-windows/rename-a-computer-that-hosts-a-stand-alone-instance-of-sql-server' WHEN SERVERPROPERTY('IsClustered') = 1 THEN 'https://docs.microsoft.com/en-us/sql/sql-server/failover-clusters/install/rename-a-sql-server-failover-cluster-instance' END + '.'
     RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
     SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -1703,8 +1799,9 @@ BEGIN
       BEGIN
         ROLLBACK TRANSACTION
       END
-      SET @ErrorMessage = 'Msg ' + CAST(ERROR_NUMBER() AS nvarchar) + ', ' + ISNULL(ERROR_MESSAGE(),'') + CHAR(13) + CHAR(10) + ' '
+      SET @ErrorMessage = 'Msg ' + CAST(ERROR_NUMBER() AS nvarchar) + ', ' + ISNULL(ERROR_MESSAGE(),'')
       RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
+      RAISERROR(@EmptyLine,10,1) WITH NOWAIT
       SET @ReturnCode = ERROR_NUMBER()
       GOTO Logging
     END CATCH
@@ -1976,7 +2073,7 @@ BEGIN
       RAISERROR('%s',10,1,@DatabaseMessage) WITH NOWAIT
     END
 
-    RAISERROR('',10,1) WITH NOWAIT
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
 
     IF DATABASEPROPERTYEX(@CurrentDatabaseName,'Status') = 'ONLINE'
     AND (@CurrentIsDatabaseAccessible = 1 OR @CurrentIsDatabaseAccessible IS NULL)
@@ -3093,9 +3190,10 @@ BEGIN
 
     IF DATABASEPROPERTYEX(@CurrentDatabaseName,'Status') = 'SUSPECT'
     BEGIN
-      SET @ErrorMessage = 'The database ' + QUOTENAME(@CurrentDatabaseName) + ' is in a SUSPECT state.' + CHAR(13) + CHAR(10) + ' '
+      SET @ErrorMessage = 'The database ' + QUOTENAME(@CurrentDatabaseName) + ' is in a SUSPECT state.'
       RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
       SET @Error = @@ERROR
+      RAISERROR(@EmptyLine,10,1) WITH NOWAIT
     END
 
     -- Update that the database is completed
