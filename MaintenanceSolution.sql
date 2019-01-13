@@ -10,7 +10,7 @@ License: https://ola.hallengren.com/license.html
 
 GitHub: https://github.com/olahallengren/sql-server-maintenance-solution
 
-Version: 2019-01-12 12:45:42
+Version: 2019-01-13 13:51:41
 
 You can contact me by e-mail at ola@hallengren.com.
 
@@ -126,7 +126,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2019-01-12 12:45:42                                                               //--
+  --// Version: 2019-01-13 13:51:41                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -425,7 +425,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2019-01-12 12:45:42                                                               //--
+  --// Version: 2019-01-13 13:51:41                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -1176,6 +1176,14 @@ BEGIN
     SET @Error = @@ERROR
     RAISERROR(@EmptyLine,10,1) WITH NOWAIT
     SET @DirectoryCheck = 0
+  END
+
+  IF (@BackupSoftware IS NULL AND EXISTS(SELECT * FROM @Directories WHERE Mirror = 1) AND SERVERPROPERTY('EngineEdition') <> 3)
+  BEGIN
+    SET @ErrorMessage = 'Mirrored backup to disk is only available in Enterprise and Developer Edition.'
+    RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
+    SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
   IF @DirectoryCheck = 1
@@ -3668,7 +3676,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2019-01-12 12:45:42                                                               //--
+  --// Version: 2019-01-13 13:51:41                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -5444,7 +5452,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2019-01-12 12:45:42                                                               //--
+  --// Version: 2019-01-13 13:51:41                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
