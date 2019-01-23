@@ -131,8 +131,8 @@ BEGIN
   DECLARE @CurrentMaxFilePathLength nvarchar(max)
   DECLARE @CurrentFileName nvarchar(max)
   DECLARE @CurrentDirectoryID int
-  DECLARE @CurrentDirectoryPath nvarchar(max)
-  DECLARE @CurrentFilePath nvarchar(max)
+  DECLARE @CurrentDirectoryPath nvarchar(4000) -- changed from max to 4k because used as parameter to xp_fileexist
+  DECLARE @CurrentFilePath nvarchar(4000)      -- changed from max to 4k because used as parameter to xp_fileexist
   DECLARE @CurrentDate datetime
   DECLARE @CurrentCleanupDate datetime
   DECLARE @CurrentIsDatabaseAccessible bit
@@ -2638,12 +2638,24 @@ BEGIN
             BREAK
           END
 
-          SET @CurrentCommandType01 = 'xp_create_subdir'
-          SET @CurrentCommand01 = 'DECLARE @ReturnCode int EXECUTE @ReturnCode = [master].dbo.xp_create_subdir N''' + REPLACE(@CurrentDirectoryPath,'''','''''') + ''' IF @ReturnCode <> 0 RAISERROR(''Error creating directory.'', 16, 1)'
-          EXECUTE @CurrentCommandOutput01 = [dbo].[CommandExecute] @Command = @CurrentCommand01, @CommandType = @CurrentCommandType01, @Mode = 1, @DatabaseName = @CurrentDatabaseName, @LogToTable = @LogToTable, @Execute = @Execute
-          SET @Error = @@ERROR
-          IF @Error <> 0 SET @CurrentCommandOutput01 = @Error
-          IF @CurrentCommandOutput01 <> 0 SET @ReturnCode = @CurrentCommandOutput01
+          -- create subdirectory only when it does not exists (otherwise spam in the command log / print output)
+          DELETE FROM @DirectoryInfo;
+          INSERT INTO @DirectoryInfo (FileExists, FileIsADirectory, ParentDirectoryExists)
+          EXECUTE [master].dbo.xp_fileexist @CurrentDirectoryPath
+
+          IF NOT EXISTS (SELECT 1 FROM @DirectoryInfo WHERE FileIsADirectory = 1)
+          BEGIN
+              SET @CurrentCommandType01 = 'xp_create_subdir'
+              SET @CurrentCommand01 = 'DECLARE @ReturnCode int EXECUTE @ReturnCode = [master].dbo.xp_create_subdir N''' + REPLACE(@CurrentDirectoryPath,'''','''''') + ''' IF @ReturnCode <> 0 RAISERROR(''Error creating directory.'', 16, 1)'
+              EXECUTE @CurrentCommandOutput01 = [dbo].[CommandExecute] @Command = @CurrentCommand01, @CommandType = @CurrentCommandType01, @Mode = 1, @DatabaseName = @CurrentDatabaseName, @LogToTable = @LogToTable, @Execute = @Execute
+              SET @Error = @@ERROR
+              IF @Error <> 0 SET @CurrentCommandOutput01 = @Error
+              IF @CurrentCommandOutput01 <> 0 SET @ReturnCode = @CurrentCommandOutput01
+          END 
+          ELSE
+          BEGIN
+             SET @CurrentCommandOutput01 = 0
+          END;
 
           UPDATE @CurrentDirectories
           SET CreateCompleted = 1,
