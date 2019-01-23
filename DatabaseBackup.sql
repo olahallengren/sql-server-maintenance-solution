@@ -42,6 +42,13 @@ ALTER PROCEDURE [dbo].[DatabaseBackup]
 @MirrorCleanupTime int = NULL,
 @MirrorCleanupMode nvarchar(max) = 'AFTER_BACKUP',
 @MirrorURL nvarchar(max) = NULL,
+@CleanUpStartTime        TIME = NULL, -- When @CleanUpStartTime and @CleanUpEndTime are specified the delition of old backup files will be only executed, 
+@CleanUpEndTime          TIME = NULL, -- when the procedure was called in this timeframe. 
+                                      -- Reason: xp_deletefile can be very slow, if there are many files in the backup directory (e.g. because 
+                                      -- LOG backups are taken every minute and cleaned up after 14 days -> 14 * 24 * 60 = 20160 files) and should be only 
+                                      -- executed once per night to prevent delays in the main working time. 
+                                      -- Hint: Set the @CleanUpEndTime as @CleanUpStartTime + regular backup interval to prevent multiple executions
+
 @AvailabilityGroups nvarchar(max) = NULL,
 @Updateability nvarchar(max) = 'ALL',
 @AdaptiveCompression nvarchar(max) = NULL,
@@ -275,6 +282,8 @@ BEGIN
   SET @Parameters = @Parameters + ', @Verify = ' + ISNULL('''' + REPLACE(@Verify,'''','''''') + '''','NULL')
   SET @Parameters = @Parameters + ', @CleanupTime = ' + ISNULL(CAST(@CleanupTime AS nvarchar),'NULL')
   SET @Parameters = @Parameters + ', @CleanupMode = ' + ISNULL('''' + REPLACE(@CleanupMode,'''','''''') + '''','NULL')
+  SET @Parameters = @Parameters + ', @CleanUpStartTime = ' + ISNULL(CAST(@CleanUpStartTime AS NVARCHAR(20)),'NULL')
+  SET @Parameters = @Parameters + ', @CleanUpEndTime = ' + ISNULL(CAST(@CleanUpEndTime AS NVARCHAR(20)),'NULL')    
   SET @Parameters = @Parameters + ', @Compress = ' + ISNULL('''' + REPLACE(@Compress,'''','''''') + '''','NULL')
   SET @Parameters = @Parameters + ', @CopyOnly = ' + ISNULL('''' + REPLACE(@CopyOnly,'''','''''') + '''','NULL')
   SET @Parameters = @Parameters + ', @ChangeBackupType = ' + ISNULL('''' + REPLACE(@ChangeBackupType,'''','''''') + '''','NULL')
@@ -2666,6 +2675,9 @@ BEGIN
       AND @HostPlatform = 'Windows'
       AND (@BackupSoftware <> 'DATA_DOMAIN_BOOST' OR @BackupSoftware IS NULL)
       AND @CurrentBackupType = @BackupType
+      AND CAST(@StartTime AS TIME) BETWEEN ISNULL(@CleanUpStartTime, CAST('00:00:00.000' AS TIME))  -- only when in the specified timeframe
+                                       AND ISNULL(@CleanUpEndTime  , CAST('23:59:59.999' AS TIME))
+
       BEGIN
         WHILE (1 = 1)
         BEGIN
@@ -3133,6 +3145,8 @@ BEGIN
       AND @HostPlatform = 'Windows'
       AND (@BackupSoftware <> 'DATA_DOMAIN_BOOST' OR @BackupSoftware IS NULL)
       AND @CurrentBackupType = @BackupType
+      AND CAST(@StartTime AS TIME) BETWEEN ISNULL(@CleanUpStartTime, CAST('00:00:00.000' AS TIME))  -- only when in the specified timeframe
+                                       AND ISNULL(@CleanUpEndTime  , CAST('23:59:59.999' AS TIME))
       BEGIN
         WHILE (1 = 1)
         BEGIN
