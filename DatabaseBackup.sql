@@ -15,6 +15,8 @@ ALTER PROCEDURE [dbo].[DatabaseBackup]
 @Verify nvarchar(max) = 'N',
 @CleanupTime int = NULL,
 @CleanupMode nvarchar(max) = 'AFTER_BACKUP',
+@CleanupUsesCMD CHAR(1) = 'N', -- when = Y it will use a xp_cmd_shell call instead of xp_delete_files, because xp_delete_files could be extremly slow 
+                               -- if you do frequent log backups, particularly on SQL 2008 R2 before CU11 (> 2 h runtime)
 @Compress nvarchar(max) = NULL,
 @CopyOnly nvarchar(max) = 'N',
 @ChangeBackupType nvarchar(max) = 'N',
@@ -168,6 +170,8 @@ BEGIN
   DECLARE @CurrentCommandType03 nvarchar(max)
   DECLARE @CurrentCommandType04 nvarchar(max)
   DECLARE @CurrentCommandType05 nvarchar(max)
+  DECLARE @cmd                     NVARCHAR(4000); -- used for direct xp_cmd_shell call (to get a list of backup files)
+  DECLARE @Template                NVARCHAR(4000);
 
   DECLARE @Directories TABLE (ID int PRIMARY KEY,
                               DirectoryPath nvarchar(max),
@@ -240,6 +244,13 @@ BEGIN
                                FileNumber SMALLINT)
 
   DECLARE @CurrentCleanupDates TABLE (CleanupDate datetime, Mirror bit)
+-- added for faster Cleanup when @CleanupUsesCMD = 1
+  -- must not be a table variable because of bad execution plan (no statistics) leading to poor performance
+  CREATE TABLE #CleanUpFiles  (FileWithPath NVARCHAR(2048), 
+                               CharBackupTime AS RIGHT(LEFT(FileWithPath, LEN(FileWithPath) - CHARINDEX('.', REVERSE(FileWithPath))  ), 15), 
+                               ShouldBeDeleted TINYINT NOT NULL DEFAULT 0
+                               );
+  CREATE CLUSTERED INDEX #CleanUpFiles_ix ON #CleanUpFiles (CharBackupTime);  
 
   DECLARE @DirectoryCheck bit
 
@@ -282,6 +293,7 @@ BEGIN
   SET @Parameters = @Parameters + ', @Verify = ' + ISNULL('''' + REPLACE(@Verify,'''','''''') + '''','NULL')
   SET @Parameters = @Parameters + ', @CleanupTime = ' + ISNULL(CAST(@CleanupTime AS nvarchar),'NULL')
   SET @Parameters = @Parameters + ', @CleanupMode = ' + ISNULL('''' + REPLACE(@CleanupMode,'''','''''') + '''','NULL')
+  SET @Parameters = @Parameters + ', @CleanupUsesCMD = ' + ISNULL('''' + REPLACE(@CleanupUsesCMD,'''','''''') + '''','NULL')
   SET @Parameters = @Parameters + ', @CleanUpStartTime = ' + ISNULL(CAST(@CleanUpStartTime AS NVARCHAR(20)),'NULL')
   SET @Parameters = @Parameters + ', @CleanUpEndTime = ' + ISNULL(CAST(@CleanUpEndTime AS NVARCHAR(20)),'NULL')    
   SET @Parameters = @Parameters + ', @Compress = ' + ISNULL('''' + REPLACE(@Compress,'''','''''') + '''','NULL')
@@ -1123,6 +1135,17 @@ BEGIN
   IF @CleanupMode NOT IN('BEFORE_BACKUP','AFTER_BACKUP') OR @CleanupMode IS NULL
   BEGIN
     SET @ErrorMessage = 'The value for the parameter @CleanupMode is not supported.'
+    RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
+    SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
+  END
+
+  IF @CleanupUsesCMD NOT IN ('Y','N') OR @CleanupUsesCMD IS NULL 
+  OR @HostPlatform = 'Linux' 
+  OR @BackupSoftware IS NOT NULL
+  OR @FileName NOT LIKE '%{Year}{Month}{Day}[_]{Hour}{Minute}{Second}[_]{FileNumber}.{FileExtension}'
+  BEGIN
+    SET @ErrorMessage = 'The value for the parameter @CleanupUsesCMD is not supported.' + CHAR(13) + CHAR(10) + ' '
     RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
     SET @Error = @@ERROR
     RAISERROR(@EmptyLine,10,1) WITH NOWAIT
@@ -2699,7 +2722,63 @@ BEGIN
           BEGIN
             SET @CurrentCommandType02 = 'xp_delete_file'
 
-            SET @CurrentCommand02 = 'DECLARE @ReturnCode int EXECUTE @ReturnCode = [master].dbo.xp_delete_file 0, N''' + REPLACE(@CurrentDirectoryPath,'''','''''') + ''', ''' + @CurrentFileExtension + ''', ''' + CONVERT(nvarchar(19),@CurrentCleanupDate,126) + ''' IF @ReturnCode <> 0 RAISERROR(''Error deleting files.'', 16, 1)'
+            IF @CleanupUsesCMD = 'N'
+               SET @CurrentCommand02 = 'DECLARE @ReturnCode int EXECUTE @ReturnCode = [master].dbo.xp_delete_file 0, N''' + REPLACE(@CurrentDirectoryPath,'''','''''') + ''', ''' + @CurrentFileExtension + ''', ''' + CONVERT(nvarchar(19),@CurrentCleanupDate,126) + ''' IF @ReturnCode <> 0 RAISERROR(''Error deleting files.'', 16, 1)'
+            ELSE -- for compatibility reasons the CommandType will not be changed, when using cmdshell for cleanup
+               BEGIN
+                   -- get list of all backup files in the current folder (only for the current database)
+                   SET @cmd = 'DIR /b /s /oN /a-d "'+ REPLACE(@CurrentDirectoryPath,N'''',N'''''') + '\*_' + @CurrentDatabaseName + '_*.' + @CurrentFileExtension  + '"'
+                   PRINT @cmd
+                   
+                   DELETE FROM #CleanUpFiles WHERE 1 = 1
+
+                   INSERT INTO #CleanUpFiles(FileWithPath)
+                   EXEC master.sys.xp_cmdshell @cmd
+                   ;
+                   DELETE FROM #CleanUpFiles 
+                    WHERE FileWithPath IS NULL                     -- there will always at least one empty line
+                       OR LEN(CharBackupTime) <> 15                -- wrong formated timestamp (e.g. some manually created / renamed files)
+                       OR ISNUMERIC(LEFT(CharBackupTime, 8))  = 0
+                       OR ISNUMERIC(RIGHT(CharBackupTime, 6)) = 0
+                   ;
+                   UPDATE #CleanUpFiles
+                      SET ShouldBeDeleted = 1
+                    WHERE CharBackupTime < REPLACE(REPLACE(REPLACE(CONVERT(VARCHAR(50), @CurrentCleanupDate, 120), '-', ''), ' ', '_'), ':', '')
+                   ;
+                   
+                   SET @Template = (SELECT TOP 1 REPLACE(cuf.FileWithPath, cuf.CharBackupTime, '*?*') template -- returns e.g. \\msdb01\z$\MSDB01\ProdDB\LOG\MSDB01_ProdDB_LOG_*?*.trn
+                                      FROM #CleanUpFiles AS cuf)
+                   ;
+                   WITH groups AS -- Step 1: group the cleanup files by year / year + month / year + month + day / year + month + day + hour where ALL files should be deleted
+                              (
+                               SELECT LEFT(cuf.CharBackupTime, cte.endpos) grouppart, cte.endpos
+                                 FROM #CleanUpFiles AS cuf
+                                CROSS APPLY (VALUES (4), (6), (8), (11)) cte(endpos) -- end position of year, month, day and hour in CharBackupTime
+                                GROUP BY LEFT(cuf.CharBackupTime, cte.endpos), cte.endpos
+                                HAVING MIN(cuf.ShouldBeDeleted) = MAX(cuf.ShouldBeDeleted)
+                                   AND MIN(cuf.ShouldBeDeleted) = 1
+                              )
+                   SELECT @CurrentCommand02 = 
+                          N'DECLARE @ReturnCode int; '
+                        + N'EXECUTE @ReturnCode = master.sys.xp_cmdshell '''
+                        + STUFF((
+                                 -- Step 2: limit to the top level group (e.g. month instead month + day + hour), if all files for this month should be deleted
+                                SELECT ' & DEL "'+ REPLACE(@Template, '?', g2.grouppart) + '"' AS cmd -- -> e.g. DEL "\\msdb01\z$\MSDB01\ProdDB\LOG\MSDB01_ProdDB_LOG_*2015*.trn"
+                                  FROM groups g
+                                 RIGHT JOIN groups g2
+                                    ON g2.grouppart LIKE g.grouppart + '%'
+                                   AND g2.endpos > g.endpos
+                                 WHERE g.grouppart IS NULL
+                                   AND g2.grouppart IS NOT NULL
+                                 ORDER BY g2.grouppart
+                                   FOR XML PATH('i'), root('c'), type
+                                ).query('/c/i').value('.', 'nvarchar(4000)')
+                                , 1, 3, '' )
+                        + N'''; '
+                        + N'IF @ReturnCode <> 0 RAISERROR(''Error deleting files.'', 16, 1)'
+                   ;
+                   IF @CurrentCommand02 IS NULL SET @CurrentCommand05 = N'PRINT ''Cleanup: Nothing to do - no older backup files found''';
+              END -- ELSE (@CleanupUsesCMD = 'Y')
           END
 
           IF @BackupSoftware = 'LITESPEED'
@@ -3168,8 +3247,64 @@ BEGIN
           BEGIN
             SET @CurrentCommandType05 = 'xp_delete_file'
 
-            SET @CurrentCommand05 = 'DECLARE @ReturnCode int EXECUTE @ReturnCode = [master].dbo.xp_delete_file 0, N''' + REPLACE(@CurrentDirectoryPath,'''','''''') + ''', ''' + @CurrentFileExtension + ''', ''' + CONVERT(nvarchar(19),@CurrentCleanupDate,126) + ''' IF @ReturnCode <> 0 RAISERROR(''Error deleting files.'', 16, 1)'
-          END
+            IF @CleanupUsesCMD = 'N' 
+               SET @CurrentCommand05 = 'DECLARE @ReturnCode int EXECUTE @ReturnCode = [master].dbo.xp_delete_file 0, N''' + REPLACE(@CurrentDirectoryPath,'''','''''') + ''', ''' + @CurrentFileExtension + ''', ''' + CONVERT(nvarchar(19),@CurrentCleanupDate,126) + ''' IF @ReturnCode <> 0 RAISERROR(''Error deleting files.'', 16, 1)'
+            ELSE -- ELSE added; for compatibility reasons the CommandType will not be changed
+               BEGIN
+                   -- get list of all backup files in the current folder (only for the current database)
+                   SET @cmd = 'DIR /b /s /oN /a-d "'+ REPLACE(@CurrentDirectoryPath,N'''',N'''''') + '\*_' + @CurrentDatabaseName + '_*.' + @CurrentFileExtension  + '"'
+                   PRINT @cmd
+                   
+                   DELETE FROM #CleanUpFiles WHERE 1 = 1
+
+                   INSERT INTO #CleanUpFiles(FileWithPath)
+                   EXEC master.sys.xp_cmdshell @cmd
+                   ;
+                   DELETE FROM #CleanUpFiles 
+                    WHERE FileWithPath IS NULL                     -- there will always at least one empty line
+                       OR LEN(CharBackupTime) <> 15                -- wrong formated timestamp (e.g. some manually created / renamed files)
+                       OR ISNUMERIC(LEFT(CharBackupTime, 8))  = 0
+                       OR ISNUMERIC(RIGHT(CharBackupTime, 6)) = 0
+                   ;
+                   UPDATE #CleanUpFiles
+                      SET ShouldBeDeleted = 1
+                    WHERE CharBackupTime < REPLACE(REPLACE(REPLACE(CONVERT(VARCHAR(50), @CurrentCleanupDate, 120), '-', ''), ' ', '_'), ':', '')
+                   ;
+                   
+                   SET @Template = (SELECT TOP 1 REPLACE(cuf.FileWithPath, cuf.CharBackupTime, '*?*') template -- returns e.g. \\msdb01\z$\MSDB01\ProdDB\LOG\MSDB01_ProdDB_LOG_*?*.trn
+                                      FROM #CleanUpFiles AS cuf)
+                   ;
+                   WITH groups AS -- Step 1: group the cleanup files by year / year + month / year + month + day / year + month + day + hour where ALL files should be deleted
+                              (
+                               SELECT LEFT(cuf.CharBackupTime, cte.endpos) grouppart, cte.endpos
+                                 FROM #CleanUpFiles AS cuf
+                                CROSS APPLY (VALUES (4), (6), (8), (11)) cte(endpos) -- end position of year, month, day and hour in CharBackupTime
+                                GROUP BY LEFT(cuf.CharBackupTime, cte.endpos), cte.endpos
+                                HAVING MIN(cuf.ShouldBeDeleted) = MAX(cuf.ShouldBeDeleted)
+                                   AND MIN(cuf.ShouldBeDeleted) = 1
+                              )
+                   SELECT @CurrentCommand05 = 
+                          N'DECLARE @ReturnCode int; '
+                        + N'EXECUTE @ReturnCode = master.sys.xp_cmdshell '''
+                        + STUFF((
+                                 -- Step 2: limit to the top level group (e.g. month instead month + day + hour), if all files for this month should be deleted
+                                SELECT ' & DEL "'+ REPLACE(@Template, '?', g2.grouppart) + '"' AS cmd -- -> e.g. DEL "\\msdb01\z$\MSDB01\ProdDB\LOG\MSDB01_ProdDB_LOG_*2015*.trn"
+                                  FROM groups g
+                                 RIGHT JOIN groups g2
+                                    ON g2.grouppart LIKE g.grouppart + '%'
+                                   AND g2.endpos > g.endpos
+                                 WHERE g.grouppart IS NULL
+                                   AND g2.grouppart IS NOT NULL
+                                 ORDER BY g2.grouppart
+                                   FOR XML PATH('i'), root('c'), type
+                                ).query('/c/i').value('.', 'nvarchar(4000)')
+                                , 1, 3, '' )
+                        + N'''; '
+                        + N'IF @ReturnCode <> 0 RAISERROR(''Error deleting files.'', 16, 1)'
+                   ;
+                   IF @CurrentCommand05 IS NULL SET @CurrentCommand05 = N'PRINT ''Cleanup: Nothing to do - no older backup files found''';
+              END -- ELSE (@CleanupUsesCMD = 'Y')
+          END -- @BackupSoftware IS NULL
 
           IF @BackupSoftware = 'LITESPEED'
           BEGIN
