@@ -229,7 +229,8 @@ BEGIN
 
   DECLARE @CurrentFiles TABLE ([Type] nvarchar(max),
                                FilePath nvarchar(max),
-                               Mirror bit)
+                               Mirror bit,
+                               FileNumber SMALLINT)
 
   DECLARE @CurrentCleanupDates TABLE (CleanupDate datetime, Mirror bit)
 
@@ -2479,13 +2480,14 @@ BEGIN
           WHERE @CurrentFileNumber >= (DirectoryNumber - 1) * (SELECT @NumberOfFiles / COUNT(*) FROM @CurrentDirectories WHERE Mirror = 0) + 1
           AND @CurrentFileNumber <= DirectoryNumber * (SELECT @NumberOfFiles / COUNT(*) FROM @CurrentDirectories WHERE Mirror = 0)
           AND Mirror = 0
+          ORDER BY DirectoryNumber
 
           SET @CurrentFileName = REPLACE(@CurrentDatabaseFileName, '{FileNumber}', CASE WHEN @NumberOfFiles > 1 AND @NumberOfFiles <= 9 THEN CAST(@CurrentFileNumber AS nvarchar) WHEN @NumberOfFiles >= 10 THEN RIGHT('0' + CAST(@CurrentFileNumber AS nvarchar),2) ELSE '' END)
 
           SET @CurrentFilePath = @CurrentDirectoryPath + @DirectorySeparator + @CurrentFileName
 
-          INSERT INTO @CurrentFiles ([Type], FilePath, Mirror)
-          SELECT 'DISK', @CurrentFilePath, 0
+          INSERT INTO @CurrentFiles ([Type], FilePath, Mirror, FileNumber)
+          SELECT 'DISK', @CurrentFilePath, 0, @CurrentFileNumber FileNumber
 
           SET @CurrentDirectoryPath = NULL
           SET @CurrentFileName = NULL
@@ -2506,16 +2508,17 @@ BEGIN
 
           SELECT @CurrentDirectoryPath = DirectoryPath
           FROM @CurrentDirectories
-          WHERE @CurrentFileNumber >= (DirectoryNumber - 1) * (SELECT @NumberOfFiles / COUNT(*) FROM @CurrentDirectories WHERE Mirror = 1) + 1
-          AND @CurrentFileNumber <= DirectoryNumber * (SELECT @NumberOfFiles / COUNT(*) FROM @CurrentDirectories WHERE Mirror = 1)
+          WHERE @CurrentFileNumber >= (DirectoryNumber - 1) * (SELECT @NumberOfFiles / ISNULL(COUNT(*), 1) FROM @CurrentDirectories WHERE Mirror = 1) + 1
+          AND @CurrentFileNumber   <= DirectoryNumber       * (SELECT @NumberOfFiles / ISNULL(COUNT(*), 1) FROM @CurrentDirectories WHERE Mirror = 1)
           AND Mirror = 1
+          ORDER BY DirectoryNumber
 
           SET @CurrentFileName = REPLACE(@CurrentDatabaseFileName, '{FileNumber}', CASE WHEN @NumberOfFiles > 1 AND @NumberOfFiles <= 9 THEN CAST(@CurrentFileNumber AS nvarchar) WHEN @NumberOfFiles >= 10 THEN RIGHT('0' + CAST(@CurrentFileNumber AS nvarchar),2) ELSE '' END)
 
           SET @CurrentFilePath = @CurrentDirectoryPath + @DirectorySeparator + @CurrentFileName
 
-          INSERT INTO @CurrentFiles ([Type], FilePath, Mirror)
-          SELECT 'DISK', @CurrentFilePath, 1
+          INSERT INTO @CurrentFiles ([Type], FilePath, Mirror, FileNumber)
+          SELECT 'DISK', @CurrentFilePath, 1, @CurrentFileNumber FileNumber
 
           SET @CurrentDirectoryPath = NULL
           SET @CurrentFileName = NULL
@@ -2749,19 +2752,21 @@ BEGIN
 
           SET @CurrentCommand03 = @CurrentCommand03 + ' TO'
 
-          SELECT @CurrentCommand03 = @CurrentCommand03 + ' ' + [Type] + ' = N''' + REPLACE(FilePath,'''','''''') + '''' + CASE WHEN ROW_NUMBER() OVER (ORDER BY FilePath ASC) <> @NumberOfFiles THEN ',' ELSE '' END
+          SELECT @CurrentCommand03 = @CurrentCommand03 + ' ' + [Type] + ' = N''' + REPLACE(FilePath,'''','''''') + '''' + CASE WHEN ROW_NUMBER() OVER (ORDER BY FileNumber ASC) <> @NumberOfFiles THEN ',' ELSE '' END
           FROM @CurrentFiles
           WHERE Mirror = 0
-          ORDER BY FilePath ASC
+          ORDER BY FileNumber ASC; -- changed from FilePath to FileNumber, otherwise it would possibly store the same part of a multi file backup on 
+                                   -- the same mirror instead of alternating (e.g. @Directory = '\\srv1\z$,\\srv2\z$', @MirrorDirectory='\\srv2\y$,\\srv1\y$')
+
 
           IF EXISTS(SELECT * FROM @CurrentFiles WHERE Mirror = 1)
           BEGIN
             SET @CurrentCommand03 = @CurrentCommand03 + ' MIRROR TO'
 
-            SELECT @CurrentCommand03 = @CurrentCommand03 + ' ' + [Type] + ' = N''' + REPLACE(FilePath,'''','''''') + '''' + CASE WHEN ROW_NUMBER() OVER (ORDER BY FilePath ASC) <> @NumberOfFiles THEN ',' ELSE '' END
+            SELECT @CurrentCommand03 = @CurrentCommand03 + ' ' + [Type] + ' = N''' + REPLACE(FilePath,'''','''''') + '''' + CASE WHEN ROW_NUMBER() OVER (ORDER BY FileNumber ASC) <> @NumberOfFiles THEN ',' ELSE '' END
             FROM @CurrentFiles
             WHERE Mirror = 1
-            ORDER BY FilePath ASC
+            ORDER BY FileNumber ASC
           END
 
           SET @CurrentCommand03 = @CurrentCommand03 + ' WITH '
@@ -2809,14 +2814,14 @@ BEGIN
           SELECT @CurrentCommand03 = @CurrentCommand03 + ', @filename = N''' + REPLACE(FilePath,'''','''''') + ''''
           FROM @CurrentFiles
           WHERE Mirror = 0
-          ORDER BY FilePath ASC
+          ORDER BY FileNumber ASC
 
           IF EXISTS(SELECT * FROM @CurrentFiles WHERE Mirror = 1)
           BEGIN
             SELECT @CurrentCommand03 = @CurrentCommand03 + ', @mirror = N''' + REPLACE(FilePath,'''','''''') + ''''
             FROM @CurrentFiles
             WHERE Mirror = 1
-            ORDER BY FilePath ASC
+            ORDER BY FileNumber ASC
           END
 
           SET @CurrentCommand03 = @CurrentCommand03 + ', @with = '''
@@ -2866,10 +2871,10 @@ BEGIN
 
           SET @CurrentCommand03 = @CurrentCommand03 + ' TO'
 
-          SELECT @CurrentCommand03 = @CurrentCommand03 + ' DISK = N''' + REPLACE(FilePath,'''','''''') + '''' + CASE WHEN ROW_NUMBER() OVER (ORDER BY FilePath ASC) <> @NumberOfFiles THEN ',' ELSE '' END
+          SELECT @CurrentCommand03 = @CurrentCommand03 + ' DISK = N''' + REPLACE(FilePath,'''','''''') + '''' + CASE WHEN ROW_NUMBER() OVER (ORDER BY FileNumber ASC) <> @NumberOfFiles THEN ',' ELSE '' END
           FROM @CurrentFiles
           WHERE Mirror = 0
-          ORDER BY FilePath ASC
+          ORDER BY FileNumber ASC
 
           SET @CurrentCommand03 = @CurrentCommand03 + ' WITH '
 
@@ -2904,15 +2909,15 @@ BEGIN
 
           SET @CurrentCommand03 = 'DECLARE @ReturnCode int EXECUTE @ReturnCode = [master].dbo.xp_ss_backup @database = N''' + REPLACE(@CurrentDatabaseName,'''','''''') + ''''
 
-          SELECT @CurrentCommand03 = @CurrentCommand03 + ', ' + CASE WHEN ROW_NUMBER() OVER (ORDER BY FilePath ASC) = 1 THEN '@filename' ELSE '@backupfile' END + ' = N''' + REPLACE(FilePath,'''','''''') + ''''
+          SELECT @CurrentCommand03 = @CurrentCommand03 + ', ' + CASE WHEN ROW_NUMBER() OVER (ORDER BY FileNumber ASC) = 1 THEN '@filename' ELSE '@backupfile' END + ' = N''' + REPLACE(FilePath,'''','''''') + ''''
           FROM @CurrentFiles
           WHERE Mirror = 0
-          ORDER BY FilePath ASC
+          ORDER BY FileNumber ASC
 
           SELECT @CurrentCommand03 = @CurrentCommand03 + ', @mirrorfile = N''' + REPLACE(FilePath,'''','''''') + ''''
           FROM @CurrentFiles
           WHERE Mirror = 1
-          ORDER BY FilePath ASC
+          ORDER BY FileNumber ASC
 
           SET @CurrentCommand03 = @CurrentCommand03 + ', @backuptype = ' + CASE WHEN @CurrentBackupType = 'FULL' THEN '''Full''' WHEN @CurrentBackupType = 'DIFF' THEN '''Differential''' WHEN @CurrentBackupType = 'LOG' THEN '''Log''' END
           IF @ReadWriteFileGroups = 'Y' AND @CurrentDatabaseName <> 'master' SET @CurrentCommand03 = @CurrentCommand03 + ', @readwritefilegroups = 1'
