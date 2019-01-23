@@ -2876,30 +2876,30 @@ BEGIN
           IF @CheckSum = 'Y' SET @CurrentCommand03 = @CurrentCommand03 + 'CHECKSUM'
           IF @CheckSum = 'N' SET @CurrentCommand03 = @CurrentCommand03 + 'NO_CHECKSUM'
 
+          -- added spaces and line breaks for a better readable output
           IF @Version >= 10
           BEGIN
-            SET @CurrentCommand03 = @CurrentCommand03 + CASE WHEN @Compress = 'Y' AND (@CurrentIsEncrypted = 0 OR (@CurrentIsEncrypted = 1 AND @Version >= 13 AND @MaxTransferSize > 65536)) THEN ', COMPRESSION' ELSE ', NO_COMPRESSION' END
+            SET @CurrentCommand03 = @CurrentCommand03 + CASE WHEN @Compress = 'Y' AND (@CurrentIsEncrypted = 0 OR (@CurrentIsEncrypted = 1 AND @Version >= 13 AND @MaxTransferSize > 65536)) THEN CHAR(13) + CHAR(10) + '         , COMPRESSION' ELSE CHAR(13) + CHAR(10) + '         , NO_COMPRESSION' END
           END
-
-          IF @CurrentBackupType = 'DIFF' SET @CurrentCommand03 = @CurrentCommand03 + ', DIFFERENTIAL'
+          IF @CurrentBackupType = 'DIFF' SET @CurrentCommand03 = @CurrentCommand03 + CHAR(13) + CHAR(10) + '         , DIFFERENTIAL'
 
           IF EXISTS(SELECT * FROM @CurrentFiles WHERE Mirror = 1)
           BEGIN
-            SET @CurrentCommand03 = @CurrentCommand03 + ', FORMAT'
+            SET @CurrentCommand03 = @CurrentCommand03 + CHAR(13) + CHAR(10) + '         , FORMAT'
           END
 
-          IF @CopyOnly = 'Y' SET @CurrentCommand03 = @CurrentCommand03 + ', COPY_ONLY'
-          IF @NoRecovery = 'Y' AND @CurrentBackupType = 'LOG' SET @CurrentCommand03 = @CurrentCommand03 + ', NORECOVERY'
-          IF @Init = 'Y' SET @CurrentCommand03 = @CurrentCommand03 + ', INIT'
-          IF @BlockSize IS NOT NULL SET @CurrentCommand03 = @CurrentCommand03 + ', BLOCKSIZE = ' + CAST(@BlockSize AS nvarchar)
-          IF @BufferCount IS NOT NULL SET @CurrentCommand03 = @CurrentCommand03 + ', BUFFERCOUNT = ' + CAST(@BufferCount AS nvarchar)
-          IF @MaxTransferSize IS NOT NULL SET @CurrentCommand03 = @CurrentCommand03 + ', MAXTRANSFERSIZE = ' + CAST(@MaxTransferSize AS nvarchar)
-          IF @Description IS NOT NULL SET @CurrentCommand03 = @CurrentCommand03 + ', DESCRIPTION = N''' + REPLACE(@Description,'''','''''') + ''''
-          IF @Encrypt = 'Y' SET @CurrentCommand03 = @CurrentCommand03 + ', ENCRYPTION (ALGORITHM = ' + UPPER(@EncryptionAlgorithm) + ', '
+          IF @CopyOnly = 'Y' SET @CurrentCommand03 = @CurrentCommand03 + CHAR(13) + CHAR(10) + '         , COPY_ONLY'
+          IF @NoRecovery = 'Y' AND @CurrentBackupType = 'LOG' SET @CurrentCommand03 = @CurrentCommand03 + ',' + CHAR(13) + CHAR(10) + '         , NORECOVERY'
+          IF @Init = 'Y' SET @CurrentCommand03 = @CurrentCommand03 + CHAR(13) + CHAR(10) + '           , INIT'
+          IF @BlockSize IS NOT NULL SET @CurrentCommand03 = @CurrentCommand03 + CHAR(13) + CHAR(10) + '         , BLOCKSIZE = ' + CAST(@BlockSize AS nvarchar)
+          IF @BufferCount IS NOT NULL SET @CurrentCommand03 = @CurrentCommand03 + CHAR(13) + CHAR(10) + '         , BUFFERCOUNT = ' + CAST(@BufferCount AS nvarchar)
+          IF @MaxTransferSize IS NOT NULL SET @CurrentCommand03 = @CurrentCommand03 + CHAR(13) + CHAR(10) + '         , MAXTRANSFERSIZE = ' + CAST(@MaxTransferSize AS nvarchar)
+          IF @Description IS NOT NULL SET @CurrentCommand03 = @CurrentCommand03 + CHAR(13) + CHAR(10) + '         , DESCRIPTION = N''' + REPLACE(@Description,'''','''''') + ''''
+          IF @Encrypt = 'Y' SET @CurrentCommand03 = @CurrentCommand03 + CHAR(13) + CHAR(10) + '         , ENCRYPTION (ALGORITHM = ' + UPPER(@EncryptionAlgorithm) + ', '
           IF @Encrypt = 'Y' AND @ServerCertificate IS NOT NULL SET @CurrentCommand03 = @CurrentCommand03 + 'SERVER CERTIFICATE = ' + QUOTENAME(@ServerCertificate)
           IF @Encrypt = 'Y' AND @ServerAsymmetricKey IS NOT NULL SET @CurrentCommand03 = @CurrentCommand03 + 'SERVER ASYMMETRIC KEY = ' + QUOTENAME(@ServerAsymmetricKey)
           IF @Encrypt = 'Y' SET @CurrentCommand03 = @CurrentCommand03 + ')'
-          IF @URL IS NOT NULL AND @Credential IS NOT NULL SET @CurrentCommand03 = @CurrentCommand03 + ', CREDENTIAL = N''' + REPLACE(@Credential,'''','''''') + ''''
+          IF @URL IS NOT NULL AND @Credential IS NOT NULL SET @CurrentCommand03 = @CurrentCommand03  + CHAR(13) + CHAR(10) + '          , CREDENTIAL = N''' + REPLACE(@Credential,'''','''''') + ''''
         END
 
         IF @BackupSoftware = 'LITESPEED'
