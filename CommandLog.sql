@@ -1,6 +1,6 @@
 ﻿IF (SCHEMA_ID('sqlservermaint') IS NULL) 
 BEGIN
-    EXEC ('CREATE SCHEMA [sqlservermaint] AUTHORIZATION [sqlservermaint]')
+    EXEC ('CREATE SCHEMA [sqlservermaint] AUTHORIZATION [dbo]')
 END
 
 SET ANSI_NULLS ON
