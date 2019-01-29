@@ -1,10 +1,15 @@
-﻿SET ANSI_NULLS ON
+﻿IF (SCHEMA_ID('sqlservermaint') IS NULL) 
+BEGIN
+    EXEC ('CREATE SCHEMA [sqlservermaint] AUTHORIZATION [sqlservermaint]')
+END
+
+SET ANSI_NULLS ON
 GO
 SET QUOTED_IDENTIFIER ON
 GO
-IF NOT EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'[dbo].[CommandLog]') AND type in (N'U'))
+IF NOT EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'[sqlservermaint].[CommandLog]') AND type in (N'U'))
 BEGIN
-CREATE TABLE [dbo].[CommandLog](
+CREATE TABLE [sqlservermaint].[CommandLog](
   [ID] [int] IDENTITY(1,1) NOT NULL,
   [DatabaseName] [sysname] NULL,
   [SchemaName] [sysname] NULL,

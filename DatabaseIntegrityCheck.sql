@@ -1,13 +1,18 @@
-﻿SET ANSI_NULLS ON
+﻿IF (SCHEMA_ID('sqlservermaint') IS NULL) 
+BEGIN
+    EXEC ('CREATE SCHEMA [sqlservermaint] AUTHORIZATION [sqlservermaint]')
+END
+
+SET ANSI_NULLS ON
 GO
 SET QUOTED_IDENTIFIER ON
 GO
-IF NOT EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'[dbo].[DatabaseIntegrityCheck]') AND type in (N'P', N'PC'))
+IF NOT EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'[sqlservermaint].[DatabaseIntegrityCheck]') AND type in (N'P', N'PC'))
 BEGIN
-EXEC dbo.sp_executesql @statement = N'CREATE PROCEDURE [dbo].[DatabaseIntegrityCheck] AS'
+EXEC dbo.sp_executesql @statement = N'CREATE PROCEDURE [sqlservermaint].[DatabaseIntegrityCheck] AS'
 END
 GO
-ALTER PROCEDURE [dbo].[DatabaseIntegrityCheck]
+ALTER PROCEDURE [sqlservermaint].[DatabaseIntegrityCheck]
 
 @Databases nvarchar(max) = NULL,
 @CheckCommands nvarchar(max) = 'CHECKDB',
@@ -283,7 +288,7 @@ BEGIN
     RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
-  IF NOT EXISTS (SELECT * FROM sys.objects objects INNER JOIN sys.schemas schemas ON objects.[schema_id] = schemas.[schema_id] WHERE objects.[type] = 'P' AND schemas.[name] = 'dbo' AND objects.[name] = 'CommandExecute')
+  IF NOT EXISTS (SELECT * FROM sys.objects objects INNER JOIN sys.schemas schemas ON objects.[schema_id] = schemas.[schema_id] WHERE objects.[type] = 'P' AND schemas.[name] = 'sqlservermaint' AND objects.[name] = 'CommandExecute')
   BEGIN
     SET @ErrorMessage = 'The stored procedure CommandExecute is missing. Download https://ola.hallengren.com/scripts/CommandExecute.sql.'
     RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
@@ -291,7 +296,7 @@ BEGIN
     RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
-  IF EXISTS (SELECT * FROM sys.objects objects INNER JOIN sys.schemas schemas ON objects.[schema_id] = schemas.[schema_id] WHERE objects.[type] = 'P' AND schemas.[name] = 'dbo' AND objects.[name] = 'CommandExecute' AND OBJECT_DEFINITION(objects.[object_id]) NOT LIKE '%@LockMessageSeverity%')
+  IF EXISTS (SELECT * FROM sys.objects objects INNER JOIN sys.schemas schemas ON objects.[schema_id] = schemas.[schema_id] WHERE objects.[type] = 'P' AND schemas.[name] = 'sqlservermaint' AND objects.[name] = 'CommandExecute' AND OBJECT_DEFINITION(objects.[object_id]) NOT LIKE '%@LockMessageSeverity%')
   BEGIN
     SET @ErrorMessage = 'The stored procedure CommandExecute needs to be updated. Download https://ola.hallengren.com/scripts/CommandExecute.sql.'
     RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
@@ -299,7 +304,7 @@ BEGIN
     RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
-  IF @LogToTable = 'Y' AND NOT EXISTS (SELECT * FROM sys.objects objects INNER JOIN sys.schemas schemas ON objects.[schema_id] = schemas.[schema_id] WHERE objects.[type] = 'U' AND schemas.[name] = 'dbo' AND objects.[name] = 'CommandLog')
+  IF @LogToTable = 'Y' AND NOT EXISTS (SELECT * FROM sys.objects objects INNER JOIN sys.schemas schemas ON objects.[schema_id] = schemas.[schema_id] WHERE objects.[type] = 'U' AND schemas.[name] = 'sqlservermaint' AND objects.[name] = 'CommandLog')
   BEGIN
     SET @ErrorMessage = 'The table CommandLog is missing. Download https://ola.hallengren.com/scripts/CommandLog.sql.'
     RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
@@ -307,7 +312,7 @@ BEGIN
     RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
-  IF @DatabasesInParallel = 'Y' AND NOT EXISTS (SELECT * FROM sys.objects objects INNER JOIN sys.schemas schemas ON objects.[schema_id] = schemas.[schema_id] WHERE objects.[type] = 'U' AND schemas.[name] = 'dbo' AND objects.[name] = 'Queue')
+  IF @DatabasesInParallel = 'Y' AND NOT EXISTS (SELECT * FROM sys.objects objects INNER JOIN sys.schemas schemas ON objects.[schema_id] = schemas.[schema_id] WHERE objects.[type] = 'U' AND schemas.[name] = 'sqlservermaint' AND objects.[name] = 'Queue')
   BEGIN
     SET @ErrorMessage = 'The table Queue is missing. Download https://ola.hallengren.com/scripts/Queue.sql.'
     RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
@@ -315,7 +320,7 @@ BEGIN
     RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
-  IF @DatabasesInParallel = 'Y' AND NOT EXISTS (SELECT * FROM sys.objects objects INNER JOIN sys.schemas schemas ON objects.[schema_id] = schemas.[schema_id] WHERE objects.[type] = 'U' AND schemas.[name] = 'dbo' AND objects.[name] = 'QueueDatabase')
+  IF @DatabasesInParallel = 'Y' AND NOT EXISTS (SELECT * FROM sys.objects objects INNER JOIN sys.schemas schemas ON objects.[schema_id] = schemas.[schema_id] WHERE objects.[type] = 'U' AND schemas.[name] = 'sqlservermaint' AND objects.[name] = 'QueueDatabase')
   BEGIN
     SET @ErrorMessage = 'The table QueueDatabase is missing. Download https://ola.hallengren.com/scripts/QueueDatabase.sql.'
     RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
@@ -974,7 +979,7 @@ BEGIN
     SET LastCommandTime = MaxStartTime
     FROM @tmpDatabases tmpDatabases
     INNER JOIN (SELECT DatabaseName, MAX(StartTime) AS MaxStartTime
-                FROM dbo.CommandLog
+                FROM sqlservermaint.CommandLog
                 WHERE CommandType = 'DBCC_CHECKDB'
                 AND ErrorNumber = 0
                 GROUP BY DatabaseName) CommandLog
@@ -1090,7 +1095,7 @@ BEGIN
     BEGIN TRY
 
       SELECT @QueueID = QueueID
-      FROM dbo.[Queue]
+      FROM sqlservermaint.[Queue]
       WHERE SchemaName = @SchemaName
       AND ObjectName = @ObjectName
       AND [Parameters] = @Parameters
@@ -1100,14 +1105,14 @@ BEGIN
         BEGIN TRANSACTION
 
         SELECT @QueueID = QueueID
-        FROM dbo.[Queue] WITH (UPDLOCK, TABLOCK)
+        FROM sqlservermaint.[Queue] WITH (UPDLOCK, TABLOCK)
         WHERE SchemaName = @SchemaName
         AND ObjectName = @ObjectName
         AND [Parameters] = @Parameters
 
         IF @QueueID IS NULL
         BEGIN
-          INSERT INTO dbo.[Queue] (SchemaName, ObjectName, [Parameters])
+          INSERT INTO sqlservermaint.[Queue] (SchemaName, ObjectName, [Parameters])
           SELECT @SchemaName, @ObjectName, @Parameters
 
           SET @QueueID = SCOPE_IDENTITY()
@@ -1123,7 +1128,7 @@ BEGIN
           SessionID = @@SPID,
           RequestID = (SELECT request_id FROM sys.dm_exec_requests WHERE session_id = @@SPID),
           RequestStartTime = (SELECT start_time FROM sys.dm_exec_requests WHERE session_id = @@SPID)
-      FROM dbo.[Queue] [Queue]
+      FROM sqlservermaint.[Queue] [Queue]
       WHERE QueueID = @QueueID
       AND NOT EXISTS (SELECT *
                       FROM sys.dm_exec_requests
@@ -1131,27 +1136,27 @@ BEGIN
                       AND request_id = [Queue].RequestID
                       AND start_time = [Queue].RequestStartTime)
       AND NOT EXISTS (SELECT *
-                      FROM dbo.QueueDatabase QueueDatabase
+                      FROM sqlservermaint.QueueDatabase QueueDatabase
                       INNER JOIN sys.dm_exec_requests ON QueueDatabase.SessionID = session_id AND QueueDatabase.RequestID = request_id AND QueueDatabase.RequestStartTime = start_time
                       WHERE QueueDatabase.QueueID = @QueueID)
 
       IF @@ROWCOUNT = 1
       BEGIN
-        INSERT INTO dbo.QueueDatabase (QueueID, DatabaseName)
+        INSERT INTO sqlservermaint.QueueDatabase (QueueID, DatabaseName)
         SELECT @QueueID AS QueueID,
                DatabaseName
         FROM @tmpDatabases tmpDatabases
         WHERE Selected = 1
-        AND NOT EXISTS (SELECT * FROM dbo.QueueDatabase WHERE DatabaseName = tmpDatabases.DatabaseName AND QueueID = @QueueID)
+        AND NOT EXISTS (SELECT * FROM sqlservermaint.QueueDatabase WHERE DatabaseName = tmpDatabases.DatabaseName AND QueueID = @QueueID)
 
         DELETE QueueDatabase
-        FROM dbo.QueueDatabase QueueDatabase
+        FROM sqlservermaint.QueueDatabase QueueDatabase
         WHERE QueueID = @QueueID
         AND NOT EXISTS (SELECT * FROM @tmpDatabases tmpDatabases WHERE DatabaseName = QueueDatabase.DatabaseName AND Selected = 1)
 
         UPDATE QueueDatabase
         SET DatabaseOrder = tmpDatabases.[Order]
-        FROM dbo.QueueDatabase QueueDatabase
+        FROM sqlservermaint.QueueDatabase QueueDatabase
         INNER JOIN @tmpDatabases tmpDatabases ON QueueDatabase.DatabaseName = tmpDatabases.DatabaseName
         WHERE QueueID = @QueueID
       END
@@ -1159,7 +1164,7 @@ BEGIN
       COMMIT TRANSACTION
 
       SELECT @QueueStartTime = QueueStartTime
-      FROM dbo.[Queue]
+      FROM sqlservermaint.[Queue]
       WHERE QueueID = @QueueID
 
     END TRY
@@ -1192,7 +1197,7 @@ BEGIN
           SessionID = NULL,
           RequestID = NULL,
           RequestStartTime = NULL
-      FROM dbo.QueueDatabase QueueDatabase
+      FROM sqlservermaint.QueueDatabase QueueDatabase
       WHERE QueueID = @QueueID
       AND DatabaseStartTime IS NOT NULL
       AND DatabaseEndTime IS NULL
@@ -1211,7 +1216,7 @@ BEGIN
                          RequestID,
                          RequestStartTime,
                          DatabaseName
-            FROM dbo.QueueDatabase
+            FROM sqlservermaint.QueueDatabase
             WHERE QueueID = @QueueID
             AND (DatabaseStartTime < @QueueStartTime OR DatabaseStartTime IS NULL)
             AND NOT (DatabaseStartTime IS NOT NULL AND DatabaseEndTime IS NULL)
@@ -1352,7 +1357,7 @@ BEGIN
         IF @TabLock = 'Y' SET @CurrentCommand01 = @CurrentCommand01 + ', TABLOCK'
         IF @MaxDOP IS NOT NULL SET @CurrentCommand01 = @CurrentCommand01 + ', MAXDOP = ' + CAST(@MaxDOP AS nvarchar)
 
-        EXECUTE @CurrentCommandOutput01 = [dbo].[CommandExecute] @Command = @CurrentCommand01, @CommandType = @CurrentCommandType01, @Mode = 1, @DatabaseName = @CurrentDatabaseName, @LogToTable = @LogToTable, @Execute = @Execute
+        EXECUTE @CurrentCommandOutput01 = [sqlservermaint].[CommandExecute] @Command = @CurrentCommand01, @CommandType = @CurrentCommandType01, @Mode = 1, @DatabaseName = @CurrentDatabaseName, @LogToTable = @LogToTable, @Execute = @Execute
         SET @Error = @@ERROR
         IF @Error <> 0 SET @CurrentCommandOutput01 = @Error
         IF @CurrentCommandOutput01 <> 0 SET @ReturnCode = @CurrentCommandOutput01
@@ -1474,7 +1479,7 @@ BEGIN
             IF @TabLock = 'Y' SET @CurrentCommand04 = @CurrentCommand04 + ', TABLOCK'
             IF @MaxDOP IS NOT NULL SET @CurrentCommand04 = @CurrentCommand04 + ', MAXDOP = ' + CAST(@MaxDOP AS nvarchar)
 
-            EXECUTE @CurrentCommandOutput04 = [dbo].[CommandExecute] @Command = @CurrentCommand04, @CommandType = @CurrentCommandType04, @Mode = 1, @DatabaseName = @CurrentDatabaseName, @LogToTable = @LogToTable, @Execute = @Execute
+            EXECUTE @CurrentCommandOutput04 = [sqlservermaint].[CommandExecute] @Command = @CurrentCommand04, @CommandType = @CurrentCommandType04, @Mode = 1, @DatabaseName = @CurrentDatabaseName, @LogToTable = @LogToTable, @Execute = @Execute
             SET @Error = @@ERROR
             IF @Error <> 0 SET @CurrentCommandOutput04 = @Error
             IF @CurrentCommandOutput04 <> 0 SET @ReturnCode = @CurrentCommandOutput04
@@ -1511,7 +1516,7 @@ BEGIN
         SET @CurrentCommand05 = @CurrentCommand05 + ') WITH NO_INFOMSGS, ALL_ERRORMSGS'
         IF @TabLock = 'Y' SET @CurrentCommand05 = @CurrentCommand05 + ', TABLOCK'
 
-        EXECUTE @CurrentCommandOutput05 = [dbo].[CommandExecute] @Command = @CurrentCommand05, @CommandType = @CurrentCommandType05, @Mode = 1, @DatabaseName = @CurrentDatabaseName, @LogToTable = @LogToTable, @Execute = @Execute
+        EXECUTE @CurrentCommandOutput05 = [sqlservermaint].[CommandExecute] @Command = @CurrentCommand05, @CommandType = @CurrentCommandType05, @Mode = 1, @DatabaseName = @CurrentDatabaseName, @LogToTable = @LogToTable, @Execute = @Execute
         SET @Error = @@ERROR
         IF @Error <> 0 SET @CurrentCommandOutput05 = @Error
         IF @CurrentCommandOutput05 <> 0 SET @ReturnCode = @CurrentCommandOutput05
@@ -1639,7 +1644,7 @@ BEGIN
             IF @TabLock = 'Y' SET @CurrentCommand08 = @CurrentCommand08 + ', TABLOCK'
             IF @MaxDOP IS NOT NULL SET @CurrentCommand08 = @CurrentCommand08 + ', MAXDOP = ' + CAST(@MaxDOP AS nvarchar)
 
-            EXECUTE @CurrentCommandOutput08 = [dbo].[CommandExecute] @Command = @CurrentCommand08, @CommandType = @CurrentCommandType08, @Mode = 1, @DatabaseName = @CurrentDatabaseName, @SchemaName = @CurrentSchemaName, @ObjectName = @CurrentObjectName, @ObjectType = @CurrentObjectType, @LogToTable = @LogToTable, @Execute = @Execute
+            EXECUTE @CurrentCommandOutput08 = [sqlservermaint].[CommandExecute] @Command = @CurrentCommand08, @CommandType = @CurrentCommandType08, @Mode = 1, @DatabaseName = @CurrentDatabaseName, @SchemaName = @CurrentSchemaName, @ObjectName = @CurrentObjectName, @ObjectType = @CurrentObjectType, @LogToTable = @LogToTable, @Execute = @Execute
             SET @Error = @@ERROR
             IF @Error <> 0 SET @CurrentCommandOutput08 = @Error
             IF @CurrentCommandOutput08 <> 0 SET @ReturnCode = @CurrentCommandOutput08
@@ -1678,7 +1683,7 @@ BEGIN
         SET @CurrentCommand09 = @CurrentCommand09 + 'DBCC CHECKCATALOG (' + QUOTENAME(@CurrentDatabaseName)
         SET @CurrentCommand09 = @CurrentCommand09 + ') WITH NO_INFOMSGS'
 
-        EXECUTE @CurrentCommandOutput09 = [dbo].[CommandExecute] @Command = @CurrentCommand09, @CommandType = @CurrentCommandType09, @Mode = 1, @DatabaseName = @CurrentDatabaseName, @LogToTable = @LogToTable, @Execute = @Execute
+        EXECUTE @CurrentCommandOutput09 = [sqlservermaint].[CommandExecute] @Command = @CurrentCommand09, @CommandType = @CurrentCommandType09, @Mode = 1, @DatabaseName = @CurrentDatabaseName, @LogToTable = @LogToTable, @Execute = @Execute
         SET @Error = @@ERROR
         IF @Error <> 0 SET @CurrentCommandOutput09 = @Error
         IF @CurrentCommandOutput09 <> 0 SET @ReturnCode = @CurrentCommandOutput09
@@ -1697,7 +1702,7 @@ BEGIN
     -- Update that the database is completed
     IF @DatabasesInParallel = 'Y'
     BEGIN
-      UPDATE dbo.QueueDatabase
+      UPDATE sqlservermaint.QueueDatabase
       SET DatabaseEndTime = GETDATE()
       WHERE QueueID = @QueueID
       AND DatabaseName = @CurrentDatabaseName

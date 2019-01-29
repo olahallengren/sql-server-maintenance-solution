@@ -2,9 +2,9 @@
 GO
 SET QUOTED_IDENTIFIER ON
 GO
-IF NOT EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'[dbo].[QueueDatabase]') AND type in (N'U'))
+IF NOT EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'[sqlservermaint].[QueueDatabase]') AND type in (N'U'))
 BEGIN
-CREATE TABLE [dbo].[QueueDatabase](
+CREATE TABLE [sqlservermaint].[QueueDatabase](
   [QueueID] [int] NOT NULL,
   [DatabaseName] [sysname] NOT NULL,
   [DatabaseOrder] [int] NULL,
@@ -21,11 +21,11 @@ CREATE TABLE [dbo].[QueueDatabase](
 )
 END
 GO
-IF NOT EXISTS (SELECT * FROM sys.foreign_keys WHERE object_id = OBJECT_ID(N'[dbo].[FK_QueueDatabase_Queue]') AND parent_object_id = OBJECT_ID(N'[dbo].[QueueDatabase]'))
-ALTER TABLE [dbo].[QueueDatabase]  WITH CHECK ADD  CONSTRAINT [FK_QueueDatabase_Queue] FOREIGN KEY([QueueID])
-REFERENCES [dbo].[Queue] ([QueueID])
+IF NOT EXISTS (SELECT * FROM sys.foreign_keys WHERE object_id = OBJECT_ID(N'[sqlservermaint].[FK_QueueDatabase_Queue]') AND parent_object_id = OBJECT_ID(N'[sqlservermaint].[QueueDatabase]'))
+ALTER TABLE [sqlservermaint].[QueueDatabase]  WITH CHECK ADD  CONSTRAINT [FK_QueueDatabase_Queue] FOREIGN KEY([QueueID])
+REFERENCES [sqlservermaint].[Queue] ([QueueID])
 GO
-IF  EXISTS (SELECT * FROM sys.foreign_keys WHERE object_id = OBJECT_ID(N'[dbo].[FK_QueueDatabase_Queue]') AND parent_object_id = OBJECT_ID(N'[dbo].[QueueDatabase]'))
-ALTER TABLE [dbo].[QueueDatabase] CHECK CONSTRAINT [FK_QueueDatabase_Queue]
+IF  EXISTS (SELECT * FROM sys.foreign_keys WHERE object_id = OBJECT_ID(N'[sqlservermaint].[FK_QueueDatabase_Queue]') AND parent_object_id = OBJECT_ID(N'[sqlservermaint].[QueueDatabase]'))
+ALTER TABLE [sqlservermaint].[QueueDatabase] CHECK CONSTRAINT [FK_QueueDatabase_Queue]
 GO
 
