@@ -33,6 +33,7 @@ ALTER PROCEDURE [sqlservermaint].[IndexOptimize]
 @StatisticsSample int = NULL,
 @StatisticsResample nvarchar(max) = 'N',
 @PartitionLevel nvarchar(max) = 'Y',
+@ExcludeRightMostPopulatedPartition nvarchar(max) = 'N',
 @MSShippedObjects nvarchar(max) = 'N',
 @Indexes nvarchar(max) = NULL,
 @TimeLimit int = NULL,
@@ -1494,13 +1495,18 @@ BEGIN
           IF @PartitionLevel = 'Y'
           BEGIN
             SET @CurrentCommand01 = @CurrentCommand01 + ' LEFT OUTER JOIN sys.partitions partitions ON indexes.[object_id] = partitions.[object_id] AND indexes.index_id = partitions.index_id'
-                                                      + ' LEFT OUTER JOIN (SELECT partitions.[object_id], partitions.index_id, COUNT(DISTINCT partitions.partition_number) AS partition_count FROM sys.partitions partitions GROUP BY partitions.[object_id], partitions.index_id) IndexPartitions ON partitions.[object_id] = IndexPartitions.[object_id] AND partitions.[index_id] = IndexPartitions.[index_id]'
+                                                      + ' LEFT OUTER JOIN (SELECT partitions.[object_id], partitions.index_id, COUNT(DISTINCT partitions.partition_number) AS partition_count FROM sys.partitions partitions GROUP BY partitions.[object_id], partitions.index_id) IndexPartitions ON partitions.[object_id] = IndexPartitions.[object_id] AND partitions.[index_id] = IndexPartitions.[index_id]'          
           END
 
           SET @CurrentCommand01 = @CurrentCommand01 + ' WHERE objects.[type] IN(''U'',''V'')'
                                                     + CASE WHEN @MSShippedObjects = 'N' THEN ' AND objects.is_ms_shipped = 0' ELSE '' END
                                                     + ' AND indexes.[type] IN(1,2,3,4,5,6,7)'
                                                     + ' AND indexes.is_disabled = 0 AND indexes.is_hypothetical = 0'
+
+            IF @PartitionLevel = 'Y' AND @ExcludeRightMostPopulatedPartition = 'Y'
+            BEGIN
+              SET @CurrentCommand01 = @CurrentCommand01 + ' AND NOT EXISTS ( SELECT * FROM (SELECT rmp.[object_id], rmp.index_id, MAX(rmp.partition_number) AS [maxPartition] FROM sys.partitions rmp WHERE rmp.partition_number > 1 AND rmp.[rows] > 0 GROUP BY rmp.object_id, rmp.index_id) AS r WHERE r.object_id = partitions.[object_id] AND r.index_id = partitions.index_id AND r.maxPartition = partitions.partition_number)'            
+            END                                                    
         END
 
         IF (EXISTS(SELECT * FROM @ActionsPreferred) AND @UpdateStatistics = 'COLUMNS') OR @UpdateStatistics = 'ALL'
