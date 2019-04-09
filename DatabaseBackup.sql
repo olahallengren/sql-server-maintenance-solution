@@ -1,4 +1,5 @@
-﻿SET ANSI_NULLS ON
+USE master
+SET ANSI_NULLS ON
 GO
 SET QUOTED_IDENTIFIER ON
 GO
@@ -11,10 +12,13 @@ ALTER PROCEDURE [dbo].[DatabaseBackup]
 
 @Databases nvarchar(max) = NULL,
 @Directory nvarchar(max) = NULL,
-@BackupType nvarchar(max),
-@Verify nvarchar(max) = 'N',
+@BackupType nvarchar(max),   -- new Type 'COPY_PENDING_MIRRORS' - see @MirrorWhenNotAvailable for details
+@Verify nvarchar(max) = 'N', --  additional to Y and N you can now specify 'SKIP_MIRRORS' to verify the original backup but not the mirrors 
+                             --  (particularly usefull with @MirrorType = 'COPY' or 'COPY_LATER')
 @CleanupTime int = NULL,
 @CleanupMode nvarchar(max) = 'AFTER_BACKUP',
+@CleanupUsesCMD CHAR(1) = 'N', -- when = Y it will use a xp_cmd_shell call instead of xp_delete_files, because xp_delete_files could be extremly slow 
+                               -- if you do frequent log backups, particularly on SQL 2008 R2 before CU11 (> 2 h runtime)
 @Compress nvarchar(max) = NULL,
 @CopyOnly nvarchar(max) = 'N',
 @ChangeBackupType nvarchar(max) = 'N',
@@ -42,6 +46,64 @@ ALTER PROCEDURE [dbo].[DatabaseBackup]
 @MirrorCleanupTime int = NULL,
 @MirrorCleanupMode nvarchar(max) = 'AFTER_BACKUP',
 @MirrorURL nvarchar(max) = NULL,
+@MirrorDirectory2 nvarchar(max) = NULL,
+@MirrorCleanupTime2 int = NULL,
+@MirrorCleanupMode2 nvarchar(max) = 'AFTER_BACKUP',
+@MirrorDirectory3 nvarchar(max) = NULL,
+@MirrorCleanupTime3 int = NULL,
+@MirrorCleanupMode3 nvarchar(max) = 'AFTER_BACKUP',
+
+--  Behavior, if the mirrors are not available (e.g. because of restart)
+-- 'ERROR'      - the procedure / SQL Agent Job fails; no backup is done
+-- 'SKIP'       - the mirror will be ignored, backup will be done on main @Directory and other @MirrorDirectory (if more than one is specified)
+-- 'COPY_LATER' - will COPY the backup file(s) from the @Directory to the mirror server as soon ther mirror is available again
+--                This will be helpfull, if your mirror is another Server and will f.e. reboot after a windows update.
+--                Limitations / Rules:
+--                - per default it will copy the skipped files regardless of the Backup type. So - if your mirror is offline, while you are doing a FULL backup and comes online 
+--                  again when your next LOG backup occurs, the LOG backup job will copy the full backup to the (original) mirror 
+--                  (regardless, if the mirrors specified to the LOG backup are the same as the ones for the FULL backup)
+--                - per default it will copy the files after the regular backup is done (so your LOG backup will be done intime, even if the COPY of the FULL backup takes 10 min)
+--                - if you don't like this (e.g. because you do LOG Backups every minute), set @SkipPendingMirrorCopies to 'Y' 
+--                  and create a new backup job with @BackupType = 'COPY_PENDING_MIRRORS' which will take no new backup but will copy all pendings
+--                - it will not copy files older than @MirrorCleanupTime
+--                - it will save the commands that will be used for the copy into the master.dbo.CommandLog table, even if @LogToTable is set to 'N'
+--                - when a new record is inserted (because a mirror was not available or MirrorType = 'COPY_LATER') the CommandType will be 'PENDING_COPY', 
+--                  IndexType the Mirror number (1-3), StartTime the time of the original backup and EndTime the StartTime + @MirrorCleanupTime
+--                - when the copy was successfull EndTime will be set to the timestamp of the copy -> pending copies have an EndTime > GetDate()
+--                - the Verify and Cleanup command (when CleanUpMode = AFTER_BACKUP) will be excecuted after the last file copy (per mirror)
+@MirrorWhenNotAvailable  NVARCHAR(max) = 'ERROR', 
+@MirrorWhenNotAvailable2 NVARCHAR(max) = 'ERROR', 
+@MirrorWhenNotAvailable3 NVARCHAR(max) = 'ERROR', 
+
+@MirrorType NVARCHAR(max) = 'DEFAULT', -- WHEN 'DEFAULT' it uses the MIRROR TO parameter on SQL Enterprise Editions (or when using an external backup software)
+                                       -- WHEN 'COPY' (or the backup runs without external software on a non Enterprise SQL Server) it makes a windows file copy of the original backup files
+                                       --             Caution: this mirror type is less secure than the DEFAULT, because there is a little chance that data on the backup @Directory are
+                                       --                      altered / delete (by user or firmware or controller bug) between the original backup an the end of the copy process
+                                       -- WHEN 'COPY_LATER': creates an entry in the CommandLog table, which causes the next procedure call with @SkipPendingMirrorCopies = 'N' 
+                                       --                    or with @BackupType = 'COPY_PENDING_MIRRORS' to copy the files
+                                       --                    This makes most sense, if your Mirror target is on a remote site and you want to "mirror" the files asynchron
+                                       --                    (use @SkipPendingMirrorCopies = 'Y' on your regular backups and create an extra job with @BackupType = 'COPY_PENDING_MIRRORS')
+@MirrorCopyCommand NVARCHAR(100) = 'ROBOCOPY', -- let you use COPY, XCOPY or ROBOCOPY for copying the files to the mirror;
+                                    -- This will be necessary when you have databases / backup directories / mirror directories 
+                                    -- with very long filenames (e.g. some MS Sharepoint databases that have an UNID in the database name), because COPY fails when the 
+                                    -- full file name (source or target) is longer than 256 characters
+                                    -- ROBOCOPY supports long pathes too and uses parameters to retry 3 times (every 30 seconds) when the copy fails
+@XCOPYFileLetter VARCHAR(10) = NULL,-- must be specified, if @MirrorCopyCommand = 'XCOPY'. When you run 'xcopy c:\temp\file1.txt c:\temp\file2.txt' (c:\temp\file1.txt must exists)
+                                    -- XCOPY will ask you, if file2.txt is a (F)ile or (D)irectory. Sadly there is no parameter to skip this question when copying single file 
+                                    -- (/I works only for multiple files) and the question / answer is translated in the OS language of the SQL Server.
+                                    -- So you have to specify the "answer letter" for the file-answere (e.g. "F" for English "File" or "D" for German "Datei")
+                                    -- Caution: if you specify an invalid letter (e.g. "X") the XCOPY statement will never finish -> Job hangs
+                                    -- ========
+                                    -- Hint: If some of your servers are German and some English, you could specify "FD" too (on the German servers it would ignore the
+                                    -- ===== wrong choice "F" and use the correct "D"; be aware that "DF" would not work, since it would answere "D(irectory)" to the English servers
+@SkipPendingMirrorCopies NVARCHAR(max) = 'N',
+
+@CleanUpStartTime        TIME = NULL, -- When @CleanUpStartTime and @CleanUpEndTime are specified the delition of old backup files will be only executed, 
+@CleanUpEndTime          TIME = NULL, -- when the procedure was called in this timeframe. 
+                                      -- Reason: xp_deletefile can be very slow, if there are many files in the backup directory (e.g. because 
+                                      -- LOG backups are taken every minute and cleaned up after 14 days -> 14 * 24 * 60 = 20160 files) and should be only 
+                                      -- executed once per night to prevent delays in the main working time. 
+                                      -- Hint: Set the @CleanUpEndTime as @CleanUpStartTime + regular backup interval to prevent multiple executions
 @AvailabilityGroups nvarchar(max) = NULL,
 @Updateability nvarchar(max) = 'ALL',
 @AdaptiveCompression nvarchar(max) = NULL,
@@ -122,8 +184,8 @@ BEGIN
   DECLARE @CurrentMaxFilePathLength nvarchar(max)
   DECLARE @CurrentFileName nvarchar(max)
   DECLARE @CurrentDirectoryID int
-  DECLARE @CurrentDirectoryPath nvarchar(max)
-  DECLARE @CurrentFilePath nvarchar(max)
+  DECLARE @CurrentDirectoryPath nvarchar(4000) -- changed from max to 4k because used as parameter to xp_fileexist
+  DECLARE @CurrentFilePath nvarchar(4000)      -- changed from max to 4k because used as parameter to xp_fileexist
   DECLARE @CurrentDate datetime
   DECLARE @CurrentCleanupDate datetime
   DECLARE @CurrentIsDatabaseAccessible bit
@@ -136,7 +198,8 @@ BEGIN
   DECLARE @CurrentIsEncrypted bit
   DECLARE @CurrentIsReadOnly bit
   DECLARE @CurrentBackupSetID int
-  DECLARE @CurrentIsMirror bit
+--DECLARE @CurrentIsMirror bit --  replaced by @CurrentMirror
+  DECLARE @CurrentMirror SMALLINT -- added
   DECLARE @CurrentLastLogBackup datetime
   DECLARE @CurrentLogSizeSinceLastLogBackup float
   DECLARE @CurrentAllocatedExtentPageCount bigint
@@ -149,23 +212,35 @@ BEGIN
   DECLARE @CurrentCommand05 nvarchar(max)
   DECLARE @CurrentCommand06 nvarchar(max)
   DECLARE @CurrentCommand07 nvarchar(max)
+  DECLARE @CurrentCommand08 nvarchar(max)
+  DECLARE @CurrentCommand09 nvarchar(max)
 
   DECLARE @CurrentCommandOutput01 int
   DECLARE @CurrentCommandOutput02 int
   DECLARE @CurrentCommandOutput03 int
   DECLARE @CurrentCommandOutput04 int
   DECLARE @CurrentCommandOutput05 int
+  DECLARE @CurrentCommandOutput08 int
+  DECLARE @CurrentCommandOutput09 int
 
   DECLARE @CurrentCommandType01 nvarchar(max)
   DECLARE @CurrentCommandType02 nvarchar(max)
   DECLARE @CurrentCommandType03 nvarchar(max)
   DECLARE @CurrentCommandType04 nvarchar(max)
   DECLARE @CurrentCommandType05 nvarchar(max)
+  DECLARE @CurrentCommandType08 nvarchar(max)
+  DECLARE @CurrentCommandType09 nvarchar(max)
+  DECLARE @CurrentCommandLogId int
+  DECLARE @CommandLogIdAtStart     INT  -- the highest master.dbo.CommandLog.ID at the start (to prevent that pending copies that where created in the current session are copied to the mirrors)
+  DECLARE @cmd                     NVARCHAR(4000); -- used for direct xp_cmd_shell call (to get a list of backup files)
+  DECLARE @Template                NVARCHAR(4000);
+  DECLARE @CurrentExtendedInfo     XML
 
   DECLARE @Directories TABLE (ID int PRIMARY KEY,
                               DirectoryPath nvarchar(max),
-                              Mirror bit,
-                              Completed bit)
+                              Mirror SMALLINT, -- changed from bit to SMALLINT
+                              Completed BIT,
+                              Available BIT DEFAULT 1)
 
   DECLARE @URLs TABLE (ID int PRIMARY KEY,
                        DirectoryPath nvarchar(max),
@@ -207,13 +282,13 @@ BEGIN
                                              Selected bit)
 
   DECLARE @CurrentBackupSet TABLE (ID int IDENTITY PRIMARY KEY,
-                                   Mirror bit,
+                                   Mirror SMALLINT,
                                    VerifyCompleted bit,
                                    VerifyOutput int)
 
   DECLARE @CurrentDirectories TABLE (ID int PRIMARY KEY,
                                      DirectoryPath nvarchar(max),
-                                     Mirror bit,
+                                     Mirror SMALLINT,
                                      DirectoryNumber int,
                                      CleanupDate datetime,
                                      CleanupMode nvarchar(max),
@@ -229,9 +304,18 @@ BEGIN
 
   DECLARE @CurrentFiles TABLE ([Type] nvarchar(max),
                                FilePath nvarchar(max),
-                               Mirror bit)
+                               Mirror SMALLINT,
+                               FileNumber SMALLINT)
 
-  DECLARE @CurrentCleanupDates TABLE (CleanupDate datetime, Mirror bit)
+  DECLARE @CurrentCleanupDates TABLE (CleanupDate datetime, Mirror SMALLINT)
+  
+  -- added for faster Cleanup when @CleanupUsesCMD = 1
+  -- must not be a table variable because of bad execution plan (no statistics) leading to poor performance
+  CREATE TABLE #CleanUpFiles  (FileWithPath NVARCHAR(2048), 
+                               CharBackupTime AS RIGHT(LEFT(FileWithPath, LEN(FileWithPath) - CHARINDEX('.', REVERSE(FileWithPath))  ), 15), 
+                               ShouldBeDeleted TINYINT NOT NULL DEFAULT 0
+                               );
+  CREATE CLUSTERED INDEX #CleanUpFiles_ix ON #CleanUpFiles (CharBackupTime);  
 
   DECLARE @DirectoryCheck bit
 
@@ -274,6 +358,10 @@ BEGIN
   SET @Parameters = @Parameters + ', @Verify = ' + ISNULL('''' + REPLACE(@Verify,'''','''''') + '''','NULL')
   SET @Parameters = @Parameters + ', @CleanupTime = ' + ISNULL(CAST(@CleanupTime AS nvarchar),'NULL')
   SET @Parameters = @Parameters + ', @CleanupMode = ' + ISNULL('''' + REPLACE(@CleanupMode,'''','''''') + '''','NULL')
+  SET @Parameters = @Parameters + ', @CleanupUsesCMD = ' + ISNULL('''' + REPLACE(@CleanupUsesCMD,'''','''''') + '''','NULL')
+  SET @Parameters = @Parameters + ', @CleanUpStartTime = ' + ISNULL(CAST(@CleanUpStartTime AS NVARCHAR(20)),'NULL')
+  SET @Parameters = @Parameters + ', @CleanUpEndTime = ' + ISNULL(CAST(@CleanUpEndTime AS NVARCHAR(20)),'NULL')    
+
   SET @Parameters = @Parameters + ', @Compress = ' + ISNULL('''' + REPLACE(@Compress,'''','''''') + '''','NULL')
   SET @Parameters = @Parameters + ', @CopyOnly = ' + ISNULL('''' + REPLACE(@CopyOnly,'''','''''') + '''','NULL')
   SET @Parameters = @Parameters + ', @ChangeBackupType = ' + ISNULL('''' + REPLACE(@ChangeBackupType,'''','''''') + '''','NULL')
@@ -301,6 +389,22 @@ BEGIN
   SET @Parameters = @Parameters + ', @MirrorCleanupTime = ' + ISNULL(CAST(@MirrorCleanupTime AS nvarchar),'NULL')
   SET @Parameters = @Parameters + ', @MirrorCleanupMode = ' + ISNULL('''' + REPLACE(@MirrorCleanupMode,'''','''''') + '''','NULL')
   SET @Parameters = @Parameters + ', @MirrorURL = ' + ISNULL('''' + REPLACE(@MirrorURL,'''','''''') + '''','NULL')
+
+  SET @Parameters = @Parameters + ', @MirrorWhenNotAvailable = ' + ISNULL('''' + REPLACE(@MirrorWhenNotAvailable,'''','''''') + '''','NULL')
+  SET @Parameters = @Parameters + ', @MirrorDirectory2 = ' + ISNULL('''' + REPLACE(@MirrorDirectory2,'''','''''') + '''','NULL')
+  SET @Parameters = @Parameters + ', @MirrorCleanupTime2 = ' + ISNULL(CAST(@MirrorCleanupTime2 AS nvarchar),'NULL')
+  SET @Parameters = @Parameters + ', @MirrorCleanupMode2 = ' + ISNULL('''' + REPLACE(@MirrorCleanupMode2,'''','''''') + '''','NULL')
+  SET @Parameters = @Parameters + ', @MirrorWhenNotAvailable2 = ' + ISNULL('''' + REPLACE(@MirrorWhenNotAvailable2,'''','''''') + '''','NULL')
+  SET @Parameters = @Parameters + ', @MirrorDirectory3 = ' + ISNULL('''' + REPLACE(@MirrorDirectory3,'''','''''') + '''','NULL')
+  SET @Parameters = @Parameters + ', @MirrorCleanupTime3 = ' + ISNULL(CAST(@MirrorCleanupTime3 AS nvarchar),'NULL')
+  SET @Parameters = @Parameters + ', @MirrorCleanupMode3 = ' + ISNULL('''' + REPLACE(@MirrorCleanupMode3,'''','''''') + '''','NULL')
+  SET @Parameters = @Parameters + ', @MirrorWhenNotAvailable3 = ' + ISNULL('''' + REPLACE(@MirrorWhenNotAvailable3,'''','''''') + '''','NULL')
+  SET @Parameters = @Parameters + ', @MirrorType = ' + ISNULL('''' + REPLACE(@MirrorType,'''','''''') + '''','NULL')
+  SET @Parameters = @Parameters + ', @SkipPendingMirrorCopies = ' + ISNULL('''' + REPLACE(@SkipPendingMirrorCopies,'''','''''') + '''','NULL')
+  SET @Parameters = @Parameters + ', @SkipPendingMirrorCopies = ' + ISNULL('''' + REPLACE(@SkipPendingMirrorCopies,'''','''''') + '''','NULL')
+  SET @Parameters = @Parameters + ', @MirrorCopyCommand = ' + ISNULL('''' + REPLACE(@MirrorCopyCommand,'''','''''') + '''','NULL')
+  SET @Parameters = @Parameters + ', @XCOPYFileLetter = ' + ISNULL('''' + REPLACE(@XCOPYFileLetter,'''','''''') + '''','NULL')
+
   SET @Parameters = @Parameters + ', @AvailabilityGroups = ' + ISNULL('''' + REPLACE(@AvailabilityGroups,'''','''''') + '''','NULL')
   SET @Parameters = @Parameters + ', @Updateability = ' + ISNULL('''' + REPLACE(@Updateability,'''','''''') + '''','NULL')
   SET @Parameters = @Parameters + ', @AdaptiveCompression = ' + ISNULL('''' + REPLACE(@AdaptiveCompression,'''','''''') + '''','NULL')
@@ -323,6 +427,16 @@ BEGIN
   SET @Parameters = @Parameters + ', @DatabasesInParallel = ' + ISNULL('''' + REPLACE(@DatabasesInParallel,'''','''''') + '''','NULL')
   SET @Parameters = @Parameters + ', @LogToTable = ' + ISNULL('''' + REPLACE(@LogToTable,'''','''''') + '''','NULL')
   SET @Parameters = @Parameters + ', @Execute = ' + ISNULL('''' + REPLACE(@Execute,'''','''''') + '''','NULL')
+
+  -- block added - set @MirrorType to COPY when using native mirror backups on a non Enterprise Edition
+  IF  (@MirrorDirectory IS NOT NULL OR @MirrorDirectory2 IS NOT NULL OR @MirrorDirectory3 IS NOT NULL)
+  AND SERVERPROPERTY('EngineEdition') <> 3  -- no Enterprise / Dev / Evaluation edition
+  AND @MirrorType NOT LIKE 'COPY%'
+  AND @BackupSoftware IS NULL               -- all three external backup tools supports mirrored backups on any SQL Server edition
+  BEGIN
+      SET @MirrorType   = 'COPY'
+      SET @Parameters = @Parameters + '@MirrorType changed to ''COPY'' because mirrored backups are an Enterprise only feature.' + CHAR(13) + CHAR(10)
+  END
 
   SET @StartMessage = 'Date and time: ' + CONVERT(nvarchar,@StartTime,120)
   RAISERROR('%s',10,1,@StartMessage) WITH NOWAIT
@@ -397,7 +511,11 @@ BEGIN
     RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
-  IF @LogToTable = 'Y' AND NOT EXISTS (SELECT * FROM sys.objects objects INNER JOIN sys.schemas schemas ON objects.[schema_id] = schemas.[schema_id] WHERE objects.[type] = 'U' AND schemas.[name] = 'dbo' AND objects.[name] = 'CommandLog')
+  IF (   @LogToTable = 'Y' 
+      OR 'COPY_LATER' IN (@MirrorWhenNotAvailable, @MirrorWhenNotAvailable2, @MirrorWhenNotAvailable3, @MirrorType)
+      OR @BackupType = 'COPY_PENDING_MIRRORS'                                                                      
+     )
+  AND NOT EXISTS (SELECT * FROM sys.objects objects INNER JOIN sys.schemas schemas ON objects.[schema_id] = schemas.[schema_id] WHERE objects.[type] = 'U' AND schemas.[name] = 'dbo' AND objects.[name] = 'CommandLog')
   BEGIN
     SET @ErrorMessage = 'The table CommandLog is missing. Download https://ola.hallengren.com/scripts/CommandLog.sql.'
     RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
@@ -442,6 +560,12 @@ BEGIN
     SET @ReturnCode = @Error
     GOTO Logging
   END
+
+  -- get initial CommandLog.ID
+  IF (   'COPY_LATER' IN (@MirrorWhenNotAvailable, @MirrorWhenNotAvailable2, @MirrorWhenNotAvailable3, @MirrorType)
+      OR @BackupType = 'COPY_PENDING_MIRRORS')
+  AND OBJECT_ID('master.dbo.CommandLog') IS NOT NULL
+     SET @CommandLogIdAtStart = ISNULL((SELECT MAX(id) FROM master.dbo.CommandLog AS cl), 0);
 
   ----------------------------------------------------------------------------------------------------
   --// Select databases                                                                           //--
@@ -570,7 +694,6 @@ BEGIN
     SET @Error = @@ERROR
     RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
-
   ----------------------------------------------------------------------------------------------------
   --// Select availability groups                                                                 //--
   ----------------------------------------------------------------------------------------------------
@@ -722,85 +845,59 @@ BEGIN
   --// Select directories                                                                         //--
   ----------------------------------------------------------------------------------------------------
 
+  -- tfranz: Routine replaced to prevent 4 times nearly equal code (beside the directory parameter)
+  --         the main directory (Default from Registry, when NULL) and up to three MirrorDirectories will now inserted with one statement
+  --         
   IF @Directory IS NULL AND @URL IS NULL AND @HostPlatform = 'Windows' AND (@BackupSoftware <> 'DATA_DOMAIN_BOOST' OR @BackupSoftware IS NULL)
   BEGIN
-    EXECUTE [master].dbo.xp_instance_regread N'HKEY_LOCAL_MACHINE', N'SOFTWARE\Microsoft\MSSQLServer\MSSQLServer', N'BackupDirectory', @DefaultDirectory OUTPUT
-
-    IF @DefaultDirectory LIKE 'http://%' OR @DefaultDirectory LIKE 'https://%'
-    BEGIN
-      SET @URL = @DefaultDirectory
-    END
-    ELSE
-    BEGIN
-      INSERT INTO @Directories (ID, DirectoryPath, Mirror, Completed)
-      SELECT 1, @DefaultDirectory, 0, 0
-    END
+     EXECUTE [master].dbo.xp_instance_regread N'HKEY_LOCAL_MACHINE', N'SOFTWARE\Microsoft\MSSQLServer\MSSQLServer', N'BackupDirectory', @DefaultDirectory OUTPUT;
   END
-  IF @Directory IS NULL AND @URL IS NULL AND @HostPlatform = 'Linux'
+
+  IF @DefaultDirectory LIKE 'http://%' OR @DefaultDirectory LIKE 'https://%'
   BEGIN
-    INSERT INTO @Directories (ID, DirectoryPath, Mirror, Completed)
-    SELECT 1, '.', 0, 0
+    SET @URL = @DefaultDirectory
   END
-  ELSE
-  BEGIN
-    SET @Directory = REPLACE(@Directory, CHAR(10), '')
-    SET @Directory = REPLACE(@Directory, CHAR(13), '')
-
-    WHILE CHARINDEX(', ',@Directory) > 0 SET @Directory = REPLACE(@Directory,', ',',')
-    WHILE CHARINDEX(' ,',@Directory) > 0 SET @Directory = REPLACE(@Directory,' ,',',')
-
-    SET @Directory = LTRIM(RTRIM(@Directory));
-
-    WITH Directories (StartPosition, EndPosition, Directory) AS
-    (
-    SELECT 1 AS StartPosition,
-           ISNULL(NULLIF(CHARINDEX(',', @Directory, 1), 0), LEN(@Directory) + 1) AS EndPosition,
-           SUBSTRING(@Directory, 1, ISNULL(NULLIF(CHARINDEX(',', @Directory, 1), 0), LEN(@Directory) + 1) - 1) AS Directory
-    WHERE @Directory IS NOT NULL
-    UNION ALL
-    SELECT CAST(EndPosition AS int) + 1 AS StartPosition,
-           ISNULL(NULLIF(CHARINDEX(',', @Directory, EndPosition + 1), 0), LEN(@Directory) + 1) AS EndPosition,
-           SUBSTRING(@Directory, EndPosition + 1, ISNULL(NULLIF(CHARINDEX(',', @Directory, EndPosition + 1), 0), LEN(@Directory) + 1) - EndPosition - 1) AS Directory
-    FROM Directories
-    WHERE EndPosition < LEN(@Directory) + 1
-    )
-    INSERT INTO @Directories (ID, DirectoryPath, Mirror, Completed)
-    SELECT ROW_NUMBER() OVER(ORDER BY StartPosition ASC) AS ID,
-           Directory,
-           0,
-           0
-    FROM Directories
-    OPTION (MAXRECURSION 0)
-  END
-
-  SET @MirrorDirectory = REPLACE(@MirrorDirectory, CHAR(10), '')
-  SET @MirrorDirectory = REPLACE(@MirrorDirectory, CHAR(13), '')
-
-  WHILE CHARINDEX(', ',@MirrorDirectory) > 0 SET @MirrorDirectory = REPLACE(@MirrorDirectory,', ',',')
-  WHILE CHARINDEX(' ,',@MirrorDirectory) > 0 SET @MirrorDirectory = REPLACE(@MirrorDirectory,' ,',',')
-
-  SET @MirrorDirectory = LTRIM(RTRIM(@MirrorDirectory));
-
-  WITH Directories (StartPosition, EndPosition, Directory) AS
-  (
-  SELECT 1 AS StartPosition,
-         ISNULL(NULLIF(CHARINDEX(',', @MirrorDirectory, 1), 0), LEN(@MirrorDirectory) + 1) AS EndPosition,
-         SUBSTRING(@MirrorDirectory, 1, ISNULL(NULLIF(CHARINDEX(',', @MirrorDirectory, 1), 0), LEN(@MirrorDirectory) + 1) - 1) AS Directory
-  WHERE @MirrorDirectory IS NOT NULL
-  UNION ALL
-  SELECT CAST(EndPosition AS int) + 1 AS StartPosition,
-         ISNULL(NULLIF(CHARINDEX(',', @MirrorDirectory, EndPosition + 1), 0), LEN(@MirrorDirectory) + 1) AS EndPosition,
-         SUBSTRING(@MirrorDirectory, EndPosition + 1, ISNULL(NULLIF(CHARINDEX(',', @MirrorDirectory, EndPosition + 1), 0), LEN(@MirrorDirectory) + 1) - EndPosition - 1) AS Directory
-  FROM Directories
-  WHERE EndPosition < LEN(@MirrorDirectory) + 1
-  )
-  INSERT INTO @Directories (ID, DirectoryPath, Mirror, Completed)
-  SELECT (SELECT COUNT(*) FROM @Directories) + ROW_NUMBER() OVER(ORDER BY StartPosition ASC) AS ID,
-         Directory,
-         1,
-         0
-  FROM Directories
-  OPTION (MAXRECURSION 0)
+  ;
+  WITH WrkDirs AS (SELECT LTRIM(RTRIM(REPLACE(REPLACE(WrkDirectory,  ', ', ','), ' ,', ','))) AS WrkDirectory, -- remove "formating spaces"
+                          MirrorNo
+                     FROM (VALUES (CASE WHEN @Directory IS NULL AND @URL IS NULL AND @HostPlatform = 'Linux'
+                                        THEN '.'
+                                        WHEN @Directory IS NOT NULL
+                                        THEN @Directory
+                                        WHEN @DefaultDirectory IS NOT NULL AND @URL IS NULL -- @DefaultDirectory contains an URL
+                                        THEN @DefaultDirectory
+                                   END, 0),
+                                  (@MirrorDirectory,  1), 
+                                  (@MirrorDirectory2, 2), 
+                                  (@MirrorDirectory3, 3)
+                          ) m(WrkDirectory, MirrorNo)
+                  ),
+       Directories (StartPosition, EndPosition, Directory, WrkDirectory, MirrorNo) AS
+     ( -- Split the directories, if backup goes to several target disks 
+       SELECT 1 AS StartPosition,
+              ISNULL(NULLIF(CHARINDEX(',', WrkDirectory, 1), 0), LEN(WrkDirectory) + 1) AS EndPosition,
+              SUBSTRING(WrkDirectory, 1, ISNULL(NULLIF(CHARINDEX(',', WrkDirectory, 1), 0), LEN(WrkDirectory) + 1) - 1) AS Directory,
+              WrkDirectory,
+              MirrorNo
+         FROM WrkDirs
+        WHERE WrkDirectory IS NOT NULL
+       UNION ALL
+       SELECT CAST(EndPosition AS int) + 1 AS StartPosition,
+              ISNULL(NULLIF(CHARINDEX(',', WrkDirectory, EndPosition + 1), 0), LEN(WrkDirectory) + 1) AS EndPosition,
+              SUBSTRING(WrkDirectory, EndPosition + 1, ISNULL(NULLIF(CHARINDEX(',', WrkDirectory, EndPosition + 1), 0), LEN(WrkDirectory) + 1) - EndPosition - 1) AS Directory,
+              WrkDirectory,
+              MirrorNo
+         FROM Directories
+        WHERE EndPosition < LEN(WrkDirectory) + 1
+     )
+   INSERT INTO @Directories (ID, DirectoryPath, Mirror, Completed)
+   SELECT ROW_NUMBER() OVER(ORDER BY StartPosition ASC) AS ID,
+          Directory,
+          MirrorNo,
+          0
+   FROM Directories
+   OPTION (MAXRECURSION 0)
+  ;
 
   ----------------------------------------------------------------------------------------------------
   --// Check directories                                                                          //--
@@ -808,38 +905,91 @@ BEGIN
 
   SET @DirectoryCheck = 1
 
-  IF EXISTS(SELECT * FROM @Directories WHERE Mirror = 0 AND (NOT (DirectoryPath LIKE '_:' OR DirectoryPath LIKE '_:\%' OR DirectoryPath LIKE '\\%\%' OR (DirectoryPath LIKE '/%/%' AND @HostPlatform = 'Linux') OR (DirectoryPath LIKE '.' AND @HostPlatform = 'Linux')) OR DirectoryPath IS NULL OR LEFT(DirectoryPath,1) = ' ' OR RIGHT(DirectoryPath,1) = ' ')) OR EXISTS (SELECT * FROM @Directories GROUP BY DirectoryPath HAVING COUNT(*) <> 1) OR ((SELECT COUNT(*) FROM @Directories WHERE Mirror = 0) <> (SELECT COUNT(*) FROM @Directories WHERE Mirror = 1) AND (SELECT COUNT(*) FROM @Directories WHERE Mirror = 1) > 0) OR (@Directory IS NOT NULL AND SERVERPROPERTY('EngineEdition') = 8) OR (@Directory IS NOT NULL AND @BackupSoftware = 'DATA_DOMAIN_BOOST')
+  -- tfranz: redesigned for more specific error messages; use the same checks for all Directory parameters
+  SET @ErrorMessage = NULL;
+  SELECT @ErrorMessage =
+         ISNULL(N'The value for the parameter '
+               + STUFF((SELECT DISTINCT N'/' + CASE Mirror WHEN 0 THEN N'@Directory' WHEN 1 THEN N'@MirrorDirectory' WHEN 2 THEN N'@MirrorDirectory2' WHEN 3 THEN N'@MirrorDirectory3' END 
+                          FROM @Directories 
+                         WHERE (NOT (DirectoryPath LIKE N'_:' OR DirectoryPath LIKE N'_:\%' OR DirectoryPath LIKE N'\\%\%')) -- no valid path format (drive, local path or UNC path)
+                            OR DirectoryPath LIKE N'__%:%'        -- colon (':') after the second character
+                            OR NULLIF(LTRIM(DirectoryPath), N'') IS NULL -- empty path specified
+                           FOR XML PATH('i'), root('c'), type
+                       ).query('/c/i').value(N'.', 'nvarchar(4000)') , 1, 1, N'')  
+               + N' is not supported.' + CHAR(13) + CHAR(10), N'')
+       + CASE WHEN (SELECT COUNT(*) FROM (SELECT DISTINCT COUNT(*) num FROM @Directories AS d GROUP BY d.Mirror) sub) > 1
+              THEN  N'The number of comma separated target directories in the parameters @Directory, @MirrorDirectory, @MirrorDirectory2 and @MirrorDirectory3 must be the same if the parameter is not NULL.' + CHAR(13) + CHAR(10)
+              ELSE N''
+         END
+       + CASE WHEN EXISTS (SELECT * FROM @Directories GROUP BY DirectoryPath HAVING COUNT(*) <> 1)
+              THEN N'The same directory was multiple times defined in @Directory / @MirrorDirectory / @MirrorDirectory2 / @MirrorDirectory3' + CHAR(13) + CHAR(10)
+              ELSE N''
+         END
+       + CASE WHEN @BackupSoftware NOT IN('SQLBACKUP','SQLSAFE')
+              THEN N'' -- just for performance (no SELECT if other software is used)
+              WHEN @BackupSoftware IN('SQLBACKUP','SQLSAFE')
+               AND (SELECT MAX(number) FROM (SELECT d2.Mirror, COUNT(*) AS number FROM @Directories AS d2 WHERE d2.Mirror > 0 GROUP BY d2.Mirror) AS sub) > 1
+               AND @MirrorType     = 'DEFAULT'
+              THEN N'Your backup software ' + @BackupSoftware + N' does not support Backup Mirroring to multiple target directories.' + CHAR(13) + CHAR(10) 
+              ELSE N''
+         END
+       + CASE WHEN @BackupSoftware = 'SQLSAFE'
+               AND @MirrorDirectory3 IS NOT NULL -- see http://community.idera.com/forums/topic/backup-mirroring/
+               AND @MirrorType     = 'DEFAULT'
+              THEN N'Idera SQL Safe supports only two mirror directories. Please remove the @MirrorDirectory3 parameter or set @MirrorType to ''COPY''.' + CHAR(13) + CHAR(10) 
+              ELSE N''
+         END
+       + N' '
+      -- removed: check for Enterprise Edition when mirroring is used, because the external backup tools supports mirroring in any SQL Editions
+      -- and when it is not Enterprise it will copy the backup files manual to the mirror target(s)
+  IF NULLIF(@ErrorMessage, N'') IS NOT NULL
   BEGIN
-    SET @ErrorMessage = 'The value for the parameter @Directory is not supported.'
-    RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
-    SET @Error = @@ERROR
-    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
-    SET @DirectoryCheck = 0
+     RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
+     SET @Error = @@ERROR
+     RAISERROR(@EmptyLine,10,1) WITH NOWAIT
+     SET @DirectoryCheck = 0
   END
 
-  IF EXISTS(SELECT * FROM @Directories WHERE Mirror = 1 AND (NOT (DirectoryPath LIKE '_:' OR DirectoryPath LIKE '_:\%' OR DirectoryPath LIKE '\\%\%' OR (DirectoryPath LIKE '/%/%' AND @HostPlatform = 'Linux') OR (DirectoryPath LIKE '.' AND @HostPlatform = 'Linux')) OR DirectoryPath IS NULL OR LEFT(DirectoryPath,1) = ' ' OR RIGHT(DirectoryPath,1) = ' ')) OR EXISTS (SELECT * FROM @Directories GROUP BY DirectoryPath HAVING COUNT(*) <> 1) OR ((SELECT COUNT(*) FROM @Directories WHERE Mirror = 0) <> (SELECT COUNT(*) FROM @Directories WHERE Mirror = 1) AND (SELECT COUNT(*) FROM @Directories WHERE Mirror = 1) > 0) OR (@BackupSoftware IN('SQLBACKUP','SQLSAFE') AND (SELECT COUNT(*) FROM @Directories WHERE Mirror = 1) > 1) OR (@BackupSoftware IS NULL AND EXISTS(SELECT * FROM @Directories WHERE Mirror = 1) AND SERVERPROPERTY('EngineEdition') <> 3) OR (@MirrorDirectory IS NOT NULL AND SERVERPROPERTY('EngineEdition') = 8) OR (@MirrorDirectory IS NOT NULL AND @BackupSoftware = 'DATA_DOMAIN_BOOST')
+  -- check for enabled xp_cmd used for Fake-Mirroring for native SQL Backups on non-Enterprise servers
+  -- (by copying the backup files) or @CleanupUsesCMD
+  IF (     @MirrorType LIKE 'COPY%'
+      AND (@MirrorDirectory IS NOT NULL OR @MirrorDirectory2 IS NOT NULL OR @MirrorDirectory3 IS NOT NULL)
+     )
+   OR @CleanupUsesCMD = 'Y'
   BEGIN
-    SET @ErrorMessage = 'The value for the parameter @MirrorDirectory is not supported.'
-    RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
-    SET @Error = @@ERROR
-    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
-    SET @DirectoryCheck = 0
-  END
+       SET @ErrorMessage = NULL
+       IF (SELECT CONVERT(BIT, value_in_use) FROM sys.configurations WHERE name = 'xp_cmdshell') = 0
+       -- commented out, because - without SA - you usually have no select privilege on sys.credentials
+       --OR (    IS_SRVROLEMEMBER('sysadmin') = 0
+       --    AND NOT EXISTS (SELECT * FROM sys.credentials AS c WHERE name = '##xp_cmdshell_proxy_account##')
+       --   )
+       BEGIN
+            IF @CleanupUsesCMD = 'Y'
+               SET @ErrorMessage = 'To use the CMD-Mode for backup cleanups (@CleanupUsesCMD = ''Y'') the sys configuration xp_cmdshell has to been enabled.'
+            ELSE 
+               SET @ErrorMessage = '@MirrorType is set to ''COPY'' (manual or automatic, if a @MirrorDirectory is specified but the procedure runs on a non-Enterprise edition (without MIRROR TO-support) and not using an external @BackupSoftware). ' + CHAR(13) + CHAR(10)
+                                 + 'To use the copy mirroring (file copy after backup) the sys configuration xp_cmdshell has to been enabled. '
+            ;
+            SET @ErrorMessage = @ErrorMessage + CHAR(13) + CHAR(10)
+                              + 'When the backup runs from an account without sysadmin privilege a xp_cmdshell_proxy_account must be specified (using sp_xp_cmdshell_proxy_account) ' + CHAR(13) + CHAR(10)
+                              + 'which needs read rights to the @Directory and write / delete rights to each @MirrorDirectory' + CHAR(13) + CHAR(10) + ' '
+            RAISERROR(@ErrorMessage,16,1) WITH NOWAIT
+            SET @Error = @@ERROR
+            SET @DirectoryCheck = 0
+       END
 
-  IF (@BackupSoftware IS NULL AND EXISTS(SELECT * FROM @Directories WHERE Mirror = 1) AND SERVERPROPERTY('EngineEdition') <> 3)
-  BEGIN
-    SET @ErrorMessage = 'Mirrored backup to disk is only available in Enterprise and Developer Edition.'
-    RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
-    SET @Error = @@ERROR
-    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
+       IF @MirrorType = 'COPY_LATER'  
+          UPDATE @Directories SET Mirror = Mirror * -1 WHERE Mirror > 0 -- negate mirror number -> the copy command will be pasted into the command log instead of being executed
   END
-
+  
+  
   IF @DirectoryCheck = 1
   BEGIN
     WHILE (1 = 1)
     BEGIN
       SELECT TOP 1 @CurrentRootDirectoryID = ID,
-                   @CurrentRootDirectoryPath = DirectoryPath
+                   @CurrentRootDirectoryPath = DirectoryPath,
+                   @CurrentMirror            = ABS(Mirror)
       FROM @Directories
       WHERE Completed = 0
       ORDER BY ID ASC
@@ -854,12 +1004,29 @@ BEGIN
 
       IF NOT EXISTS (SELECT * FROM @DirectoryInfo WHERE FileExists = 0 AND FileIsADirectory = 1 AND ParentDirectoryExists = 1)
       BEGIN
-        SET @ErrorMessage = 'The directory ' + @CurrentRootDirectoryPath + ' does not exist.'
-        RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
-        SET @Error = @@ERROR
-        RAISERROR(@EmptyLine,10,1) WITH NOWAIT
-      END
+          IF (@CurrentMirror = 0) 
+          OR (@CurrentMirror = 1 AND @MirrorWhenNotAvailable  = 'ERROR')
+          OR (@CurrentMirror = 2 AND @MirrorWhenNotAvailable2 = 'ERROR')
+          OR (@CurrentMirror = 3 AND @MirrorWhenNotAvailable3 = 'ERROR')
+          BEGIN
+              SET @ErrorMessage = 'The directory ' + @CurrentRootDirectoryPath + ' does not exist.' + CHAR(13) + CHAR(10) + ' '
+              RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
+              SET @Error = @@ERROR
+              RAISERROR(@EmptyLine,10,1) WITH NOWAIT
+          END
 
+          -- delete the whole mirror, when one of the mirror directories (comma separated list) is not available
+          IF (@CurrentMirror = 1 AND @MirrorWhenNotAvailable  = 'SKIP')
+          OR (@CurrentMirror = 2 AND @MirrorWhenNotAvailable2 = 'SKIP')
+          OR (@CurrentMirror = 3 AND @MirrorWhenNotAvailable3 = 'SKIP')
+             DELETE FROM @Directories WHERE Mirror = @CurrentMirror
+
+          -- Negate mirror number to prevent them from being used in the WHILE BETWEEN 1 AND 3-Loops
+          IF (@CurrentMirror = 1 AND @MirrorWhenNotAvailable  = 'COPY_LATER')
+          OR (@CurrentMirror = 2 AND @MirrorWhenNotAvailable2 = 'COPY_LATER')
+          OR (@CurrentMirror = 3 AND @MirrorWhenNotAvailable3 = 'COPY_LATER')
+             UPDATE @Directories SET Mirror = Mirror * -1, Available = 0 WHERE Mirror = @CurrentMirror AND Mirror > 0
+      END
       UPDATE @Directories
       SET Completed = 1
       WHERE ID = @CurrentRootDirectoryID
@@ -868,7 +1035,7 @@ BEGIN
       SET @CurrentRootDirectoryPath = NULL
 
       DELETE FROM @DirectoryInfo
-    END
+    END -- WHILE loop
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -1038,9 +1205,17 @@ BEGIN
   --// Check input parameters                                                                     //--
   ----------------------------------------------------------------------------------------------------
 
-  IF @BackupType NOT IN ('FULL','DIFF','LOG') OR @BackupType IS NULL
+  IF @BackupType NOT IN ('FULL','DIFF','LOG', 'COPY_PENDING_MIRRORS') OR @BackupType IS NULL
   BEGIN
     SET @ErrorMessage = 'The value for the parameter @BackupType is not supported.'
+    RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
+    SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
+  END
+
+  IF @MirrorType NOT IN ('DEFAULT', 'COPY', 'COPY_LATER') OR @MirrorType IS NULL
+  BEGIN
+    SET @ErrorMessage = 'The value for the parameter @MirrorType is not supported.' + CHAR(13) + CHAR(10) + ' '
     RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
     SET @Error = @@ERROR
     RAISERROR(@EmptyLine,10,1) WITH NOWAIT
@@ -1054,7 +1229,7 @@ BEGIN
     RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
-  IF @Verify NOT IN ('Y','N') OR @Verify IS NULL OR (@BackupSoftware = 'SQLSAFE' AND @Encrypt = 'Y' AND @Verify = 'Y') OR (@Verify = 'Y' AND @BackupSoftware = 'DATA_DOMAIN_BOOST')
+  IF @Verify NOT IN ('Y','N', 'SKIP_MIRRORS') OR @Verify IS NULL OR (@BackupSoftware = 'SQLSAFE' AND @Encrypt = 'Y' AND @Verify = 'Y') OR (@Verify = 'Y' AND @BackupSoftware = 'DATA_DOMAIN_BOOST')
   BEGIN
     SET @ErrorMessage = 'The value for the parameter @Verify is not supported.'
     RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
@@ -1113,6 +1288,17 @@ BEGIN
   IF @CleanupMode NOT IN('BEFORE_BACKUP','AFTER_BACKUP') OR @CleanupMode IS NULL
   BEGIN
     SET @ErrorMessage = 'The value for the parameter @CleanupMode is not supported.'
+    RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
+    SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
+  END
+
+  IF @CleanupUsesCMD NOT IN ('Y','N') OR @CleanupUsesCMD IS NULL 
+  OR @HostPlatform = 'Linux' 
+  OR @BackupSoftware IS NOT NULL
+  OR @FileName NOT LIKE '%{Year}{Month}{Day}[_]{Hour}{Minute}{Second}[_]{FileNumber}.{FileExtension}'
+  BEGIN
+    SET @ErrorMessage = 'The value for the parameter @CleanupUsesCMD is not supported.' + CHAR(13) + CHAR(10) + ' '
     RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
     SET @Error = @@ERROR
     RAISERROR(@EmptyLine,10,1) WITH NOWAIT
@@ -1334,17 +1520,56 @@ BEGIN
     RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
-  IF @MirrorCleanupTime < 0 OR (@MirrorCleanupTime IS NOT NULL AND @MirrorDirectory IS NULL)
+  -- unified for all @MirrorCleanup... parameters
+  SET @ErrorMessage = NULL
+  SELECT @ErrorMessage = 'The value for the parameter(s) '
+                       + (SELECT STUFF((SELECT '/' + val 
+                                          FROM (          SELECT CASE WHEN @MirrorCleanupTime   < 0 OR (@MirrorCleanupTime  IS NOT NULL     AND @MirrorDirectory         IS NULL) THEN '@MirrorCleanupTime'       END val
+                                                UNION ALL SELECT CASE WHEN @MirrorCleanupTime2  < 0 OR (@MirrorCleanupTime2 IS NOT NULL     AND @MirrorDirectory2        IS NULL) THEN '@MirrorCleanupTime2'      END val
+                                                UNION ALL SELECT CASE WHEN @MirrorCleanupTime3  < 0 OR (@MirrorCleanupTime3 IS NOT NULL     AND @MirrorDirectory3        IS NULL) THEN '@MirrorCleanupTime3'      END val
+                                                UNION ALL SELECT CASE WHEN @MirrorCleanupMode       NOT IN('BEFORE_BACKUP','AFTER_BACKUP')   OR @MirrorCleanupMode       IS NULL  THEN '@MirrorCleanupMode'       END val
+                                                UNION ALL SELECT CASE WHEN @MirrorCleanupMode2      NOT IN('BEFORE_BACKUP','AFTER_BACKUP')   OR @MirrorCleanupMode2      IS NULL  THEN '@MirrorCleanupMode2'      END val
+                                                UNION ALL SELECT CASE WHEN @MirrorCleanupMode3      NOT IN('BEFORE_BACKUP','AFTER_BACKUP')   OR @MirrorCleanupMode3      IS NULL  THEN '@MirrorCleanupMode3'      END val
+                                                UNION ALL SELECT CASE WHEN @MirrorWhenNotAvailable  NOT IN('ERROR','SKIP','COPY_LATER')      OR @MirrorWhenNotAvailable  IS NULL  THEN '@MirrorWhenNotAvailable'  END val
+                                                UNION ALL SELECT CASE WHEN @MirrorWhenNotAvailable2 NOT IN('ERROR','SKIP','COPY_LATER')      OR @MirrorWhenNotAvailable2 IS NULL  THEN '@MirrorWhenNotAvailable2' END val
+                                                UNION ALL SELECT CASE WHEN @MirrorWhenNotAvailable3 NOT IN('ERROR','SKIP','COPY_LATER')      OR @MirrorWhenNotAvailable3 IS NULL  THEN '@MirrorWhenNotAvailable3' END val
+                                               ) sub
+                                         WHERE sub.val IS NOT NULL
+                                           FOR XML PATH('i'), root('c'), type).query('/c/i').value('.', 'nvarchar(4000)'), 1, 1, '' )
+                          ) + ' is not supported.' + CHAR(13) + CHAR(10) + ' '
+  IF NULLIF(@ErrorMessage, '') IS NOT NULL
   BEGIN
-    SET @ErrorMessage = 'The value for the parameter @MirrorCleanupTime is not supported.'
     RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
     SET @Error = @@ERROR
     RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
-  IF @MirrorCleanupMode NOT IN('BEFORE_BACKUP','AFTER_BACKUP') OR @MirrorCleanupMode IS NULL
+ 
+  IF @MirrorCopyCommand IS NULL SET @MirrorCopyCommand = 'COPY'
+  IF @MirrorCopyCommand NOT IN ('COPY', 'XCOPY', 'ROBOCOPY')
   BEGIN
-    SET @ErrorMessage = 'The value for the parameter @MirrorCleanupMode is not supported.'
+    SET @ErrorMessage = 'The value for the parameter @MirrorCopyCommand is not supported.' + CHAR(13) + CHAR(10) + ' '
+    RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
+    SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
+  END
+
+ 
+  IF @MirrorCopyCommand = 'XCOPY' 
+  AND (@MirrorType LIKE 'COPY%' OR 'COPY_LATER' IN (@MirrorWhenNotAvailable, @MirrorWhenNotAvailable2, @MirrorWhenNotAvailable3))
+  AND (@MirrorDirectory IS NOT NULL OR @MirrorDirectory2 IS NOT NULL OR @MirrorDirectory3 IS NOT NULL)
+  AND ISNULL(LTRIM(@XCOPYFileLetter), '') = ''
+  BEGIN
+    SET @ErrorMessage = '@XCOPYFileLetter must not be empty when @MirrorCopyCommand is set to ''XCOPY''' + CHAR(13) + CHAR(10) + ' '
+    RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
+    SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
+  END
+
+ 
+  IF @SkipPendingMirrorCopies NOT IN('Y','N') OR @SkipPendingMirrorCopies IS NULL
+  BEGIN
+    SET @ErrorMessage = 'The value for the parameter @SkipPendingMirrorCopies is not supported.' + CHAR(13) + CHAR(10) + ' '
     RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
     SET @Error = @@ERROR
     RAISERROR(@EmptyLine,10,1) WITH NOWAIT
@@ -1821,6 +2046,7 @@ BEGIN
   ----------------------------------------------------------------------------------------------------
 
   WHILE (1 = 1)
+    AND @BackupType <> 'COPY_PENDING_MIRRORS' -- skip the whole regular backup stuff, if only the pending mirrors should be copied
   BEGIN
 
     IF @DatabasesInParallel = 'Y'
@@ -2100,7 +2326,11 @@ BEGIN
     AND NOT (@CurrentBackupType = 'LOG' AND @LogSizeSinceLastLogBackup IS NOT NULL AND @TimeSinceLastLogBackup IS NOT NULL AND NOT(@CurrentLogSizeSinceLastLogBackup >= @LogSizeSinceLastLogBackup OR @CurrentLogSizeSinceLastLogBackup IS NULL OR DATEDIFF(SECOND,@CurrentLastLogBackup,GETDATE()) >= @TimeSinceLastLogBackup OR @CurrentLastLogBackup IS NULL))
     BEGIN
 
-      IF @CurrentBackupType = 'LOG' AND (@CleanupTime IS NOT NULL OR @MirrorCleanupTime IS NOT NULL)
+      IF @CurrentBackupType = 'LOG' AND (@CleanupTime        IS NOT NULL
+                                      OR @MirrorCleanupTime  IS NOT NULL
+                                      OR @MirrorCleanupTime2 IS NOT NULL
+                                      OR @MirrorCleanupTime3 IS NOT NULL
+                                         )
       BEGIN
         SELECT @CurrentLatestBackup = MAX(backup_finish_date)
         FROM msdb.dbo.backupset
@@ -2479,13 +2709,14 @@ BEGIN
           WHERE @CurrentFileNumber >= (DirectoryNumber - 1) * (SELECT @NumberOfFiles / COUNT(*) FROM @CurrentDirectories WHERE Mirror = 0) + 1
           AND @CurrentFileNumber <= DirectoryNumber * (SELECT @NumberOfFiles / COUNT(*) FROM @CurrentDirectories WHERE Mirror = 0)
           AND Mirror = 0
+          ORDER BY DirectoryNumber
 
           SET @CurrentFileName = REPLACE(@CurrentDatabaseFileName, '{FileNumber}', CASE WHEN @NumberOfFiles > 1 AND @NumberOfFiles <= 9 THEN CAST(@CurrentFileNumber AS nvarchar) WHEN @NumberOfFiles >= 10 THEN RIGHT('0' + CAST(@CurrentFileNumber AS nvarchar),2) ELSE '' END)
 
           SET @CurrentFilePath = @CurrentDirectoryPath + @DirectorySeparator + @CurrentFileName
 
-          INSERT INTO @CurrentFiles ([Type], FilePath, Mirror)
-          SELECT 'DISK', @CurrentFilePath, 0
+          INSERT INTO @CurrentFiles ([Type], FilePath, Mirror, FileNumber)
+          SELECT 'DISK', @CurrentFilePath, 0, @CurrentFileNumber FileNumber
 
           SET @CurrentDirectoryPath = NULL
           SET @CurrentFileName = NULL
@@ -2496,35 +2727,43 @@ BEGIN
         SELECT 0, 0
       END
 
-      IF EXISTS (SELECT * FROM @CurrentDirectories WHERE Mirror = 1)
+      -- WHILE-Loop for mirrors
+      SET @CurrentMirror = -4
+      WHILE @CurrentMirror < 4 
       BEGIN
-        SET @CurrentFileNumber = 0
+          IF @CurrentMirror <> 0
+          AND EXISTS (SELECT * FROM @CurrentDirectories WHERE Mirror = @CurrentMirror)
+          BEGIN
+            SET @CurrentFileNumber = 0
 
-        WHILE @CurrentFileNumber < @NumberOfFiles
-        BEGIN
-          SET @CurrentFileNumber = @CurrentFileNumber + 1
+            WHILE @CurrentFileNumber < @NumberOfFiles
+            BEGIN
+              SET @CurrentFileNumber = @CurrentFileNumber + 1
 
-          SELECT @CurrentDirectoryPath = DirectoryPath
-          FROM @CurrentDirectories
-          WHERE @CurrentFileNumber >= (DirectoryNumber - 1) * (SELECT @NumberOfFiles / COUNT(*) FROM @CurrentDirectories WHERE Mirror = 1) + 1
-          AND @CurrentFileNumber <= DirectoryNumber * (SELECT @NumberOfFiles / COUNT(*) FROM @CurrentDirectories WHERE Mirror = 1)
-          AND Mirror = 1
+              SELECT @CurrentDirectoryPath = DirectoryPath
+                FROM @CurrentDirectories
+               WHERE @CurrentFileNumber >= (DirectoryNumber - 1) * (SELECT @NumberOfFiles / ISNULL(COUNT(*), 1) FROM @CurrentDirectories WHERE Mirror = @CurrentMirror) + 1
+                 AND @CurrentFileNumber <=  DirectoryNumber      * (SELECT @NumberOfFiles / ISNULL(COUNT(*), 1) FROM @CurrentDirectories WHERE Mirror = @CurrentMirror)
+                 AND Mirror = @CurrentMirror
+               ORDER BY DirectoryNumber
 
-          SET @CurrentFileName = REPLACE(@CurrentDatabaseFileName, '{FileNumber}', CASE WHEN @NumberOfFiles > 1 AND @NumberOfFiles <= 9 THEN CAST(@CurrentFileNumber AS nvarchar) WHEN @NumberOfFiles >= 10 THEN RIGHT('0' + CAST(@CurrentFileNumber AS nvarchar),2) ELSE '' END)
+              SET @CurrentFileName = REPLACE(@CurrentDatabaseFileName, '{FileNumber}', CASE WHEN @NumberOfFiles > 1 AND @NumberOfFiles <= 9 THEN CAST(@CurrentFileNumber AS nvarchar) WHEN @NumberOfFiles >= 10 THEN RIGHT('0' + CAST(@CurrentFileNumber AS nvarchar),2) ELSE '' END)
 
-          SET @CurrentFilePath = @CurrentDirectoryPath + @DirectorySeparator + @CurrentFileName
+              SET @CurrentFilePath = @CurrentDirectoryPath + @DirectorySeparator + @CurrentFileName
 
-          INSERT INTO @CurrentFiles ([Type], FilePath, Mirror)
-          SELECT 'DISK', @CurrentFilePath, 1
+              INSERT INTO @CurrentFiles ([Type], FilePath, Mirror, FileNumber)
+              SELECT 'DISK', @CurrentFilePath, @CurrentMirror, @CurrentFileNumber FileNumber
 
-          SET @CurrentDirectoryPath = NULL
-          SET @CurrentFileName = NULL
-          SET @CurrentFilePath = NULL
-        END
+              SET @CurrentDirectoryPath = NULL
+              SET @CurrentFileName = NULL
+              SET @CurrentFilePath = NULL
+            END
 
-        INSERT INTO @CurrentBackupSet (Mirror, VerifyCompleted)
-        SELECT 1, 0
-      END
+            INSERT INTO @CurrentBackupSet (Mirror, VerifyCompleted)
+            SELECT @CurrentMirror, 0
+          END
+          SET @CurrentMirror = @CurrentMirror + 1
+      END -- WHILE @CurrentMirror
 
       IF EXISTS (SELECT * FROM @CurrentURLs WHERE Mirror = 0)
       BEGIN
@@ -2596,6 +2835,7 @@ BEGIN
                        @CurrentDirectoryPath = DirectoryPath
           FROM @CurrentDirectories
           WHERE CreateCompleted = 0
+            AND Mirror >= 0 -- negative Mirrors are pending copies for not available servers (or when @MirrorType = 'COPY_LATER')
           ORDER BY ID ASC
 
           IF @@ROWCOUNT = 0
@@ -2603,12 +2843,24 @@ BEGIN
             BREAK
           END
 
-          SET @CurrentCommandType01 = 'xp_create_subdir'
-          SET @CurrentCommand01 = 'DECLARE @ReturnCode int EXECUTE @ReturnCode = [master].dbo.xp_create_subdir N''' + REPLACE(@CurrentDirectoryPath,'''','''''') + ''' IF @ReturnCode <> 0 RAISERROR(''Error creating directory.'', 16, 1)'
-          EXECUTE @CurrentCommandOutput01 = [dbo].[CommandExecute] @Command = @CurrentCommand01, @CommandType = @CurrentCommandType01, @Mode = 1, @DatabaseName = @CurrentDatabaseName, @LogToTable = @LogToTable, @Execute = @Execute
-          SET @Error = @@ERROR
-          IF @Error <> 0 SET @CurrentCommandOutput01 = @Error
-          IF @CurrentCommandOutput01 <> 0 SET @ReturnCode = @CurrentCommandOutput01
+          -- create subdirectory only when it does not exists (otherwise spam in the command log / print output)
+          DELETE FROM @DirectoryInfo;
+          INSERT INTO @DirectoryInfo (FileExists, FileIsADirectory, ParentDirectoryExists)
+          EXECUTE [master].dbo.xp_fileexist @CurrentDirectoryPath
+
+          IF NOT EXISTS (SELECT 1 FROM @DirectoryInfo WHERE FileIsADirectory = 1)
+          BEGIN
+              SET @CurrentCommandType01 = 'xp_create_subdir'
+              SET @CurrentCommand01 = 'DECLARE @ReturnCode int EXECUTE @ReturnCode = [master].dbo.xp_create_subdir N''' + REPLACE(@CurrentDirectoryPath,'''','''''') + ''' IF @ReturnCode <> 0 RAISERROR(''Error creating directory.'', 16, 1)'
+              EXECUTE @CurrentCommandOutput01 = [dbo].[CommandExecute] @Command = @CurrentCommand01, @CommandType = @CurrentCommandType01, @Mode = 1, @DatabaseName = @CurrentDatabaseName, @LogToTable = @LogToTable, @Execute = @Execute
+              SET @Error = @@ERROR
+              IF @Error <> 0 SET @CurrentCommandOutput01 = @Error
+              IF @CurrentCommandOutput01 <> 0 SET @ReturnCode = @CurrentCommandOutput01
+          END 
+          ELSE
+          BEGIN
+             SET @CurrentCommandOutput01 = 0
+          END;
 
           UPDATE @CurrentDirectories
           SET CreateCompleted = 1,
@@ -2626,6 +2878,11 @@ BEGIN
         END
       END
 
+      -- set pending mirrors to ok; otherwise the following steps will fail
+      UPDATE @CurrentDirectories 
+         SET CreateCompleted = 0, CreateOutput = 0
+       WHERE Mirror < 0 
+      ;
       IF @CleanupMode = 'BEFORE_BACKUP'
       BEGIN
         INSERT INTO @CurrentCleanupDates (CleanupDate, Mirror)
@@ -2642,20 +2899,31 @@ BEGIN
         END
       END
 
-      IF @MirrorCleanupMode = 'BEFORE_BACKUP'
+      SET @CurrentMirror = 1
+      WHILE @CurrentMirror < 4
       BEGIN
-        INSERT INTO @CurrentCleanupDates (CleanupDate, Mirror)
-        SELECT DATEADD(hh,-(@MirrorCleanupTime),GETDATE()), 1
+          IF (@CurrentMirror = 1 AND @MirrorCleanupMode  = 'BEFORE_BACKUP')
+          OR (@CurrentMirror = 2 AND @MirrorCleanupMode2 = 'BEFORE_BACKUP')
+          OR (@CurrentMirror = 3 AND @MirrorCleanupMode3 = 'BEFORE_BACKUP')
+          BEGIN
+            INSERT INTO @CurrentCleanupDates (CleanupDate, Mirror)
+            SELECT DATEADD(hh,-(CASE WHEN @CurrentMirror = 1 THEN @MirrorCleanupTime
+                                     WHEN @CurrentMirror = 2 THEN @MirrorCleanupTime2
+                                     WHEN @CurrentMirror = 3 THEN @MirrorCleanupTime3
+                                END
+                               ),GETDATE()), @CurrentMirror
 
-        IF NOT EXISTS(SELECT * FROM @CurrentCleanupDates WHERE (Mirror = 1 OR Mirror IS NULL) AND CleanupDate IS NULL)
-        BEGIN
-          UPDATE @CurrentDirectories
-          SET CleanupDate = (SELECT MIN(CleanupDate)
-                             FROM @CurrentCleanupDates
-                             WHERE (Mirror = 1 OR Mirror IS NULL)),
-              CleanupMode = 'BEFORE_BACKUP'
-          WHERE Mirror = 1
-        END
+            IF NOT EXISTS(SELECT * FROM @CurrentCleanupDates WHERE (Mirror = @CurrentMirror OR Mirror IS NULL) AND CleanupDate IS NULL)
+            BEGIN
+              UPDATE @CurrentDirectories
+              SET CleanupDate = (SELECT MIN(CleanupDate)
+                                 FROM @CurrentCleanupDates
+                                 WHERE (Mirror IN (@CurrentMirror, @CurrentMirror * -1) OR Mirror IS NULL)),
+                  CleanupMode = 'BEFORE_BACKUP'
+              WHERE Mirror IN (@CurrentMirror, @CurrentMirror * -1)
+            END
+          END
+          SET @CurrentMirror = @CurrentMirror + 1
       END
 
       -- Delete old backup files, before backup
@@ -2663,6 +2931,9 @@ BEGIN
       AND @HostPlatform = 'Windows'
       AND (@BackupSoftware <> 'DATA_DOMAIN_BOOST' OR @BackupSoftware IS NULL)
       AND @CurrentBackupType = @BackupType
+      AND CAST(@StartTime AS TIME) BETWEEN ISNULL(@CleanUpStartTime, CAST('00:00:00.000' AS TIME))  -- only when in the specified timeframe
+                                       AND ISNULL(@CleanUpEndTime  , CAST('23:59:59.999' AS TIME))
+
       BEGIN
         WHILE (1 = 1)
         BEGIN
@@ -2684,7 +2955,63 @@ BEGIN
           BEGIN
             SET @CurrentCommandType02 = 'xp_delete_file'
 
-            SET @CurrentCommand02 = 'DECLARE @ReturnCode int EXECUTE @ReturnCode = [master].dbo.xp_delete_file 0, N''' + REPLACE(@CurrentDirectoryPath,'''','''''') + ''', ''' + @CurrentFileExtension + ''', ''' + CONVERT(nvarchar(19),@CurrentCleanupDate,126) + ''' IF @ReturnCode <> 0 RAISERROR(''Error deleting files.'', 16, 1)'
+            IF @CleanupUsesCMD = 'N'
+               SET @CurrentCommand02 = 'DECLARE @ReturnCode int EXECUTE @ReturnCode = [master].dbo.xp_delete_file 0, N''' + REPLACE(@CurrentDirectoryPath,'''','''''') + ''', ''' + @CurrentFileExtension + ''', ''' + CONVERT(nvarchar(19),@CurrentCleanupDate,126) + ''' IF @ReturnCode <> 0 RAISERROR(''Error deleting files.'', 16, 1)'
+            ELSE -- for compatibility reasons the CommandType will not be changed, when using cmdshell for cleanup
+               BEGIN
+                   -- get list of all backup files in the current folder (only for the current database)
+                   SET @cmd = 'DIR /b /s /oN /a-d "'+ REPLACE(@CurrentDirectoryPath,N'''',N'''''') + '\*_' + @CurrentDatabaseName + '_*.' + @CurrentFileExtension  + '"'
+                   PRINT @cmd
+                   
+                   DELETE FROM #CleanUpFiles WHERE 1 = 1
+
+                   INSERT INTO #CleanUpFiles(FileWithPath)
+                   EXEC master.sys.xp_cmdshell @cmd
+                   ;
+                   DELETE FROM #CleanUpFiles 
+                    WHERE FileWithPath IS NULL                     -- there will always at least one empty line
+                       OR LEN(CharBackupTime) <> 15                -- wrong formated timestamp (e.g. some manually created / renamed files)
+                       OR ISNUMERIC(LEFT(CharBackupTime, 8))  = 0
+                       OR ISNUMERIC(RIGHT(CharBackupTime, 6)) = 0
+                   ;
+                   UPDATE #CleanUpFiles
+                      SET ShouldBeDeleted = 1
+                    WHERE CharBackupTime < REPLACE(REPLACE(REPLACE(CONVERT(VARCHAR(50), @CurrentCleanupDate, 120), '-', ''), ' ', '_'), ':', '')
+                   ;
+                   
+                   SET @Template = (SELECT TOP 1 REPLACE(cuf.FileWithPath, cuf.CharBackupTime, '*?*') template -- returns e.g. \\msdb01\z$\MSDB01\ProdDB\LOG\MSDB01_ProdDB_LOG_*?*.trn
+                                      FROM #CleanUpFiles AS cuf)
+                   ;
+                   WITH groups AS -- Step 1: group the cleanup files by year / year + month / year + month + day / year + month + day + hour where ALL files should be deleted
+                              (
+                               SELECT LEFT(cuf.CharBackupTime, cte.endpos) grouppart, cte.endpos
+                                 FROM #CleanUpFiles AS cuf
+                                CROSS APPLY (VALUES (4), (6), (8), (11)) cte(endpos) -- end position of year, month, day and hour in CharBackupTime
+                                GROUP BY LEFT(cuf.CharBackupTime, cte.endpos), cte.endpos
+                                HAVING MIN(cuf.ShouldBeDeleted) = MAX(cuf.ShouldBeDeleted)
+                                   AND MIN(cuf.ShouldBeDeleted) = 1
+                              )
+                   SELECT @CurrentCommand02 = 
+                          N'DECLARE @ReturnCode int; '
+                        + N'EXECUTE @ReturnCode = master.sys.xp_cmdshell '''
+                        + STUFF((
+                                 -- Step 2: limit to the top level group (e.g. month instead month + day + hour), if all files for this month should be deleted
+                                SELECT ' & DEL "'+ REPLACE(@Template, '?', g2.grouppart) + '"' AS cmd -- -> e.g. DEL "\\msdb01\z$\MSDB01\ProdDB\LOG\MSDB01_ProdDB_LOG_*2015*.trn"
+                                  FROM groups g
+                                 RIGHT JOIN groups g2
+                                    ON g2.grouppart LIKE g.grouppart + '%'
+                                   AND g2.endpos > g.endpos
+                                 WHERE g.grouppart IS NULL
+                                   AND g2.grouppart IS NOT NULL
+                                 ORDER BY g2.grouppart
+                                   FOR XML PATH('i'), root('c'), type
+                                ).query('/c/i').value('.', 'nvarchar(4000)')
+                                , 1, 3, '' )
+                        + N'''; '
+                        + N'IF @ReturnCode <> 0 RAISERROR(''Error deleting files.'', 16, 1)'
+                   ;
+                   IF @CurrentCommand02 IS NULL SET @CurrentCommand05 = N'PRINT ''Cleanup: Nothing to do - no older backup files found''';
+              END -- ELSE (@CleanupUsesCMD = 'Y')
           END
 
           IF @BackupSoftware = 'LITESPEED'
@@ -2708,7 +3035,25 @@ BEGIN
             SET @CurrentCommand02 = 'DECLARE @ReturnCode int EXECUTE @ReturnCode = [master].dbo.xp_ss_delete @filename = N''' + REPLACE(@CurrentDirectoryPath,'''','''''') + '\*.' + @CurrentFileExtension + ''', @age = ''' + CAST(DATEDIFF(mi,@CurrentCleanupDate,GETDATE()) + 1 AS nvarchar) + 'Minutes'' IF @ReturnCode <> 0 RAISERROR(''Error deleting SQLsafe backup files.'', 16, 1)'
           END
 
-          EXECUTE @CurrentCommandOutput02 = [dbo].[CommandExecute] @Command = @CurrentCommand02, @CommandType = @CurrentCommandType02, @Mode = 1, @DatabaseName = @CurrentDatabaseName, @LogToTable = @LogToTable, @Execute = @Execute
+          IF @CurrentMirror >= 0 -- do not execute for pending mirrors with (negative id); execute only if mirror is available and of course for the main @Directory
+             EXECUTE @CurrentCommandOutput02 = [dbo].[CommandExecute] @Command = @CurrentCommand02, @CommandType = @CurrentCommandType02, @Mode = 1, @DatabaseName = @CurrentDatabaseName, @LogToTable = @LogToTable, @Execute = @Execute
+          ELSE -- @CurrentMirror  < 0
+          BEGIN
+             -- pending mirrors: insert into CommandLog
+             INSERT INTO dbo.CommandLog (DatabaseName, CommandType, IndexType, Command, ExtendedInfo,
+                         StartTime, EndTime, ErrorNumber, ErrorMessage)
+             VALUES (@CurrentDatabaseName, 'PENDING_CLEANUP_BEFORE', ABS(@CurrentMirror), @CurrentCommand02, CAST(@CurrentDirectoryPath AS XML),
+                     GETDATE(),
+                     DATEADD(HOUR, CASE ABS(@CurrentMirror)
+                                        WHEN 1 THEN @MirrorCleanupTime
+                                        WHEN 2 THEN @MirrorCleanupTime2
+                                        WHEN 3 THEN @MirrorCleanupTime3
+                                   END, GETDATE()),
+                     CASE WHEN @Execute = 'Y' THEN -1 ELSE 0 END,
+                     CASE WHEN @Execute = 'Y' THEN 'Not started' ELSE 'not executed because @Execute was set to N' END
+                    )
+             SET @CurrentCommandOutput02 = @@ERROR
+          END 
           SET @Error = @@ERROR
           IF @Error <> 0 SET @CurrentCommandOutput02 = @Error
           IF @CurrentCommandOutput02 <> 0 SET @ReturnCode = @CurrentCommandOutput02
@@ -2749,49 +3094,57 @@ BEGIN
 
           SET @CurrentCommand03 = @CurrentCommand03 + ' TO'
 
-          SELECT @CurrentCommand03 = @CurrentCommand03 + ' ' + [Type] + ' = N''' + REPLACE(FilePath,'''','''''') + '''' + CASE WHEN ROW_NUMBER() OVER (ORDER BY FilePath ASC) <> @NumberOfFiles THEN ',' ELSE '' END
+          SELECT @CurrentCommand03 = @CurrentCommand03 + ' ' + [Type] + ' = N''' + REPLACE(FilePath,'''','''''') + '''' + CASE WHEN ROW_NUMBER() OVER (ORDER BY FileNumber ASC) <> @NumberOfFiles THEN ',' ELSE '' END -- ORDER BY FileNumber instead of FilePath
           FROM @CurrentFiles
           WHERE Mirror = 0
-          ORDER BY FilePath ASC
+          ORDER BY FileNumber ASC; -- changed from FilePath to FileNumber, otherwise it would possibly store the same part of a multi file backup on 
+                                   -- the same mirror instead of alternating (e.g. @Directory = '\\srv1\z$,\\srv2\z$', @MirrorDirectory='\\srv2\y$,\\srv1\y$')
 
-          IF EXISTS(SELECT * FROM @CurrentFiles WHERE Mirror = 1)
+          SET @CurrentMirror = 1
+          WHILE @CurrentMirror < 4 -- Mirrors 1-3
+            AND SERVERPROPERTY('EngineEdition') = 3 -- MIRROR TO is an Enterprise-only feature, so check for Enterprise / Developer / Evaluation edition
+            AND @MirrorType = 'DEFAULT'
           BEGIN
-            SET @CurrentCommand03 = @CurrentCommand03 + ' MIRROR TO'
+              IF EXISTS(SELECT * FROM @CurrentFiles WHERE Mirror = @CurrentMirror)
+              BEGIN
+                SET @CurrentCommand03 = @CurrentCommand03 + ' MIRROR TO'
 
-            SELECT @CurrentCommand03 = @CurrentCommand03 + ' ' + [Type] + ' = N''' + REPLACE(FilePath,'''','''''') + '''' + CASE WHEN ROW_NUMBER() OVER (ORDER BY FilePath ASC) <> @NumberOfFiles THEN ',' ELSE '' END
-            FROM @CurrentFiles
-            WHERE Mirror = 1
-            ORDER BY FilePath ASC
-          END
+                SELECT @CurrentCommand03 = @CurrentCommand03 + ' ' + [Type] + ' = N''' + REPLACE(FilePath,'''','''''') + '''' + CASE WHEN ROW_NUMBER() OVER (ORDER BY FileNumber ASC) <> @NumberOfFiles THEN ',' ELSE '' END
+                  FROM @CurrentFiles
+                 WHERE Mirror = @CurrentMirror
+                 ORDER BY FileNumber ASC
+              END
+              SET @CurrentMirror = @CurrentMirror + 1
+          END 
 
           SET @CurrentCommand03 = @CurrentCommand03 + ' WITH '
           IF @CheckSum = 'Y' SET @CurrentCommand03 = @CurrentCommand03 + 'CHECKSUM'
           IF @CheckSum = 'N' SET @CurrentCommand03 = @CurrentCommand03 + 'NO_CHECKSUM'
 
-          IF @Version >= 10
+          -- added spaces and line breaks for a better readable output
+          IF @Version >= 10 
           BEGIN
-            SET @CurrentCommand03 = @CurrentCommand03 + CASE WHEN @Compress = 'Y' AND (@CurrentIsEncrypted = 0 OR (@CurrentIsEncrypted = 1 AND @Version >= 13 AND @MaxTransferSize > 65536)) THEN ', COMPRESSION' ELSE ', NO_COMPRESSION' END
+            SET @CurrentCommand03 = @CurrentCommand03 + CASE WHEN @Compress = 'Y' AND (@CurrentIsEncrypted = 0 OR (@CurrentIsEncrypted = 1 AND @Version >= 13 AND @MaxTransferSize > 65536)) THEN CHAR(13) + CHAR(10) + '         , COMPRESSION' ELSE CHAR(13) + CHAR(10) + '         , NO_COMPRESSION' END
+          END
+          IF @CurrentBackupType = 'DIFF' SET @CurrentCommand03 = @CurrentCommand03 + CHAR(13) + CHAR(10) + '         , DIFFERENTIAL'
+
+          IF EXISTS(SELECT * FROM @CurrentFiles WHERE Mirror > 0)
+          BEGIN
+            SET @CurrentCommand03 = @CurrentCommand03 + CHAR(13) + CHAR(10) + '         , FORMAT'
           END
 
-          IF @CurrentBackupType = 'DIFF' SET @CurrentCommand03 = @CurrentCommand03 + ', DIFFERENTIAL'
-
-          IF EXISTS(SELECT * FROM @CurrentFiles WHERE Mirror = 1)
-          BEGIN
-            SET @CurrentCommand03 = @CurrentCommand03 + ', FORMAT'
-          END
-
-          IF @CopyOnly = 'Y' SET @CurrentCommand03 = @CurrentCommand03 + ', COPY_ONLY'
-          IF @NoRecovery = 'Y' AND @CurrentBackupType = 'LOG' SET @CurrentCommand03 = @CurrentCommand03 + ', NORECOVERY'
-          IF @Init = 'Y' SET @CurrentCommand03 = @CurrentCommand03 + ', INIT'
-          IF @BlockSize IS NOT NULL SET @CurrentCommand03 = @CurrentCommand03 + ', BLOCKSIZE = ' + CAST(@BlockSize AS nvarchar)
-          IF @BufferCount IS NOT NULL SET @CurrentCommand03 = @CurrentCommand03 + ', BUFFERCOUNT = ' + CAST(@BufferCount AS nvarchar)
-          IF @MaxTransferSize IS NOT NULL SET @CurrentCommand03 = @CurrentCommand03 + ', MAXTRANSFERSIZE = ' + CAST(@MaxTransferSize AS nvarchar)
-          IF @Description IS NOT NULL SET @CurrentCommand03 = @CurrentCommand03 + ', DESCRIPTION = N''' + REPLACE(@Description,'''','''''') + ''''
-          IF @Encrypt = 'Y' SET @CurrentCommand03 = @CurrentCommand03 + ', ENCRYPTION (ALGORITHM = ' + UPPER(@EncryptionAlgorithm) + ', '
+          IF @CopyOnly = 'Y' SET @CurrentCommand03 = @CurrentCommand03 + CHAR(13) + CHAR(10) + '         , COPY_ONLY'
+          IF @NoRecovery = 'Y' AND @CurrentBackupType = 'LOG' SET @CurrentCommand03 = @CurrentCommand03 + ',' + CHAR(13) + CHAR(10) + '         , NORECOVERY'
+          IF @Init = 'Y' SET @CurrentCommand03 = @CurrentCommand03 + CHAR(13) + CHAR(10) + '           , INIT'
+          IF @BlockSize IS NOT NULL SET @CurrentCommand03 = @CurrentCommand03 + CHAR(13) + CHAR(10) + '         , BLOCKSIZE = ' + CAST(@BlockSize AS nvarchar)
+          IF @BufferCount IS NOT NULL SET @CurrentCommand03 = @CurrentCommand03 + CHAR(13) + CHAR(10) + '         , BUFFERCOUNT = ' + CAST(@BufferCount AS nvarchar)
+          IF @MaxTransferSize IS NOT NULL SET @CurrentCommand03 = @CurrentCommand03 + CHAR(13) + CHAR(10) + '         , MAXTRANSFERSIZE = ' + CAST(@MaxTransferSize AS nvarchar)
+          IF @Description IS NOT NULL SET @CurrentCommand03 = @CurrentCommand03 + CHAR(13) + CHAR(10) + '         , DESCRIPTION = N''' + REPLACE(@Description,'''','''''') + ''''
+          IF @Encrypt = 'Y' SET @CurrentCommand03 = @CurrentCommand03 + CHAR(13) + CHAR(10) + '         , ENCRYPTION (ALGORITHM = ' + UPPER(@EncryptionAlgorithm) + ', '
           IF @Encrypt = 'Y' AND @ServerCertificate IS NOT NULL SET @CurrentCommand03 = @CurrentCommand03 + 'SERVER CERTIFICATE = ' + QUOTENAME(@ServerCertificate)
           IF @Encrypt = 'Y' AND @ServerAsymmetricKey IS NOT NULL SET @CurrentCommand03 = @CurrentCommand03 + 'SERVER ASYMMETRIC KEY = ' + QUOTENAME(@ServerAsymmetricKey)
           IF @Encrypt = 'Y' SET @CurrentCommand03 = @CurrentCommand03 + ')'
-          IF @URL IS NOT NULL AND @Credential IS NOT NULL SET @CurrentCommand03 = @CurrentCommand03 + ', CREDENTIAL = N''' + REPLACE(@Credential,'''','''''') + ''''
+          IF @URL IS NOT NULL AND @Credential IS NOT NULL SET @CurrentCommand03 = @CurrentCommand03  + CHAR(13) + CHAR(10) + '          , CREDENTIAL = N''' + REPLACE(@Credential,'''','''''') + ''''
         END
 
         IF @BackupSoftware = 'LITESPEED'
@@ -2809,14 +3162,20 @@ BEGIN
           SELECT @CurrentCommand03 = @CurrentCommand03 + ', @filename = N''' + REPLACE(FilePath,'''','''''') + ''''
           FROM @CurrentFiles
           WHERE Mirror = 0
-          ORDER BY FilePath ASC
+          ORDER BY FileNumber ASC
 
-          IF EXISTS(SELECT * FROM @CurrentFiles WHERE Mirror = 1)
+          SET @CurrentMirror = 1
+          WHILE @CurrentMirror < 4 -- no check for Enterprise needed, because it will work with every SQL Edition in LiteSpeed (http://documents.software.dell.com/litespeed-for-sql-server/7.5/netvault-litespeed-for-sql-server-user-guide/back-up-databases/back-up-using-the-backup-wizard)
+            AND @MirrorType = 'DEFAULT'
           BEGIN
-            SELECT @CurrentCommand03 = @CurrentCommand03 + ', @mirror = N''' + REPLACE(FilePath,'''','''''') + ''''
-            FROM @CurrentFiles
-            WHERE Mirror = 1
-            ORDER BY FilePath ASC
+              IF EXISTS(SELECT * FROM @CurrentFiles WHERE Mirror = @CurrentMirror)
+              BEGIN
+                SELECT @CurrentCommand03 = @CurrentCommand03 + ', @mirror = N''' + REPLACE(FilePath,'''','''''') + ''''
+                FROM @CurrentFiles
+                WHERE Mirror = @CurrentMirror
+                ORDER BY FileNumber ASC
+              END
+              SET @CurrentMirror = @CurrentMirror + 1
           END
 
           SET @CurrentCommand03 = @CurrentCommand03 + ', @with = '''
@@ -2866,16 +3225,22 @@ BEGIN
 
           SET @CurrentCommand03 = @CurrentCommand03 + ' TO'
 
-          SELECT @CurrentCommand03 = @CurrentCommand03 + ' DISK = N''' + REPLACE(FilePath,'''','''''') + '''' + CASE WHEN ROW_NUMBER() OVER (ORDER BY FilePath ASC) <> @NumberOfFiles THEN ',' ELSE '' END
+          SELECT @CurrentCommand03 = @CurrentCommand03 + ' DISK = N''' + REPLACE(FilePath,'''','''''') + '''' + CASE WHEN ROW_NUMBER() OVER (ORDER BY FileNumber ASC) <> @NumberOfFiles THEN ',' ELSE '' END
           FROM @CurrentFiles
           WHERE Mirror = 0
-          ORDER BY FilePath ASC
+          ORDER BY FileNumber ASC
 
           SET @CurrentCommand03 = @CurrentCommand03 + ' WITH '
-
-          IF EXISTS(SELECT * FROM @CurrentFiles WHERE Mirror = 1)
+          -- WHILE loop for mirrors (Redgate SQL Backup support up to 32 mirrors, but you can specify only 3 as parameter in this script; no check for Enterprise necessary (works for every edition))
+          SET @CurrentMirror = 1
+          WHILE @CurrentMirror < 4
+            AND @MirrorType = 'DEFAULT'
           BEGIN
-            SET @CurrentCommand03 = @CurrentCommand03 + ' MIRRORFILE' + ' = N''' + REPLACE((SELECT FilePath FROM @CurrentFiles WHERE Mirror = 1),'''','''''') + ''', '
+              IF EXISTS(SELECT * FROM @CurrentFiles WHERE Mirror = @CurrentMirror)
+              BEGIN
+                SET @CurrentCommand03 = @CurrentCommand03 + ISNULL( ' MIRRORFILE' + ' = N''' + REPLACE((SELECT FilePath FROM @CurrentFiles WHERE Mirror = @CurrentMirror),'''','''''') + ''', ', '')
+              END
+              SET @CurrentMirror = @CurrentMirror + 1
           END
 
           IF @CheckSum = 'Y' SET @CurrentCommand03 = @CurrentCommand03 + 'CHECKSUM'
@@ -2904,15 +3269,22 @@ BEGIN
 
           SET @CurrentCommand03 = 'DECLARE @ReturnCode int EXECUTE @ReturnCode = [master].dbo.xp_ss_backup @database = N''' + REPLACE(@CurrentDatabaseName,'''','''''') + ''''
 
-          SELECT @CurrentCommand03 = @CurrentCommand03 + ', ' + CASE WHEN ROW_NUMBER() OVER (ORDER BY FilePath ASC) = 1 THEN '@filename' ELSE '@backupfile' END + ' = N''' + REPLACE(FilePath,'''','''''') + ''''
+          SELECT @CurrentCommand03 = @CurrentCommand03 + ', ' + CASE WHEN ROW_NUMBER() OVER (ORDER BY FileNumber ASC) = 1 THEN '@filename' ELSE '@backupfile' END + ' = N''' + REPLACE(FilePath,'''','''''') + ''''
           FROM @CurrentFiles
           WHERE Mirror = 0
-          ORDER BY FilePath ASC
+          ORDER BY FileNumber ASC
 
-          SELECT @CurrentCommand03 = @CurrentCommand03 + ', @mirrorfile = N''' + REPLACE(FilePath,'''','''''') + ''''
-          FROM @CurrentFiles
-          WHERE Mirror = 1
-          ORDER BY FilePath ASC
+          -- Idera SQL Safe supports only two mirror targets (http://community.idera.com/forums/topic/backup-mirroring/)
+          SET @CurrentMirror = 1
+          WHILE @CurrentMirror < 3
+            AND @MirrorType = 'DEFAULT'
+          BEGIN
+              SELECT @CurrentCommand03 = @CurrentCommand03 + ', @mirrorfile = N''' + REPLACE(FilePath,'''','''''') + ''''
+                FROM @CurrentFiles
+               WHERE Mirror = @CurrentMirror
+               ORDER BY FileNumber ASC;
+              SET @CurrentMirror = @CurrentMirror + 1
+          END
 
           SET @CurrentCommand03 = @CurrentCommand03 + ', @backuptype = ' + CASE WHEN @CurrentBackupType = 'FULL' THEN '''Full''' WHEN @CurrentBackupType = 'DIFF' THEN '''Differential''' WHEN @CurrentBackupType = 'LOG' THEN '''Log''' END
           IF @ReadWriteFileGroups = 'Y' AND @CurrentDatabaseName <> 'master' SET @CurrentCommand03 = @CurrentCommand03 + ', @readwritefilegroups = 1'
@@ -2981,13 +3353,113 @@ BEGIN
         IF @CurrentCommandOutput03 <> 0 SET @ReturnCode = @CurrentCommandOutput03
       END
 
+      --Fake-Mirroring for native SQL Backups on non-Enterprise servers (or special @MirrorType) by copying the backup files
+      IF @CurrentCommandOutput03 = 0            -- backup was ok
+      AND (    @MirrorType           IN ('COPY', 'COPY_LATER') 
+            OR EXISTS (SELECT 1 FROM @CurrentFiles WHERE Mirror < 0)) -- a mirror directory is not available and @MirrorWhenNotAvailable is set to COPY_LATER
+      AND (@MirrorDirectory IS NOT NULL OR @MirrorDirectory2 IS NOT NULL OR @MirrorDirectory3 IS NOT NULL)
+      BEGIN
+          SET @CurrentCommandType09 = 'MIRROR-COPY'
+          DECLARE CopyCur CURSOR LOCAL FORWARD_ONLY STATIC READ_ONLY FOR
+                  WITH source AS (SELECT FileNumber,
+                                          LEFT(c.filepath, calc.pos_backslash) FilePath,
+                                          SUBSTRING(c.filepath, pos_backslash + 2, 4000) FileName,
+                                          FilePath AS FullFilePath
+                                    FROM @CurrentFiles c
+                                    CROSS APPLY (SELECT LEN(c.FilePath) - CHARINDEX('\', REVERSE(c.FilePath)) pos_backslash) calc
+                                   WHERE Mirror = 0),
+                       dest   AS  (SELECT FileNumber,
+                                          LEFT(c.filepath, calc.pos_backslash) FilePath,
+                                          SUBSTRING(c.filepath, pos_backslash + 2, 4000) FileName,
+                                          FilePath AS FullFilePath,
+                                          Mirror
+                                    FROM @CurrentFiles c
+                                    CROSS APPLY (SELECT LEN(c.FilePath) - CHARINDEX('\', REVERSE(c.FilePath)) pos_backslash) calc
+                                   WHERE (Mirror > 0 AND @MirrorType IN ('COPY', 'COPY_LATER')) -- Mirror 1 to 3  = regular mirrors for COPY;
+                                      OR  Mirror < 0   -- Mirror -1 to -3 = COPY_LATER-Mirrors (because of @MirrorType or Server not availabe)
+                                  )
+                  SELECT 'DECLARE @cmd NVARCHAR(4000);' + CHAR(13) + CHAR(10)
+                       + 'DECLARE @ReturnCode int' + CHAR(13) + CHAR(10)
+                       + 'SET @cmd = ''' + CASE WHEN @MirrorCopyCommand = 'ROBOCOPY'
+                                                -- syntax: ROBOCOPY /R:3 /W:30 /NP "z:\SRV01\test\FULL\" "\\MyNAS\SRV01\test\FULL\" "SRV01_test_FULL_20170222_135724.bak"
+                                                -- do not use /Z (use a mode that allows restart), since it is VERY slow (30 MB/s vs. > 600 MB/s). Its only benefit would be, 
+                                                -- that it does not need copy the whole 100 GB backup again, when it was canceled at 95%
+                                                -- do not use /MT = use multiple threads, since it would be slower on big files (only ~half speed)
+                                                -- /NP = no percentage (would be look ridiculus in log files / select output
+                                                -- /R:3 /W:30 = up to 3 retrys after 30 seconds
+                                                THEN 'ROBOCOPY /R:3 /W:30 /NP "'
+                                                   + REPLACE(source.FilePath, '''', '''''') + '" "' 
+                                                   + REPLACE(dest.FilePath, '''', '''''') + '" "'
+                                                   + REPLACE(source.FileName, '''', '''''') + '"''' + CHAR(13) + CHAR(10)
+                                                WHEN @MirrorCopyCommand = 'XCOPY'
+                                                THEN 'echo ' + @XCOPYFileLetter + ' | xcopy /Y /Z ' -- echo command necessary because xcopy always asks if the target is a file or a directory
+                                                   + REPLACE(source.FullFilePath, '''', '''''') + '" "' 
+                                                   + REPLACE(dest.FullFilePath, '''', '''''') + '"''' + CHAR(13) + CHAR(10)
+                                                ELSE 'COPY /Y /Z' 
+                                                   + REPLACE(source.FullFilePath, '''', '''''') + '" "' 
+                                                   + REPLACE(dest.FullFilePath, '''', '''''') + '"''' + CHAR(13) + CHAR(10)
+                                           END 
+                       + 'EXEC @ReturnCode = xp_cmdshell @cmd' + CHAR(13) + CHAR(10)
+                       + 'IF @ReturnCode <> ' + CASE WHEN @MirrorCopyCommand = 'ROBOCOPY' THEN '1' ELSE '0' END 
+                       +    ' RAISERROR(''Error manually copying the backup file "' +source.FullFilePath + '" to the mirror path "' + dest.FilePath + '"'', 16, 1)'
+                             AS cmd,
+                         dest.Mirror,
+                         (SELECT source.FullFilePath source, dest.FullFilePath target
+                             FOR XML PATH('Files'), root('PendingMirrorCopy'), type
+                         ) ExtendedInfo
+                    FROM dest
+                   INNER JOIN source
+                      ON source.FileNumber = dest.FileNumber
+                   ORDER BY dest.Mirror, dest.FileNumber
+          OPEN CopyCur
+
+          WHILE 1 = 1
+          BEGIN
+              FETCH NEXT FROM CopyCur INTO @CurrentCommand09, @CurrentMirror, @CurrentExtendedInfo
+              IF @@fetch_status <> 0 BREAK
+          
+              if @CurrentMirror > 0
+                 BEGIN -- execute
+                   EXECUTE @CurrentCommandOutput09 = [dbo].[CommandExecute] @Command = @CurrentCommand09, @CommandType = @CurrentCommandType09, @Mode = 1, @DatabaseName = @CurrentDatabaseName, @LogToTable = @LogToTable, @Execute = @Execute
+                   SET @Error = @@ERROR
+                   IF @Error <> 0 SET @CurrentCommandOutput09 = @Error
+                   IF @CurrentCommandOutput09 <> 0 SET @ReturnCode = @CurrentCommandOutput09
+                 END
+              
+              IF @CurrentMirror < 0 -- COPY_LATER-Mirror targets -> save to write it later to the master.dbo.CommandLog
+              BEGIN
+                 INSERT INTO dbo.CommandLog (DatabaseName, CommandType, IndexType, Command, ExtendedInfo,
+                             StartTime, EndTime, ErrorNumber, ErrorMessage)
+                 VALUES (@CurrentDatabaseName, 'PENDING_COPY', ABS(@CurrentMirror), @CurrentCommand09,  @CurrentExtendedInfo,
+                         GETDATE(),
+                         DATEADD(HOUR, CASE ABS(@CurrentMirror)
+                                            WHEN 1 THEN @MirrorCleanupTime
+                                            WHEN 2 THEN @MirrorCleanupTime2
+                                            WHEN 3 THEN @MirrorCleanupTime3
+                                       END, GETDATE()),
+                         CASE WHEN @Execute = 'Y' THEN -1 ELSE 0 END,
+                         CASE WHEN @Execute = 'Y' THEN 'Not started' ELSE 'not executed because @Execute was set to N' END
+                        )
+              END
+          END
+          
+          CLOSE CopyCur
+          DEALLOCATE CopyCur
+      END
+
       -- Verify the backup
+      IF @Verify = 'SKIP_MIRRORS'
+      BEGIN -- set the Mirror-Backups to already verified 
+          UPDATE @CurrentBackupSet SET VerifyCompleted = 1 WHERE Mirror <> 0
+          SET @Verify = 'Y'
+      END
+        
       IF @CurrentCommandOutput03 = 0 AND @Verify = 'Y'
       BEGIN
         WHILE (1 = 1)
         BEGIN
           SELECT TOP 1 @CurrentBackupSetID = ID,
-                       @CurrentIsMirror = Mirror
+                       @CurrentMirror = Mirror
           FROM @CurrentBackupSet
           WHERE VerifyCompleted = 0
           ORDER BY ID ASC
@@ -3005,12 +3477,16 @@ BEGIN
 
             SELECT @CurrentCommand04 = @CurrentCommand04 + ' ' + [Type] + ' = N''' + REPLACE(FilePath,'''','''''') + '''' + CASE WHEN ROW_NUMBER() OVER (ORDER BY FilePath ASC) <> @NumberOfFiles THEN ',' ELSE '' END
             FROM @CurrentFiles
-            WHERE Mirror = @CurrentIsMirror
+            WHERE Mirror = @CurrentMirror
             ORDER BY FilePath ASC
 
             SET @CurrentCommand04 = @CurrentCommand04 + ' WITH '
-            IF @CheckSum = 'Y' SET @CurrentCommand04 = @CurrentCommand04 + 'CHECKSUM'
-            IF @CheckSum = 'N' SET @CurrentCommand04 = @CurrentCommand04 + 'NO_CHECKSUM'
+            IF @CheckSum         = 'Y'      SET @CurrentCommand04 = @CurrentCommand04 + 'CHECKSUM'
+            IF @CheckSum         = 'N'      SET @CurrentCommand04 = @CurrentCommand04 + 'NO_CHECKSUM'
+            IF @BlockSize       IS NOT NULL SET @CurrentCommand04 = @CurrentCommand04 + ', BLOCKSIZE = '       + CAST(@BlockSize       AS NVARCHAR(10));
+            IF @BufferCount     IS NOT NULL SET @CurrentCommand04 = @CurrentCommand04 + ', BUFFERCOUNT = '     + CAST(@BufferCount     AS NVARCHAR(10));
+            IF @MaxTransferSize IS NOT NULL SET @CurrentCommand04 = @CurrentCommand04 + ', MAXTRANSFERSIZE = ' + CAST(@MaxTransferSize AS NVARCHAR(10));
+
             IF @URL IS NOT NULL AND @Credential IS NOT NULL SET @CurrentCommand04 = @CurrentCommand04 + ', CREDENTIAL = N''' + REPLACE(@Credential,'''','''''') + ''''
           END
 
@@ -3022,7 +3498,7 @@ BEGIN
 
             SELECT @CurrentCommand04 = @CurrentCommand04 + ' @filename = N''' + REPLACE(FilePath,'''','''''') + '''' + CASE WHEN ROW_NUMBER() OVER (ORDER BY FilePath ASC) <> @NumberOfFiles THEN ',' ELSE '' END
             FROM @CurrentFiles
-            WHERE Mirror = @CurrentIsMirror
+            WHERE Mirror = @CurrentMirror
             ORDER BY FilePath ASC
 
             SET @CurrentCommand04 = @CurrentCommand04 + ', @with = '''
@@ -3042,7 +3518,7 @@ BEGIN
 
             SELECT @CurrentCommand04 = @CurrentCommand04 + ' DISK = N''' + REPLACE(FilePath,'''','''''') + '''' + CASE WHEN ROW_NUMBER() OVER (ORDER BY FilePath ASC) <> @NumberOfFiles THEN ',' ELSE '' END
             FROM @CurrentFiles
-            WHERE Mirror = @CurrentIsMirror
+            WHERE Mirror = @CurrentMirror
             ORDER BY FilePath ASC
 
             SET @CurrentCommand04 = @CurrentCommand04 + ' WITH '
@@ -3061,13 +3537,40 @@ BEGIN
 
             SELECT @CurrentCommand04 = @CurrentCommand04 + ', ' + CASE WHEN ROW_NUMBER() OVER (ORDER BY FilePath ASC) = 1 THEN '@filename' ELSE '@backupfile' END + ' = N''' + REPLACE(FilePath,'''','''''') + ''''
             FROM @CurrentFiles
-            WHERE Mirror = @CurrentIsMirror
+            WHERE Mirror = @CurrentMirror
             ORDER BY FilePath ASC
 
             SET @CurrentCommand04 = @CurrentCommand04 + ' IF @ReturnCode <> 0 RAISERROR(''Error verifying SQLsafe backup.'', 16, 1)'
           END
 
-          EXECUTE @CurrentCommandOutput04 = [dbo].[CommandExecute] @Command = @CurrentCommand04, @CommandType = @CurrentCommandType04, @Mode = 1, @DatabaseName = @CurrentDatabaseName, @LogToTable = @LogToTable, @Execute = @Execute
+          IF @CurrentMirror >= 0
+              EXECUTE @CurrentCommandOutput04 = [dbo].[CommandExecute] @Command = @CurrentCommand04, @CommandType = @CurrentCommandType04, @Mode = 1, @DatabaseName = @CurrentDatabaseName, @LogToTable = @LogToTable, @Execute = @Execute
+          ELSE  -- @CurrentMirror  < 0
+          BEGIN -- pending mirrors: insert into CommandLog
+             INSERT INTO dbo.CommandLog (DatabaseName, CommandType, IndexType, Command, ExtendedInfo,
+                         StartTime, EndTime, ErrorNumber, ErrorMessage)
+             VALUES (@CurrentDatabaseName, 'PENDING_VERIFY', ABS(@CurrentMirror), @CurrentCommand04,
+                     (SELECT @NumberOfFiles NumberOfFiles,  -- List of all target files for this mirror
+                             cf.Mirror,                     -- necessary, because all files has to be present before VERIFY can run
+                             cf.FilePath,
+                             cf.FileNumber
+                        FROM @CurrentFiles AS cf
+                       WHERE cf.Mirror = @CurrentMirror
+                       ORDER BY cf.FileNumber
+                         FOR XML PATH('Files'), root('TargetFiles'), type
+                      ),
+                     GETDATE(),
+                     DATEADD(HOUR, CASE ABS(@CurrentMirror)
+                                        WHEN 1 THEN @MirrorCleanupTime
+                                        WHEN 2 THEN @MirrorCleanupTime2
+                                        WHEN 3 THEN @MirrorCleanupTime3
+                                   END, GETDATE()),
+                     CASE WHEN @Execute = 'Y' THEN -1 ELSE 0 END,
+                     CASE WHEN @Execute = 'Y' THEN 'Not started' ELSE 'not executed because @Execute was set to N' END
+                    )
+             SET @CurrentCommandOutput04 = @@ERROR
+          END 
+
           SET @Error = @@ERROR
           IF @Error <> 0 SET @CurrentCommandOutput04 = @Error
           IF @CurrentCommandOutput04 <> 0 SET @ReturnCode = @CurrentCommandOutput04
@@ -3078,7 +3581,7 @@ BEGIN
           WHERE ID = @CurrentBackupSetID
 
           SET @CurrentBackupSetID = NULL
-          SET @CurrentIsMirror = NULL
+          SET @CurrentMirror = NULL
 
           SET @CurrentCommand04 = NULL
 
@@ -3104,20 +3607,31 @@ BEGIN
         END
       END
 
-      IF @MirrorCleanupMode = 'AFTER_BACKUP'
+      SET @CurrentMirror = 1
+      WHILE @CurrentMirror < 4
       BEGIN
-        INSERT INTO @CurrentCleanupDates (CleanupDate, Mirror)
-        SELECT DATEADD(hh,-(@MirrorCleanupTime),GETDATE()), 1
+          IF (@CurrentMirror = 1 AND @MirrorCleanupMode  = 'AFTER_BACKUP')
+          OR (@CurrentMirror = 2 AND @MirrorCleanupMode2 = 'AFTER_BACKUP')
+          OR (@CurrentMirror = 3 AND @MirrorCleanupMode3 = 'AFTER_BACKUP')
+          BEGIN
+            INSERT INTO @CurrentCleanupDates (CleanupDate, Mirror)
+            SELECT DATEADD(HOUR, -(CASE WHEN @CurrentMirror = 1 THEN @MirrorCleanupTime
+                                        WHEN @CurrentMirror = 2 THEN @MirrorCleanupTime2
+                                        WHEN @CurrentMirror = 3 THEN @MirrorCleanupTime3
+                                   END
+                                  ),GETDATE()), @CurrentMirror
 
-        IF NOT EXISTS(SELECT * FROM @CurrentCleanupDates WHERE (Mirror = 1 OR Mirror IS NULL) AND CleanupDate IS NULL)
-        BEGIN
-          UPDATE @CurrentDirectories
-          SET CleanupDate = (SELECT MIN(CleanupDate)
-                             FROM @CurrentCleanupDates
-                             WHERE (Mirror = 1 OR Mirror IS NULL)),
-              CleanupMode = 'AFTER_BACKUP'
-          WHERE Mirror = 1
-        END
+            IF NOT EXISTS(SELECT * FROM @CurrentCleanupDates WHERE (Mirror = @CurrentMirror OR Mirror IS NULL) AND CleanupDate IS NULL)
+            BEGIN
+              UPDATE @CurrentDirectories
+                 SET CleanupDate = (SELECT MIN(CleanupDate)
+                                      FROM @CurrentCleanupDates
+                                     WHERE (Mirror IN (@CurrentMirror, @CurrentMirror * -1) OR Mirror IS NULL)),
+                     CleanupMode = 'AFTER_BACKUP'
+              WHERE Mirror IN (@CurrentMirror, @CurrentMirror * -1)
+            END
+          END
+          SET @CurrentMirror = @CurrentMirror + 1
       END
 
       -- Delete old backup files, after backup
@@ -3126,12 +3640,15 @@ BEGIN
       AND @HostPlatform = 'Windows'
       AND (@BackupSoftware <> 'DATA_DOMAIN_BOOST' OR @BackupSoftware IS NULL)
       AND @CurrentBackupType = @BackupType
+      AND CAST(@StartTime AS TIME) BETWEEN ISNULL(@CleanUpStartTime, CAST('00:00:00.000' AS TIME))  -- only when in the specified timeframe
+                                       AND ISNULL(@CleanUpEndTime  , CAST('23:59:59.999' AS TIME))
       BEGIN
         WHILE (1 = 1)
         BEGIN
           SELECT TOP 1 @CurrentDirectoryID = ID,
                        @CurrentDirectoryPath = DirectoryPath,
-                       @CurrentCleanupDate = CleanupDate
+                       @CurrentCleanupDate = CleanupDate,
+                       @CurrentMirror       = Mirror
           FROM @CurrentDirectories
           WHERE CleanupDate IS NOT NULL
           AND CleanupMode = 'AFTER_BACKUP'
@@ -3147,8 +3664,64 @@ BEGIN
           BEGIN
             SET @CurrentCommandType05 = 'xp_delete_file'
 
-            SET @CurrentCommand05 = 'DECLARE @ReturnCode int EXECUTE @ReturnCode = [master].dbo.xp_delete_file 0, N''' + REPLACE(@CurrentDirectoryPath,'''','''''') + ''', ''' + @CurrentFileExtension + ''', ''' + CONVERT(nvarchar(19),@CurrentCleanupDate,126) + ''' IF @ReturnCode <> 0 RAISERROR(''Error deleting files.'', 16, 1)'
-          END
+            IF @CleanupUsesCMD = 'N' 
+               SET @CurrentCommand05 = 'DECLARE @ReturnCode int EXECUTE @ReturnCode = [master].dbo.xp_delete_file 0, N''' + REPLACE(@CurrentDirectoryPath,'''','''''') + ''', ''' + @CurrentFileExtension + ''', ''' + CONVERT(nvarchar(19),@CurrentCleanupDate,126) + ''' IF @ReturnCode <> 0 RAISERROR(''Error deleting files.'', 16, 1)'
+            ELSE -- ELSE added; for compatibility reasons the CommandType will not be changed
+               BEGIN
+                   -- get list of all backup files in the current folder (only for the current database)
+                   SET @cmd = 'DIR /b /s /oN /a-d "'+ REPLACE(@CurrentDirectoryPath,N'''',N'''''') + '\*_' + @CurrentDatabaseName + '_*.' + @CurrentFileExtension  + '"'
+                   PRINT @cmd
+                   
+                   DELETE FROM #CleanUpFiles WHERE 1 = 1
+
+                   INSERT INTO #CleanUpFiles(FileWithPath)
+                   EXEC master.sys.xp_cmdshell @cmd
+                   ;
+                   DELETE FROM #CleanUpFiles 
+                    WHERE FileWithPath IS NULL                     -- there will always at least one empty line
+                       OR LEN(CharBackupTime) <> 15                -- wrong formated timestamp (e.g. some manually created / renamed files)
+                       OR ISNUMERIC(LEFT(CharBackupTime, 8))  = 0
+                       OR ISNUMERIC(RIGHT(CharBackupTime, 6)) = 0
+                   ;
+                   UPDATE #CleanUpFiles
+                      SET ShouldBeDeleted = 1
+                    WHERE CharBackupTime < REPLACE(REPLACE(REPLACE(CONVERT(VARCHAR(50), @CurrentCleanupDate, 120), '-', ''), ' ', '_'), ':', '')
+                   ;
+                   
+                   SET @Template = (SELECT TOP 1 REPLACE(cuf.FileWithPath, cuf.CharBackupTime, '*?*') template -- returns e.g. \\msdb01\z$\MSDB01\ProdDB\LOG\MSDB01_ProdDB_LOG_*?*.trn
+                                      FROM #CleanUpFiles AS cuf)
+                   ;
+                   WITH groups AS -- Step 1: group the cleanup files by year / year + month / year + month + day / year + month + day + hour where ALL files should be deleted
+                              (
+                               SELECT LEFT(cuf.CharBackupTime, cte.endpos) grouppart, cte.endpos
+                                 FROM #CleanUpFiles AS cuf
+                                CROSS APPLY (VALUES (4), (6), (8), (11)) cte(endpos) -- end position of year, month, day and hour in CharBackupTime
+                                GROUP BY LEFT(cuf.CharBackupTime, cte.endpos), cte.endpos
+                                HAVING MIN(cuf.ShouldBeDeleted) = MAX(cuf.ShouldBeDeleted)
+                                   AND MIN(cuf.ShouldBeDeleted) = 1
+                              )
+                   SELECT @CurrentCommand05 = 
+                          N'DECLARE @ReturnCode int; '
+                        + N'EXECUTE @ReturnCode = master.sys.xp_cmdshell '''
+                        + STUFF((
+                                 -- Step 2: limit to the top level group (e.g. month instead month + day + hour), if all files for this month should be deleted
+                                SELECT ' & DEL "'+ REPLACE(@Template, '?', g2.grouppart) + '"' AS cmd -- -> e.g. DEL "\\msdb01\z$\MSDB01\ProdDB\LOG\MSDB01_ProdDB_LOG_*2015*.trn"
+                                  FROM groups g
+                                 RIGHT JOIN groups g2
+                                    ON g2.grouppart LIKE g.grouppart + '%'
+                                   AND g2.endpos > g.endpos
+                                 WHERE g.grouppart IS NULL
+                                   AND g2.grouppart IS NOT NULL
+                                 ORDER BY g2.grouppart
+                                   FOR XML PATH('i'), root('c'), type
+                                ).query('/c/i').value('.', 'nvarchar(4000)')
+                                , 1, 3, '' )
+                        + N'''; '
+                        + N'IF @ReturnCode <> 0 RAISERROR(''Error deleting files.'', 16, 1)'
+                   ;
+                   IF @CurrentCommand05 IS NULL SET @CurrentCommand05 = N'PRINT ''Cleanup: Nothing to do - no older backup files found''';
+              END -- ELSE (@CleanupUsesCMD = 'Y')
+          END -- @BackupSoftware IS NULL
 
           IF @BackupSoftware = 'LITESPEED'
           BEGIN
@@ -3171,7 +3744,25 @@ BEGIN
             SET @CurrentCommand05 = 'DECLARE @ReturnCode int EXECUTE @ReturnCode = [master].dbo.xp_ss_delete @filename = N''' + REPLACE(@CurrentDirectoryPath,'''','''''') + '\*.' + @CurrentFileExtension + ''', @age = ''' + CAST(DATEDIFF(mi,@CurrentCleanupDate,GETDATE()) + 1 AS nvarchar) + 'Minutes'' IF @ReturnCode <> 0 RAISERROR(''Error deleting SQLsafe backup files.'', 16, 1)'
           END
 
-          EXECUTE @CurrentCommandOutput05 = [dbo].[CommandExecute] @Command = @CurrentCommand05, @CommandType = @CurrentCommandType05, @Mode = 1, @DatabaseName = @CurrentDatabaseName, @LogToTable = @LogToTable, @Execute = @Execute
+          IF @CurrentMirror >= 0 -- do not execute for pending mirrors (only if mirror is available and of course for the main @Directory)
+             EXECUTE @CurrentCommandOutput05 = [dbo].[CommandExecute] @Command = @CurrentCommand05, @CommandType = @CurrentCommandType05, @Mode = 1, @DatabaseName = @CurrentDatabaseName, @LogToTable = @LogToTable, @Execute = @Execute
+          ELSE  -- @CurrentMirror  < 0
+          BEGIN -- pending mirrors: insert into CommandLog
+             INSERT INTO dbo.CommandLog (DatabaseName, CommandType, IndexType, Command, ExtendedInfo,
+                         StartTime, EndTime, ErrorNumber, ErrorMessage)
+             VALUES (@CurrentDatabaseName, 'PENDING_CLEANUP_AFTER', ABS(@CurrentMirror), @CurrentCommand05, CAST(@CurrentDirectoryPath AS XML),
+                     GETDATE(),
+                     DATEADD(HOUR, CASE ABS(@CurrentMirror)
+                                        WHEN 1 THEN @MirrorCleanupTime
+                                        WHEN 2 THEN @MirrorCleanupTime2
+                                        WHEN 3 THEN @MirrorCleanupTime3
+                                   END, GETDATE()),
+                     CASE WHEN @Execute = 'Y' THEN -1 ELSE 0 END,
+                     CASE WHEN @Execute = 'Y' THEN 'Not started' ELSE 'not executed because @Execute was set to N' END
+                    )
+             SET @CurrentCommandOutput05 = @@ERROR
+          END 
+
           SET @Error = @@ERROR
           IF @Error <> 0 SET @CurrentCommandOutput05 = @Error
           IF @CurrentCommandOutput05 <> 0 SET @ReturnCode = @CurrentCommandOutput05
@@ -3249,6 +3840,7 @@ BEGIN
     SET @CurrentLogSizeSinceLastLogBackup = NULL
     SET @CurrentAllocatedExtentPageCount = NULL
     SET @CurrentModifiedExtentPageCount = NULL
+    SET @CurrentMirror = NULL      
 
     SET @CurrentCommand03 = NULL
     SET @CurrentCommand06 = NULL
@@ -3264,8 +3856,238 @@ BEGIN
     DELETE FROM @CurrentCleanupDates
     DELETE FROM @CurrentBackupSet
 
-  END
+  END -- END of loop: WHILE EXISTS (SELECT * FROM @tmpDatabases WHERE Selected = 1 AND Completed = 0) AND @BackupType <> 'COPY_PENDING_MIRRORS'
 
+  ----------------------------------------------------------------------------------------------------
+  --// copy pending backups to mirror                                                             //--
+  ----------------------------------------------------------------------------------------------------
+  IF OBJECT_ID('master.dbo.CommandLog') IS NOT NULL
+  BEGIN
+      UPDATE master.dbo.CommandLog WITH (ROWLOCK)
+         SET ErrorNumber    = 99,
+             ErrorMessage   = 'Not copied / verified because cleanup time reached'
+       WHERE CommandType   IN ('PENDING_COPY', 'PENDING_VERIFY') -- Missed Cleanups could be skipped
+         AND ErrorNumber    = -1        -- not (yet) started
+         AND EndTime       <= GETDATE() -- EndTime = Original BackupTime + CleanUpTime -> skip when to old
+         AND ID             < @CommandLogIdAtStart -- otherwise it would change the entries created in this procedure call 
+                                                   -- -> stupid idea, because either the mirror is not available or @MirrorType is set to COPY_LATER
+      ;
+
+      WHILE @SkipPendingMirrorCopies = 'N'
+      BEGIN
+         SET @CurrentCommandLogId = NULL;
+         SET @CurrentCommandOutput08 = NULL;
+
+         SELECT TOP 1 
+                @CurrentCommandLogId    = cl.id, 
+                @CurrentDatabaseName    = cl.DatabaseName, 
+                @CurrentCommand08       = cl.Command, 
+                @CurrentMirror          = cl.IndexType,
+                @CurrentCommandType08   = cl.CommandType,
+                @CurrentExtendedInfo    = cl.ExtendedInfo
+           FROM master.dbo.CommandLog  AS cl WITH (NOLOCK)
+          WHERE cl.CommandType         IN ('PENDING_CLEANUP_BEFORE', 'PENDING_COPY', 'PENDING_VERIFY', 'PENDING_CLEANUP_AFTER')
+            AND cl.ErrorNumber          = -1                   -- not (yet) started
+            AND cl.ID                  <= @CommandLogIdAtStart -- otherwise it would read the entries created in this procedure call 
+                                                                  -- -> stupid idea, because either the mirror is not available or @MirrorType is set to COPY_LATER
+          ORDER BY cl.ID
+          ;
+          IF @CurrentCommandLogId IS NULL BREAK -- leave the WHILE loop when no (more) records are found
+
+          UPDATE dbo.CommandLog SET ErrorNumber = -2, ErrorMessage = 'work in progress' WHERE id = @CurrentCommandLogId
+      
+          IF @CurrentCommandType08 IN ('PENDING_CLEANUP_BEFORE', 'PENDING_CLEANUP_AFTER')
+          AND ISNULL(@CleanUpStartTime, CAST('00:00:00.000' AS TIME)) <= CAST(@StartTime AS TIME)-- only when in the specified timeframe
+          AND ISNULL(@CleanUpEndTime  , CAST('23:59:59.999' AS TIME)) >= CAST(@StartTime AS TIME)
+          BEGIN 
+               -- Execute pending CLEANUP commands in the mirror directories, if the Directory is accessible
+               -- since the select above is ordered by ID it should be ensured, that the pending backup file was copied to the server first
+               SET @CurrentDirectoryPath = CAST(@CurrentExtendedInfo AS NVARCHAR(max))
+               IF NOT EXISTS (SELECT * FROM @Directories AS d WHERE DirectoryPath = @CurrentDirectoryPath)
+                  INSERT INTO @Directories (ID, DirectoryPath, Mirror, Completed, Available                       )
+                         SELECT @CurrentCommandLogId, @CurrentDirectoryPath, 0, 0, 1
+
+               IF EXISTS (SELECT * FROM @Directories AS d WHERE DirectoryPath = @CurrentDirectoryPath AND d.Available = 1)
+               BEGIN
+                   DELETE FROM @DirectoryInfo
+                   INSERT INTO @DirectoryInfo (FileExists, FileIsADirectory, ParentDirectoryExists)
+                   EXECUTE [master].dbo.xp_fileexist @CurrentDirectoryPath
+
+                   IF EXISTS (SELECT * FROM @DirectoryInfo WHERE FileExists = 0 AND FileIsADirectory = 1 AND ParentDirectoryExists = 1)
+                   BEGIN
+                      EXECUTE @CurrentCommandOutput08 = [dbo].[CommandExecute] @Command = @CurrentCommand08, @CommandType = @CurrentCommandType08, @Mode = 1, @DatabaseName = @CurrentDatabaseName, @LogToTable = @LogToTable, @Execute = @Execute
+                      SET @Error = @@ERROR
+                   END
+
+                   -- skip it at the next run
+                   IF EXISTS (SELECT * FROM @DirectoryInfo WHERE FileExists = 0 AND FileIsADirectory = 0 AND ParentDirectoryExists = 0)
+                      UPDATE @Directories SET Available = 0 WHERE DirectoryPath = @CurrentDirectoryPath 
+               END
+          END
+
+          IF @CurrentCommandType08 = 'PENDING_COPY'
+          BEGIN 
+               -- Execute pending COPY command, when the sourcefile and target directory are available
+               SELECT @CurrentDirectoryPath = x.node.value('source[1]', 'nvarchar(1024)')
+                 FROM @CurrentExtendedInfo.nodes('PendingMirrorCopy/Files') as x(node)
+
+               IF @CurrentDirectoryPath LIKE '_:\%' SET @CurrentRootDirectoryPath = LEFT(@CurrentDirectoryPath, 3)
+               ELSE SET @CurrentRootDirectoryPath = SUBSTRING(@CurrentDirectoryPath, 1, CHARINDEX('\', @CurrentDirectoryPath, CHARINDEX('\', @CurrentDirectoryPath, 3)+1)) -- returns 
+
+               IF NOT EXISTS (SELECT * FROM @Directories AS d WHERE DirectoryPath = @CurrentRootDirectoryPath)
+                  INSERT INTO @Directories (ID, DirectoryPath, Mirror, Completed, Available)
+                         SELECT @CurrentCommandLogId * -1, @CurrentRootDirectoryPath, 0, 0, 1
+
+               IF EXISTS (SELECT * FROM @Directories AS d WHERE DirectoryPath = @CurrentRootDirectoryPath  AND d.Available = 1)
+               BEGIN
+                   DELETE FROM @DirectoryInfo;
+                   INSERT INTO @DirectoryInfo (FileExists, FileIsADirectory, ParentDirectoryExists)
+                   EXECUTE [master].dbo.xp_fileexist @CurrentDirectoryPath;
+
+                   IF NOT EXISTS (SELECT * FROM @DirectoryInfo WHERE FileExists = 1 AND FileIsADirectory = 0 AND ParentDirectoryExists = 1)
+                   BEGIN
+                      SET @Error = 2
+                      SET @ErrorMessage = 'Error while copying pending backup to the mirror directory - source file ' + ISNULL(@CurrentDirectoryPath, '<NULL>') + ' does not (longer) exists.'
+                      UPDATE dbo.CommandLog SET ErrorNumber = @Error, ErrorMessage = @ErrorMessage WHERE id = @CurrentCommandLogId
+                      RAISERROR(@ErrorMessage,15,1) WITH NOWAIT
+
+                      IF EXISTS (SELECT * FROM @DirectoryInfo WHERE FileExists = 0 AND FileIsADirectory = 0 AND ParentDirectoryExists = 0) 
+                         UPDATE @Directories SET Available = 0 WHERE DirectoryPath = @CurrentRootDirectoryPath
+
+                   END
+               END
+
+               SELECT @CurrentDirectoryPath = x.node.value('target[1]', 'nvarchar(1024)')
+                 FROM @CurrentExtendedInfo.nodes('PendingMirrorCopy/Files') as x(node)
+
+               IF @CurrentDirectoryPath LIKE '_:\%' SET @CurrentRootDirectoryPath = LEFT(@CurrentDirectoryPath, 3) -- returns e.g. z:\
+               ELSE SET @CurrentRootDirectoryPath = SUBSTRING(@CurrentDirectoryPath, 1, CHARINDEX('\', @CurrentDirectoryPath, CHARINDEX('\', @CurrentDirectoryPath, 3)+1)) -- returns e.g. \\backup_nas\my_server\
+
+               IF NOT EXISTS (SELECT * FROM @Directories AS d WHERE DirectoryPath = @CurrentRootDirectoryPath)
+                  INSERT INTO @Directories (ID, DirectoryPath, Mirror, Completed, Available)
+                         SELECT @CurrentCommandLogId, @CurrentRootDirectoryPath, 0, 0, 1
+
+               IF EXISTS (SELECT * FROM @Directories AS d WHERE DirectoryPath = @CurrentRootDirectoryPath AND d.Available = 1)
+               BEGIN
+                   DELETE FROM @DirectoryInfo
+                   INSERT INTO @DirectoryInfo (FileExists, FileIsADirectory, ParentDirectoryExists)
+                   EXECUTE [master].dbo.xp_fileexist @CurrentDirectoryPath
+
+                   -- commented out - when the copy was not successful the target fail may exists but is not complete 
+                   --                 in this case there would remain a unusable copy of the backup file on the target server, when it would set just to 'done'
+                   --                 When launching the copy command again, it would be overwritten. When someone had successful manually copied the file ROBOCOPY would do nothing, 
+                   --                 while COPY / XCOPY would execute the copy again (overwrite).
+                   --IF EXISTS (SELECT * FROM @DirectoryInfo WHERE FileExists = 1 AND FileIsADirectory = 0 AND ParentDirectoryExists = 1)
+                   --BEGIN
+                   --    UPDATE dbo.CommandLog SET ErrorNumber = 0, ErrorMessage = 'Target file already exists - not copied again',  EndTime = GETDATE() WHERE id = @CurrentCommandLogId
+                   --END 
+                   IF EXISTS (SELECT * FROM @DirectoryInfo WHERE /*FileExists = 0 AND */ FileIsADirectory = 0 AND ParentDirectoryExists = 1)
+                   BEGIN -- Target directory (but not file) exists -> copy
+                       EXECUTE @CurrentCommandOutput08 = [dbo].[CommandExecute] @Command = @CurrentCommand08, @CommandType = @CurrentCommandType08, @Mode = 1, @DatabaseName = @CurrentDatabaseName, @LogToTable = @LogToTable, @Execute = @Execute
+                       SET @Error = @@ERROR
+                   END;
+                   -- Target directory is still missing
+                   IF EXISTS (SELECT * FROM @DirectoryInfo WHERE FileExists = 0 AND FileIsADirectory = 0 AND ParentDirectoryExists = 0) 
+                   BEGIN
+                        -- try to create it
+                        SET @CurrentFilePath = SUBSTRING(@CurrentDirectoryPath, 1, LEN(@CurrentDirectoryPath) - CHARINDEX('\', REVERSE(@CurrentDirectoryPath)))
+                        SET @CurrentCommandType01 = 'xp_create_subdir'
+                        SET @CurrentCommand01 = 'DECLARE @ReturnCode int;' + CHAR(13) + CHAR(10)
+                                              + 'EXECUTE @ReturnCode = [master].dbo.xp_create_subdir N''' 
+                                              +             REPLACE(@CurrentFilePath,
+                                                                    CHAR(39), CHAR(39) + CHAR(39)) + ''';' + CHAR(13) + CHAR(10)
+                                              + 'IF @ReturnCode <> 0 RAISERROR(''Error creating directory.'', 16, 1);'
+                        EXECUTE @CurrentCommandOutput01 = [dbo].[CommandExecute] @Command = @CurrentCommand01, @CommandType = @CurrentCommandType01, @Mode = 1, @DatabaseName = @CurrentDatabaseName, @LogToTable = @LogToTable, @Execute = @Execute
+                    
+                        IF @CurrentCommandOutput01 = 0
+                        BEGIN -- when the target directory could be created, then copy the file
+                             EXECUTE @CurrentCommandOutput08 = [dbo].[CommandExecute] @Command = @CurrentCommand08, @CommandType = @CurrentCommandType08, @Mode = 1, @DatabaseName = @CurrentDatabaseName, @LogToTable = @LogToTable, @Execute = @Execute
+                             SET @Error = @@ERROR
+                        END
+                        ELSE 
+                        BEGIN
+                           UPDATE @Directories SET Available = 0 WHERE DirectoryPath = @CurrentRootDirectoryPath -- otherwise mark the root as not available (e.g. network error)
+                           SET @Error = -1 -- skip and retry in the next run 
+                        END
+                   END 
+               END 
+               ELSE 
+                   SET @Error = -1 -- skip, since the directory was for the previous PENDING_COPY command (with the same target directory) not available 
+
+          END -- IF @CurrentCommandType08 = 'PENDING_COPY'
+
+
+          IF @CurrentCommandType08 = 'PENDING_VERIFY'
+          BEGIN 
+               -- first check, if all target files are available, since you can not verify a backup if one or more files are still missing (e.g. because of a pending copy)
+               DECLARE CurTargetFiles CURSOR LOCAL FORWARD_ONLY STATIC READ_ONLY FOR
+                       SELECT FilePath = x.node.value('FilePath[1]', 'nvarchar(1024)')
+                         FROM @CurrentExtendedInfo.nodes('TargetFiles/Files') as x(node)
+               OPEN CurTargetFiles
+           
+               SET @CurrentFilePath = NULL
+
+               WHILE 1 = 1
+               BEGIN
+                   FETCH NEXT FROM CurTargetFiles INTO @CurrentFilePath
+                   IF @@fetch_status <> 0 BREAK
+               
+                   IF @CurrentFilePath LIKE '_:\%' SET @CurrentRootDirectoryPath = LEFT(@CurrentFilePath, 3)
+                   ELSE SET @CurrentRootDirectoryPath = SUBSTRING(@CurrentFilePath, 1, CHARINDEX('\', @CurrentFilePath, CHARINDEX('\', @CurrentFilePath, 3)+1)) -- returns 
+
+                   IF NOT EXISTS (SELECT * FROM @Directories AS d WHERE DirectoryPath = @CurrentRootDirectoryPath)
+                      INSERT INTO @Directories (ID, DirectoryPath, Mirror, Completed, Available)
+                             SELECT @CurrentCommandLogId, @CurrentRootDirectoryPath, 0, 0, 1
+
+                   IF EXISTS (SELECT * FROM @Directories AS d WHERE DirectoryPath = @CurrentRootDirectoryPath  AND d.Available = 1)
+                   BEGIN
+                       DELETE FROM @DirectoryInfo
+                       INSERT INTO @DirectoryInfo (FileExists, FileIsADirectory, ParentDirectoryExists)
+                       EXECUTE [master].dbo.xp_fileexist @CurrentFilePath
+
+                       IF NOT EXISTS (SELECT * FROM @DirectoryInfo WHERE FileExists = 1 AND FileIsADirectory = 0 AND ParentDirectoryExists = 1)
+                       BEGIN
+                          SET @CurrentFilePath = NULL -- target file does not exists
+                          SET @Error           = -1
+                          BREAK
+                       END 
+
+                       IF EXISTS (SELECT * FROM @DirectoryInfo WHERE FileExists = 0 AND FileIsADirectory = 0 AND ParentDirectoryExists = 0)
+                          UPDATE @Directories SET Available = 0 WHERE DirectoryPath = @CurrentRootDirectoryPath
+                  END
+                  ELSE 
+                      BEGIN
+                          SET @CurrentFilePath = NULL;
+                          SET @Error = -1; -- Directory not available
+                      END 
+               END -- WHILE loop (cursor)
+               CLOSE CurTargetFiles
+               DEALLOCATE CurTargetFiles
+           
+               IF @CurrentFilePath IS NOT NULL -- when all target files exists, execute the verify command
+               BEGIN
+                  EXECUTE @CurrentCommandOutput08 = [dbo].[CommandExecute] @Command = @CurrentCommand08, @CommandType = @CurrentCommandType08, @Mode = 1, @DatabaseName = @CurrentDatabaseName, @LogToTable = @LogToTable, @Execute = @Execute
+                  SET @Error = @@ERROR
+               END
+          END -- IF @CurrentCommandType08 = 'PENDING_VERIFY'
+
+          IF ISNULL(@Error, 0)                  <> 0 SET @CurrentCommandOutput08 = @Error
+          IF ISNULL(@CurrentCommandOutput08, 0) <> 0 SET @ReturnCode             = @CurrentCommandOutput08
+
+
+          IF @CurrentCommandOutput08 = 0
+                UPDATE dbo.CommandLog SET ErrorNumber = 0, ErrorMessage = 'successfull executed', EndTime = GETDATE() WHERE id = @CurrentCommandLogId;
+      END -- WHILE-Loop for pending actions
+  
+      -- set unfinished pendings from "work in progress" to "not started" again (e.g. because target is still not available)
+      UPDATE dbo.CommandLog WITH(ROWLOCK)
+         SET ErrorNumber = -1, ErrorMessage = 'not started'
+       WHERE ErrorNumber = -2
+         AND CommandType         IN ('PENDING_CLEANUP_BEFORE', 'PENDING_COPY', 'PENDING_VERIFY', 'PENDING_CLEANUP_AFTER')
+         AND ID                  <= @CommandLogIdAtStart
+      ;
+  END; -- commandlog table exists
+  
   ----------------------------------------------------------------------------------------------------
   --// Log completing information                                                                 //--
   ----------------------------------------------------------------------------------------------------
@@ -3280,7 +4102,5 @@ BEGIN
   END
 
   ----------------------------------------------------------------------------------------------------
-
 END
 GO
-
