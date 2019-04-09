@@ -1,4 +1,4 @@
-﻿USE master
+USE master
 SET ANSI_NULLS ON
 GO
 SET QUOTED_IDENTIFIER ON
@@ -135,7 +135,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2019-01-13 13:51:41                                                               //--
+  --// Version: 2019-02-10 10:40:47                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -3332,8 +3332,6 @@ BEGIN
 
           IF @ReadWriteFileGroups = 'Y' AND @CurrentDatabaseName <> 'master' SET @CurrentCommand03 = @CurrentCommand03 + ' -O "READ_WRITE_FILEGROUPS"'
 
-          SET @CurrentCommand03 = @CurrentCommand03 + ' -a "NSR_DFA_SI=TRUE"'
-          SET @CurrentCommand03 = @CurrentCommand03 + ' -a "NSR_DFA_SI_USE_DD=TRUE"'
           IF @DataDomainBoostHost IS NOT NULL SET @CurrentCommand03 = @CurrentCommand03 + ' -a "NSR_DFA_SI_DD_HOST=' + REPLACE(@DataDomainBoostHost,'''','''''') + '"'
           IF @DataDomainBoostUser IS NOT NULL SET @CurrentCommand03 = @CurrentCommand03 + ' -a "NSR_DFA_SI_DD_USER=' + REPLACE(@DataDomainBoostUser,'''','''''') + '"'
           IF @DataDomainBoostDevicePath IS NOT NULL SET @CurrentCommand03 = @CurrentCommand03 + ' -a "NSR_DFA_SI_DEVICE_PATH=' + REPLACE(@DataDomainBoostDevicePath,'''','''''') + '"'
@@ -3483,8 +3481,12 @@ BEGIN
             ORDER BY FilePath ASC
 
             SET @CurrentCommand04 = @CurrentCommand04 + ' WITH '
-            IF @CheckSum = 'Y' SET @CurrentCommand04 = @CurrentCommand04 + 'CHECKSUM'
-            IF @CheckSum = 'N' SET @CurrentCommand04 = @CurrentCommand04 + 'NO_CHECKSUM'
+            IF @CheckSum         = 'Y'      SET @CurrentCommand04 = @CurrentCommand04 + 'CHECKSUM'
+            IF @CheckSum         = 'N'      SET @CurrentCommand04 = @CurrentCommand04 + 'NO_CHECKSUM'
+            IF @BlockSize       IS NOT NULL SET @CurrentCommand04 = @CurrentCommand04 + ', BLOCKSIZE = '       + CAST(@BlockSize       AS NVARCHAR(10));
+            IF @BufferCount     IS NOT NULL SET @CurrentCommand04 = @CurrentCommand04 + ', BUFFERCOUNT = '     + CAST(@BufferCount     AS NVARCHAR(10));
+            IF @MaxTransferSize IS NOT NULL SET @CurrentCommand04 = @CurrentCommand04 + ', MAXTRANSFERSIZE = ' + CAST(@MaxTransferSize AS NVARCHAR(10));
+
             IF @URL IS NOT NULL AND @Credential IS NOT NULL SET @CurrentCommand04 = @CurrentCommand04 + ', CREDENTIAL = N''' + REPLACE(@Credential,'''','''''') + ''''
           END
 
