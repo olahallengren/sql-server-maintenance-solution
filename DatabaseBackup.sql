@@ -23,6 +23,7 @@ ALTER PROCEDURE [dbo].[DatabaseBackup]
 @BlockSize int = NULL,
 @BufferCount int = NULL,
 @MaxTransferSize int = NULL,
+@DatabaseSizeSplit int = NULL,
 @NumberOfFiles int = NULL,
 @CompressionLevel int = NULL,
 @Description nvarchar(max) = NULL,
@@ -264,7 +265,7 @@ BEGIN
   ----------------------------------------------------------------------------------------------------
 
   SET @StartTime = GETDATE()
-  SET @SchemaName = (SELECT schemas.name FROM sys.schemas schemas INNER JOIN sys.objects objects ON schemas.[schema_id] = objects.[schema_id] WHERE [object_id] = @@PROCID)
+  SET @SchemaName = (SELECT schemas.name FROM sys.schemas schemas INNER JOIN sys.objects objects ON schemas.[schema_id] = objects.[schema_id] WHERE objects.[object_id] = @@PROCID)
   SET @ObjectName = OBJECT_NAME(@@PROCID)
   SET @VersionTimestamp = SUBSTRING(OBJECT_DEFINITION(@@PROCID),CHARINDEX('--// Version: ',OBJECT_DEFINITION(@@PROCID)) + LEN('--// Version: ') + 1, 19)
 
@@ -281,6 +282,7 @@ BEGIN
   SET @Parameters = @Parameters + ', @CheckSum = ' + ISNULL('''' + REPLACE(@CheckSum,'''','''''') + '''','NULL')
   SET @Parameters = @Parameters + ', @BlockSize = ' + ISNULL(CAST(@BlockSize AS nvarchar),'NULL')
   SET @Parameters = @Parameters + ', @BufferCount = ' + ISNULL(CAST(@BufferCount AS nvarchar),'NULL')
+  SET @Parameters = @Parameters + ', @DatabaseSizeSplit = ' + ISNULL(CAST(@DatabaseSizeSplit AS nvarchar),'NULL')
   SET @Parameters = @Parameters + ', @MaxTransferSize = ' + ISNULL(CAST(@MaxTransferSize AS nvarchar),'NULL')
   SET @Parameters = @Parameters + ', @NumberOfFiles = ' + ISNULL(CAST(@NumberOfFiles AS nvarchar),'NULL')
   SET @Parameters = @Parameters + ', @CompressionLevel = ' + ISNULL(CAST(@CompressionLevel AS nvarchar),'NULL')
@@ -1215,6 +1217,25 @@ BEGIN
     SET @Error = @@ERROR
     RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
+  
+  IF @DatabaseSizeSplit IS NULL
+	SET @DatabaseSizeSplit = 0
+  ELSE IF @DatabaseSizeSplit < 16777215 AND @DatabaseSizeSplit >= 0
+  BEGIN
+    SET @DatabaseSizeSplit = @DatabaseSizeSplit * 128	--Convert unit supplied in MB to 8 KB page unit native to sys.master_files table
+	IF CHARINDEX('{NumberOfFiles}', @FileName) = 0		--Don't add NumberOfFile token if it already exists
+	BEGIN
+		SET @FileName = REPLACE(@FileName,'{FileNumber}','{FileNumber}_of_{NumberOfFiles}')
+		SET @AvailabilityGroupFileName = REPLACE(@AvailabilityGroupFileName,'{FileNumber}','{FileNumber}_of_{NumberOfFiles}')
+	END
+  END
+  ELSE
+  BEGIN
+    SET @ErrorMessage = 'The value for the parameter @DatabaseSizeSplit is not supported.'
+    RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
+    SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
+  END
 
   IF @NumberOfFiles < 1 OR @NumberOfFiles > 64 OR (@NumberOfFiles > 32 AND @BackupSoftware = 'SQLBACKUP') OR @NumberOfFiles IS NULL OR @NumberOfFiles < (SELECT COUNT(*) FROM @Directories WHERE Mirror = 0) OR @NumberOfFiles % (SELECT NULLIF(COUNT(*),0) FROM @Directories WHERE Mirror = 0) > 0 OR (@URL IS NOT NULL AND @Credential IS NOT NULL AND @NumberOfFiles <> 1) OR (@NumberOfFiles > 1 AND @BackupSoftware IN('SQLBACKUP','SQLSAFE') AND EXISTS(SELECT * FROM @Directories WHERE Mirror = 1)) OR (@NumberOfFiles > 32 AND @BackupSoftware = 'DATA_DOMAIN_BOOST') OR @NumberOfFiles < (SELECT COUNT(*) FROM @URLs WHERE Mirror = 0) OR @NumberOfFiles % (SELECT NULLIF(COUNT(*),0) FROM @URLs WHERE Mirror = 0) > 0
   BEGIN
@@ -1482,8 +1503,8 @@ BEGIN
     RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
-  IF REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(@FileName,'{DirectorySeparator}',''),'{ServerName}',''),'{InstanceName}',''),'{ServiceName}',''),'{ClusterName}',''),'{AvailabilityGroupName}',''),'{DatabaseName}',''),'{BackupType}',''),'{Partial}',''),'{CopyOnly}',''),'{Description}',''),'{Year}',''),'{Month}',''),'{Day}',''),'{Hour}',''),'{Minute}',''),'{Second}',''),'{Millisecond}',''),'{FileNumber}',''),'{FileExtension}',''),'{MajorVersion}',''),'{MinorVersion}','') LIKE '%{%'
-  OR REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(@FileName,'{DirectorySeparator}',''),'{ServerName}',''),'{InstanceName}',''),'{ServiceName}',''),'{ClusterName}',''),'{AvailabilityGroupName}',''),'{DatabaseName}',''),'{BackupType}',''),'{Partial}',''),'{CopyOnly}',''),'{Description}',''),'{Year}',''),'{Month}',''),'{Day}',''),'{Hour}',''),'{Minute}',''),'{Second}',''),'{Millisecond}',''),'{FileNumber}',''),'{FileExtension}',''),'{MajorVersion}',''),'{MinorVersion}','') LIKE '%}%'
+  IF REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(@FileName,'{DirectorySeparator}',''),'{ServerName}',''),'{InstanceName}',''),'{ServiceName}',''),'{ClusterName}',''),'{AvailabilityGroupName}',''),'{DatabaseName}',''),'{BackupType}',''),'{Partial}',''),'{CopyOnly}',''),'{Description}',''),'{Year}',''),'{Month}',''),'{Day}',''),'{Hour}',''),'{Minute}',''),'{Second}',''),'{Millisecond}',''),'{FileNumber}',''),'{NumberOfFiles}',''),'{FileExtension}',''),'{MajorVersion}',''),'{MinorVersion}','') LIKE '%{%'
+  OR REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(@FileName,'{DirectorySeparator}',''),'{ServerName}',''),'{InstanceName}',''),'{ServiceName}',''),'{ClusterName}',''),'{AvailabilityGroupName}',''),'{DatabaseName}',''),'{BackupType}',''),'{Partial}',''),'{CopyOnly}',''),'{Description}',''),'{Year}',''),'{Month}',''),'{Day}',''),'{Hour}',''),'{Minute}',''),'{Second}',''),'{Millisecond}',''),'{FileNumber}',''),'{NumberOfFiles}',''),'{FileExtension}',''),'{MajorVersion}',''),'{MinorVersion}','') LIKE '%}%'
   BEGIN
     SET @ErrorMessage = 'The parameter @FileName contains one or more tokens that are not supported.'
     RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
@@ -1491,8 +1512,8 @@ BEGIN
     RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
-  IF REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(@AvailabilityGroupFileName,'{DirectorySeparator}',''),'{ServerName}',''),'{InstanceName}',''),'{ServiceName}',''),'{ClusterName}',''),'{AvailabilityGroupName}',''),'{DatabaseName}',''),'{BackupType}',''),'{Partial}',''),'{CopyOnly}',''),'{Description}',''),'{Year}',''),'{Month}',''),'{Day}',''),'{Hour}',''),'{Minute}',''),'{Second}',''),'{Millisecond}',''),'{FileNumber}',''),'{FileExtension}',''),'{MajorVersion}',''),'{MinorVersion}','') LIKE '%{%'
-  OR REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(@AvailabilityGroupFileName,'{DirectorySeparator}',''),'{ServerName}',''),'{InstanceName}',''),'{ServiceName}',''),'{ClusterName}',''),'{AvailabilityGroupName}',''),'{DatabaseName}',''),'{BackupType}',''),'{Partial}',''),'{CopyOnly}',''),'{Description}',''),'{Year}',''),'{Month}',''),'{Day}',''),'{Hour}',''),'{Minute}',''),'{Second}',''),'{Millisecond}',''),'{FileNumber}',''),'{FileExtension}',''),'{MajorVersion}',''),'{MinorVersion}','') LIKE '%}%'
+  IF REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(@AvailabilityGroupFileName,'{DirectorySeparator}',''),'{ServerName}',''),'{InstanceName}',''),'{ServiceName}',''),'{ClusterName}',''),'{AvailabilityGroupName}',''),'{DatabaseName}',''),'{BackupType}',''),'{Partial}',''),'{CopyOnly}',''),'{Description}',''),'{Year}',''),'{Month}',''),'{Day}',''),'{Hour}',''),'{Minute}',''),'{Second}',''),'{Millisecond}',''),'{FileNumber}',''),'{NumberOfFiles}',''),'{FileExtension}',''),'{MajorVersion}',''),'{MinorVersion}','') LIKE '%{%'
+  OR REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(@AvailabilityGroupFileName,'{DirectorySeparator}',''),'{ServerName}',''),'{InstanceName}',''),'{ServiceName}',''),'{ClusterName}',''),'{AvailabilityGroupName}',''),'{DatabaseName}',''),'{BackupType}',''),'{Partial}',''),'{CopyOnly}',''),'{Description}',''),'{Year}',''),'{Month}',''),'{Day}',''),'{Hour}',''),'{Minute}',''),'{Second}',''),'{Millisecond}',''),'{FileNumber}',''),'{NumberOfFiles}',''),'{FileExtension}',''),'{MajorVersion}',''),'{MinorVersion}','') LIKE '%{%'
   BEGIN
     SET @ErrorMessage = 'The parameter @AvailabilityGroupFileName contains one or more tokens that are not supported.'
     RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
@@ -1984,6 +2005,22 @@ BEGIN
       SET @CurrentLogShippingRole = 'SECONDARY'
     END
 
+	IF @NumberOfFiles = 1 AND @DatabaseSizeSplit > 0
+	BEGIN
+	  SELECT @NumberOfFiles = (SUM(size) / @DatabaseSizeSplit) + CASE WHEN (SUM(size) % @DatabaseSizeSplit) > 0 THEN 1 ELSE 0 END
+	  FROM sys.master_files 
+	  WHERE database_id = @CurrentDatabaseID
+
+	  IF @NumberOfFiles < 1 OR @NumberOfFiles > 64 OR (@NumberOfFiles > 32 AND @BackupSoftware = 'SQLBACKUP') OR @NumberOfFiles IS NULL OR @NumberOfFiles < (SELECT COUNT(*) FROM @Directories WHERE Mirror = 0) OR @NumberOfFiles % (SELECT NULLIF(COUNT(*),0) FROM @Directories WHERE Mirror = 0) > 0 OR (@URL IS NOT NULL AND @Credential IS NOT NULL AND @NumberOfFiles <> 1) OR (@NumberOfFiles > 1 AND @BackupSoftware IN('SQLBACKUP','SQLSAFE') AND EXISTS(SELECT * FROM @Directories WHERE Mirror = 1)) OR (@NumberOfFiles > 32 AND @BackupSoftware = 'DATA_DOMAIN_BOOST') OR @NumberOfFiles < (SELECT COUNT(*) FROM @URLs WHERE Mirror = 0) OR @NumberOfFiles % (SELECT NULLIF(COUNT(*),0) FROM @URLs WHERE Mirror = 0) > 0
+	  BEGIN
+		SET @ErrorMessage = 'The value for the parameter @NumberOfFiles as determined by @DatabaseSplitSize parameter is not supported.'
+		RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
+		SET @Error = @@ERROR
+		RAISERROR(@EmptyLine,10,1) WITH NOWAIT
+		CONTINUE
+	  END
+	END
+	
     SELECT @CurrentIsReadOnly = is_read_only
     FROM sys.databases
     WHERE name = @CurrentDatabaseName
@@ -2336,8 +2373,10 @@ BEGIN
       IF SERVERPROPERTY('InstanceName') IS NULL SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'{InstanceName}','')
       IF @@SERVICENAME IS NULL SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'{ServiceName}','')
       IF @Description IS NULL SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'{Description}','')
-      IF @NumberOfFiles = 1 SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'{FileNumber}','')
-
+	  
+	  IF @NumberOfFiles = 1 SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'{FileNumber}','')
+	  IF @NumberOfFiles = 1 AND @DatabaseSizeSplit > 0 SET @CurrentDatabaseFileName = REPLACE(REPLACE(@CurrentDatabaseFileName,'_of_{NumberOfFiles}',''),'{NumberOfFiles}','')
+	  	  
       WHILE (@Updated = 1 OR @Updated IS NULL)
       BEGIN
         SET @Updated = 0
@@ -2450,13 +2489,14 @@ BEGIN
       SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'{FileExtension}',@CurrentFileExtension)
       SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'{MajorVersion}',ISNULL(CAST(SERVERPROPERTY('ProductMajorVersion') AS nvarchar),PARSENAME(CAST(SERVERPROPERTY('ProductVersion') AS nvarchar),4)))
       SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'{MinorVersion}',ISNULL(CAST(SERVERPROPERTY('ProductMinorVersion') AS nvarchar),PARSENAME(CAST(SERVERPROPERTY('ProductVersion') AS nvarchar),3)))
+	  SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'{NumberOfFiles}',@NumberOfFiles)
 
       SELECT @CurrentMaxFilePathLength = CASE
       WHEN EXISTS (SELECT * FROM @CurrentDirectories) THEN (SELECT MAX(LEN(DirectoryPath + @DirectorySeparator)) FROM @CurrentDirectories)
       WHEN EXISTS (SELECT * FROM @CurrentURLs) THEN (SELECT MAX(LEN(DirectoryPath + @DirectorySeparator)) FROM @CurrentURLs)
       END
       + LEN(REPLACE(REPLACE(@CurrentDatabaseFileName,'{DatabaseName}',@CurrentDatabaseNameFS), '{FileNumber}', CASE WHEN @NumberOfFiles > 1 AND @NumberOfFiles <= 9 THEN '1' WHEN @NumberOfFiles >= 10 THEN '01' ELSE '' END))
-
+	  /*****/
       -- The maximum length of a backup device is 259 characters
       IF @CurrentMaxFilePathLength > 259
       BEGIN
@@ -3258,6 +3298,8 @@ BEGIN
     SET @CurrentCommandOutput03 = NULL
 
     SET @CurrentCommandType03 = NULL
+
+	IF @DatabaseSizeSplit > 0 SET @NumberOfFiles = 1
 
     DELETE FROM @CurrentDirectories
     DELETE FROM @CurrentURLs
