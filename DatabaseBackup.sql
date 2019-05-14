@@ -2082,6 +2082,9 @@ BEGIN
       SET @DatabaseMessage = 'Availability group backup preference: ' + ISNULL(@CurrentAvailabilityGroupBackupPreference,'N/A')
       RAISERROR('%s',10,1,@DatabaseMessage) WITH NOWAIT
 
+      SET @DatabaseMessage = 'Availability group secondary allows connections: ' + ISNULL(@CurrentAvailabilityGroupSecondaryAllowConnections, 'N/A')
+      RAISERROR('%s',10,1,@DatabaseMessage) WITH NOWAIT
+
       SET @DatabaseMessage = 'Is preferred backup replica: ' + CASE WHEN @CurrentIsPreferredBackupReplica = 1 THEN 'Yes' WHEN @CurrentIsPreferredBackupReplica = 0 THEN 'No' ELSE 'N/A' END
       RAISERROR('%s',10,1,@DatabaseMessage) WITH NOWAIT
     END
