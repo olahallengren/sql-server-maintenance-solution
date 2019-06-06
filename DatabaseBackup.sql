@@ -24,6 +24,7 @@ ALTER PROCEDURE [dbo].[DatabaseBackup]
 @BufferCount int = NULL,
 @MaxTransferSize int = NULL,
 @DatabaseSizeSplit int = NULL,
+@DropTokensWhenNA nvarchar(max) = 'N',
 @NumberOfFiles int = NULL,
 @CompressionLevel int = NULL,
 @Description nvarchar(max) = NULL,
@@ -2374,9 +2375,12 @@ BEGIN
       IF @@SERVICENAME IS NULL SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'{ServiceName}','')
       IF @Description IS NULL SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'{Description}','')
 	  
-	  IF @NumberOfFiles = 1 SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'{FileNumber}','')
-	  IF @NumberOfFiles = 1 AND @DatabaseSizeSplit > 0 SET @CurrentDatabaseFileName = REPLACE(REPLACE(@CurrentDatabaseFileName,'_of_{NumberOfFiles}',''),'{NumberOfFiles}','')
-	  	  
+      IF @DropTokensWhenNA = 'Y'
+      BEGIN								       
+	IF @NumberOfFiles = 1 SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'{FileNumber}','')
+	IF @NumberOfFiles = 1 AND @DatabaseSizeSplit > 0 SET @CurrentDatabaseFileName = REPLACE(REPLACE(@CurrentDatabaseFileName,'_of_{NumberOfFiles}',''),'{NumberOfFiles}','')
+      END
+									       
       WHILE (@Updated = 1 OR @Updated IS NULL)
       BEGIN
         SET @Updated = 0
