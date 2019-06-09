@@ -10,7 +10,7 @@ License: https://ola.hallengren.com/license.html
 
 GitHub: https://github.com/olahallengren/sql-server-maintenance-solution
 
-Version: 2019-06-07 22:53:29
+Version: 2019-06-09 13:18:25
 
 You can contact me by e-mail at ola@hallengren.com.
 
@@ -126,7 +126,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2019-06-07 22:53:29                                                               //--
+  --// Version: 2019-06-09 13:18:25                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -425,7 +425,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2019-06-07 22:53:29                                                               //--
+  --// Version: 2019-06-09 13:18:25                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -459,8 +459,17 @@ BEGIN
   DECLARE @CurrentRootDirectoryPath nvarchar(4000)
 
   DECLARE @CurrentDBID int
-  DECLARE @CurrentDatabaseID int
   DECLARE @CurrentDatabaseName nvarchar(max)
+
+  DECLARE @CurrentDatabaseID int
+  DECLARE @CurrentUserAccess nvarchar(max)
+  DECLARE @CurrentIsReadOnly bit
+  DECLARE @CurrentDatabaseState nvarchar(max)
+  DECLARE @CurrentInStandby bit
+  DECLARE @CurrentRecoveryModel nvarchar(max)
+
+  DECLARE @CurrentIsEncrypted bit
+
   DECLARE @CurrentBackupType nvarchar(max)
   DECLARE @CurrentFileExtension nvarchar(max)
   DECLARE @CurrentFileNumber int
@@ -485,8 +494,7 @@ BEGIN
   DECLARE @CurrentIsPreferredBackupReplica bit
   DECLARE @CurrentDatabaseMirroringRole nvarchar(max)
   DECLARE @CurrentLogShippingRole nvarchar(max)
-  DECLARE @CurrentIsEncrypted bit
-  DECLARE @CurrentIsReadOnly bit
+
   DECLARE @CurrentBackupSetID int
   DECLARE @CurrentIsMirror bit
   DECLARE @CurrentLastLogBackup datetime
@@ -2227,9 +2235,23 @@ BEGIN
       BREAK
     END
 
-    SET @CurrentDatabaseID = DB_ID(@CurrentDatabaseName)
+    SELECT @CurrentDatabaseID = database_id,
+           @CurrentUserAccess = user_access_desc,
+           @CurrentIsReadOnly = is_read_only,
+           @CurrentDatabaseState = state_desc,
+           @CurrentInStandby = is_in_standby,
+           @CurrentRecoveryModel = recovery_model_desc
+    FROM sys.databases
+    WHERE [name] = @CurrentDatabaseName
 
-    IF DATABASEPROPERTYEX(@CurrentDatabaseName,'Status') = 'ONLINE'
+    IF @Version >= 10
+    BEGIN
+      SET @CurrentCommand06 = 'SELECT @ParamIsEncrypted = is_encrypted FROM sys.databases WHERE name = @ParamDatabaseName'
+
+      EXECUTE sp_executesql @statement = @CurrentCommand06, @params = N'@ParamDatabaseName nvarchar(max), @ParamIsEncrypted bit OUTPUT', @ParamDatabaseName = @CurrentDatabaseName, @ParamIsEncrypted = @CurrentIsEncrypted OUTPUT
+    END
+
+    IF @CurrentDatabaseState = 'ONLINE'
     BEGIN
       IF EXISTS (SELECT * FROM sys.database_recovery_status WHERE database_id = @CurrentDatabaseID AND database_guid IS NOT NULL)
       BEGIN
@@ -2270,14 +2292,14 @@ BEGIN
       SET @CurrentDifferentialBaseLSN = NULL
     END
 
-    IF DATABASEPROPERTYEX(@CurrentDatabaseName,'Status') = 'ONLINE'
+    IF @CurrentDatabaseState = 'ONLINE'
     BEGIN
       SELECT @CurrentLogLSN = last_log_backup_lsn
       FROM sys.database_recovery_status
       WHERE database_id = @CurrentDatabaseID
     END
 
-    IF DATABASEPROPERTYEX(@CurrentDatabaseName,'Status') = 'ONLINE' AND ((@Version >= 12.06024 AND @Version < 13) OR @Version >= 13.05026) AND (@CurrentAvailabilityGroupRole = 'PRIMARY' OR @CurrentAvailabilityGroupRole IS NULL) AND @ChangeBackupType = 'Y' AND @ModificationLevel IS NOT NULL
+    IF @CurrentDatabaseState = 'ONLINE' AND ((@Version >= 12.06024 AND @Version < 13) OR @Version >= 13.05026) AND (@CurrentAvailabilityGroupRole = 'PRIMARY' OR @CurrentAvailabilityGroupRole IS NULL) AND @ChangeBackupType = 'Y' AND @ModificationLevel IS NOT NULL
     BEGIN
       SET @CurrentCommand07 = 'SELECT @ParamAllocatedExtentPageCount = SUM(allocated_extent_page_count), @ParamModifiedExtentPageCount = SUM(modified_extent_page_count) FROM ' + QUOTENAME(@CurrentDatabaseName) + '.sys.dm_db_file_space_usage'
 
@@ -2288,7 +2310,7 @@ BEGIN
 
     IF @ChangeBackupType = 'Y'
     BEGIN
-      IF @CurrentBackupType = 'LOG' AND DATABASEPROPERTYEX(@CurrentDatabaseName,'Recovery') <> 'SIMPLE' AND @CurrentLogLSN IS NULL AND @CurrentDatabaseName <> 'master'
+      IF @CurrentBackupType = 'LOG' AND @CurrentRecoveryModel IN('FULL','BULK_LOGGED') AND @CurrentLogLSN IS NULL AND @CurrentDatabaseName <> 'master'
       BEGIN
         SET @CurrentBackupType = 'DIFF'
       END
@@ -2298,7 +2320,7 @@ BEGIN
       END
     END
 
-    IF DATABASEPROPERTYEX(@CurrentDatabaseName,'Status') = 'ONLINE' AND ((@Version >= 12.06024 AND @Version < 13) OR @Version >= 13.05026)
+    IF @CurrentDatabaseState = 'ONLINE' AND ((@Version >= 12.06024 AND @Version < 13) OR @Version >= 13.05026)
     BEGIN
       SELECT @CurrentLastLogBackup = log_backup_time,
              @CurrentLogSizeSinceLastLogBackup = log_since_last_log_backup_mb
@@ -2336,33 +2358,22 @@ BEGIN
       SET @CurrentLogShippingRole = 'SECONDARY'
     END
 
-    SELECT @CurrentIsReadOnly = is_read_only
-    FROM sys.databases
-    WHERE name = @CurrentDatabaseName
-
-    IF @Version >= 10
-    BEGIN
-      SET @CurrentCommand06 = 'SELECT @ParamIsEncrypted = is_encrypted FROM sys.databases WHERE name = @ParamDatabaseName'
-
-      EXECUTE sp_executesql @statement = @CurrentCommand06, @params = N'@ParamDatabaseName nvarchar(max), @ParamIsEncrypted bit OUTPUT', @ParamDatabaseName = @CurrentDatabaseName, @ParamIsEncrypted = @CurrentIsEncrypted OUTPUT
-    END
-
     SET @DatabaseMessage = 'Date and time: ' + CONVERT(nvarchar,GETDATE(),120)
     RAISERROR('%s',10,1,@DatabaseMessage) WITH NOWAIT
 
     SET @DatabaseMessage = 'Database: ' + QUOTENAME(@CurrentDatabaseName)
     RAISERROR('%s',10,1,@DatabaseMessage) WITH NOWAIT
 
-    SET @DatabaseMessage = 'Status: ' + CAST(DATABASEPROPERTYEX(@CurrentDatabaseName,'Status') AS nvarchar)
+    SET @DatabaseMessage = 'State: ' + @CurrentDatabaseState
     RAISERROR('%s',10,1,@DatabaseMessage) WITH NOWAIT
 
-    SET @DatabaseMessage = 'Standby: ' + CASE WHEN DATABASEPROPERTYEX(@CurrentDatabaseName,'IsInStandBy') = 1 THEN 'Yes' ELSE 'No' END
+    SET @DatabaseMessage = 'Standby: ' + CASE WHEN @CurrentInStandby = 1 THEN 'Yes' ELSE 'No' END
     RAISERROR('%s',10,1,@DatabaseMessage) WITH NOWAIT
 
     SET @DatabaseMessage =  'Updateability: ' + CASE WHEN @CurrentIsReadOnly = 1 THEN 'READ_ONLY' WHEN  @CurrentIsReadOnly = 0 THEN 'READ_WRITE' END
     RAISERROR('%s',10,1,@DatabaseMessage) WITH NOWAIT
 
-    SET @DatabaseMessage =  'User access: ' + CAST(DATABASEPROPERTYEX(@CurrentDatabaseName,'UserAccess') AS nvarchar)
+    SET @DatabaseMessage =  'User access: ' + @CurrentUserAccess
     RAISERROR('%s',10,1,@DatabaseMessage) WITH NOWAIT
 
     IF @CurrentIsDatabaseAccessible IS NOT NULL
@@ -2371,7 +2382,7 @@ BEGIN
       RAISERROR('%s',10,1,@DatabaseMessage) WITH NOWAIT
     END
 
-    SET @DatabaseMessage = 'Recovery model: ' + CAST(DATABASEPROPERTYEX(@CurrentDatabaseName,'Recovery') AS nvarchar)
+    SET @DatabaseMessage = 'Recovery model: ' + @CurrentRecoveryModel
     RAISERROR('%s',10,1,@DatabaseMessage) WITH NOWAIT
 
     SET @DatabaseMessage = 'Encrypted: ' + CASE WHEN @CurrentIsEncrypted = 1 THEN 'Yes' WHEN @CurrentIsEncrypted = 0 THEN 'No' ELSE 'N/A' END
@@ -2436,10 +2447,11 @@ BEGIN
 
     RAISERROR(@EmptyLine,10,1) WITH NOWAIT
 
-    IF DATABASEPROPERTYEX(@CurrentDatabaseName,'Status') = 'ONLINE'
+    IF @CurrentDatabaseState = 'ONLINE'
     AND (@CurrentIsDatabaseAccessible = 1 OR @CurrentIsDatabaseAccessible IS NULL)
-    AND DATABASEPROPERTYEX(@CurrentDatabaseName,'IsInStandBy') = 0
-    AND NOT (@CurrentBackupType = 'LOG' AND (DATABASEPROPERTYEX(@CurrentDatabaseName,'Recovery') = 'SIMPLE' OR @CurrentLogLSN IS NULL))
+    AND NOT (@CurrentInStandby = 1)
+    AND NOT (@CurrentBackupType = 'LOG' AND @CurrentRecoveryModel = 'SIMPLE')
+    AND NOT (@CurrentBackupType = 'LOG' AND @CurrentRecoveryModel IN('FULL','BULK_LOGGED') AND @CurrentLogLSN IS NULL)
     AND NOT (@CurrentBackupType = 'DIFF' AND @CurrentDifferentialBaseLSN IS NULL)
     AND NOT (@CurrentBackupType IN('DIFF','LOG') AND @CurrentDatabaseName = 'master')
     AND NOT (@CurrentAvailabilityGroup IS NOT NULL AND @CurrentBackupType = 'FULL' AND @CopyOnly = 'N' AND (@CurrentAvailabilityGroupRole <> 'PRIMARY' OR @CurrentAvailabilityGroupRole IS NULL))
@@ -3549,7 +3561,7 @@ BEGIN
       END
     END
 
-    IF DATABASEPROPERTYEX(@CurrentDatabaseName,'Status') = 'SUSPECT'
+    IF @CurrentDatabaseState = 'SUSPECT'
     BEGIN
       SET @ErrorMessage = 'The database ' + QUOTENAME(@CurrentDatabaseName) + ' is in a SUSPECT state.'
       RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
@@ -3576,8 +3588,16 @@ BEGIN
 
     -- Clear variables
     SET @CurrentDBID = NULL
-    SET @CurrentDatabaseID = NULL
     SET @CurrentDatabaseName = NULL
+
+    SET @CurrentDatabaseID = NULL
+    SET @CurrentUserAccess = NULL
+    SET @CurrentIsReadOnly = NULL
+    SET @CurrentDatabaseState = NULL
+    SET @CurrentInStandby = NULL
+    SET @CurrentRecoveryModel = NULL
+    SET @CurrentIsEncrypted = NULL
+
     SET @CurrentBackupType = NULL
     SET @CurrentFileExtension = NULL
     SET @CurrentFileNumber = NULL
@@ -3598,8 +3618,6 @@ BEGIN
     SET @CurrentIsPreferredBackupReplica = NULL
     SET @CurrentDatabaseMirroringRole = NULL
     SET @CurrentLogShippingRole = NULL
-    SET @CurrentIsEncrypted = NULL
-    SET @CurrentIsReadOnly = NULL
     SET @CurrentLastLogBackup = NULL
     SET @CurrentLogSizeSinceLastLogBackup = NULL
     SET @CurrentAllocatedExtentPageCount = NULL
@@ -3679,7 +3697,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2019-06-07 22:53:29                                                               //--
+  --// Version: 2019-06-09 13:18:25                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -3704,15 +3722,21 @@ BEGIN
   DECLARE @QueueStartTime datetime
 
   DECLARE @CurrentDBID int
-  DECLARE @CurrentDatabaseID int
   DECLARE @CurrentDatabaseName nvarchar(max)
+
+  DECLARE @CurrentDatabaseID int
+  DECLARE @CurrentUserAccess nvarchar(max)
+  DECLARE @CurrentIsReadOnly bit
+  DECLARE @CurrentDatabaseState nvarchar(max)
+  DECLARE @CurrentInStandby bit
+  DECLARE @CurrentRecoveryModel nvarchar(max)
+
   DECLARE @CurrentIsDatabaseAccessible bit
   DECLARE @CurrentAvailabilityGroup nvarchar(max)
   DECLARE @CurrentAvailabilityGroupRole nvarchar(max)
   DECLARE @CurrentAvailabilityGroupBackupPreference nvarchar(max)
   DECLARE @CurrentIsPreferredBackupReplica bit
   DECLARE @CurrentDatabaseMirroringRole nvarchar(max)
-  DECLARE @CurrentIsReadOnly bit
 
   DECLARE @CurrentFGID int
   DECLARE @CurrentFileGroupID int
@@ -4877,9 +4901,16 @@ BEGIN
      BREAK
     END
 
-    SET @CurrentDatabaseID = DB_ID(@CurrentDatabaseName)
+    SELECT @CurrentDatabaseID = database_id,
+           @CurrentUserAccess = user_access_desc,
+           @CurrentIsReadOnly = is_read_only,
+           @CurrentDatabaseState = state_desc,
+           @CurrentInStandby = is_in_standby,
+           @CurrentRecoveryModel = recovery_model_desc
+    FROM sys.databases
+    WHERE [name] = @CurrentDatabaseName
 
-    IF DATABASEPROPERTYEX(@CurrentDatabaseName,'Status') = 'ONLINE' AND SERVERPROPERTY('EngineEdition') <> 5
+    IF @CurrentDatabaseState = 'ONLINE' AND SERVERPROPERTY('EngineEdition') <> 5
     BEGIN
       IF EXISTS (SELECT * FROM sys.database_recovery_status WHERE database_id = @CurrentDatabaseID AND database_guid IS NOT NULL)
       BEGIN
@@ -4914,26 +4945,22 @@ BEGIN
       WHERE database_id = @CurrentDatabaseID
     END
 
-    SELECT @CurrentIsReadOnly = is_read_only
-    FROM sys.databases
-    WHERE name = @CurrentDatabaseName
-
     SET @DatabaseMessage = 'Date and time: ' + CONVERT(nvarchar,GETDATE(),120)
     RAISERROR('%s',10,1,@DatabaseMessage) WITH NOWAIT
 
     SET @DatabaseMessage = 'Database: ' + QUOTENAME(@CurrentDatabaseName)
     RAISERROR('%s',10,1,@DatabaseMessage) WITH NOWAIT
 
-    SET @DatabaseMessage = 'Status: ' + CAST(DATABASEPROPERTYEX(@CurrentDatabaseName,'Status') AS nvarchar)
+    SET @DatabaseMessage = 'State: ' + @CurrentDatabaseState
     RAISERROR('%s',10,1,@DatabaseMessage) WITH NOWAIT
 
-    SET @DatabaseMessage = 'Standby: ' + CASE WHEN DATABASEPROPERTYEX(@CurrentDatabaseName,'IsInStandBy') = 1 THEN 'Yes' ELSE 'No' END
+    SET @DatabaseMessage = 'Standby: ' + CASE WHEN @CurrentInStandby = 1 THEN 'Yes' ELSE 'No' END
     RAISERROR('%s',10,1,@DatabaseMessage) WITH NOWAIT
 
     SET @DatabaseMessage = 'Updateability: ' + CASE WHEN @CurrentIsReadOnly = 1 THEN 'READ_ONLY' WHEN  @CurrentIsReadOnly = 0 THEN 'READ_WRITE' END
     RAISERROR('%s',10,1,@DatabaseMessage) WITH NOWAIT
 
-    SET @DatabaseMessage = 'User access: ' + CAST(DATABASEPROPERTYEX(@CurrentDatabaseName,'UserAccess') AS nvarchar)
+    SET @DatabaseMessage = 'User access: ' + @CurrentUserAccess
     RAISERROR('%s',10,1,@DatabaseMessage) WITH NOWAIT
 
     IF @CurrentIsDatabaseAccessible IS NOT NULL
@@ -4942,7 +4969,7 @@ BEGIN
       RAISERROR('%s',10,1,@DatabaseMessage) WITH NOWAIT
     END
 
-    SET @DatabaseMessage = 'Recovery model: ' + CAST(DATABASEPROPERTYEX(@CurrentDatabaseName,'Recovery') AS nvarchar)
+    SET @DatabaseMessage = 'Recovery model: ' + @CurrentRecoveryModel
     RAISERROR('%s',10,1,@DatabaseMessage) WITH NOWAIT
 
     IF @CurrentAvailabilityGroup IS NOT NULL
@@ -4971,7 +4998,7 @@ BEGIN
 
     RAISERROR(@EmptyLine,10,1) WITH NOWAIT
 
-    IF DATABASEPROPERTYEX(@CurrentDatabaseName,'Status') = 'ONLINE'
+    IF @CurrentDatabaseState = 'ONLINE'
     AND (@CurrentIsDatabaseAccessible = 1 OR @CurrentIsDatabaseAccessible IS NULL)
     AND (@CurrentAvailabilityGroupRole = 'PRIMARY' OR @CurrentAvailabilityGroupRole IS NULL OR SERVERPROPERTY('EngineEdition') = 3)
     AND ((@AvailabilityGroupReplicas = 'PRIMARY' AND @CurrentAvailabilityGroupRole = 'PRIMARY') OR (@AvailabilityGroupReplicas = 'SECONDARY' AND @CurrentAvailabilityGroupRole = 'SECONDARY') OR (@AvailabilityGroupReplicas = 'PREFERRED_BACKUP_REPLICA' AND @CurrentIsPreferredBackupReplica = 1) OR @AvailabilityGroupReplicas = 'ALL' OR @CurrentAvailabilityGroupRole IS NULL)
@@ -5329,7 +5356,7 @@ BEGIN
 
     END
 
-    IF DATABASEPROPERTYEX(@CurrentDatabaseName,'Status') = 'SUSPECT'
+    IF @CurrentDatabaseState = 'SUSPECT'
     BEGIN
       SET @ErrorMessage = 'The database ' + QUOTENAME(@CurrentDatabaseName) + ' is in a SUSPECT state.'
       RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
@@ -5356,15 +5383,21 @@ BEGIN
 
     -- Clear variables
     SET @CurrentDBID = NULL
-    SET @CurrentDatabaseID = NULL
     SET @CurrentDatabaseName = NULL
+
+    SET @CurrentDatabaseID = NULL
+    SET @CurrentUserAccess = NULL
+    SET @CurrentIsReadOnly = NULL
+    SET @CurrentDatabaseState = NULL
+    SET @CurrentInStandby = NULL
+    SET @CurrentRecoveryModel = NULL
+
     SET @CurrentIsDatabaseAccessible = NULL
     SET @CurrentAvailabilityGroup = NULL
     SET @CurrentAvailabilityGroupRole = NULL
     SET @CurrentAvailabilityGroupBackupPreference = NULL
     SET @CurrentIsPreferredBackupReplica = NULL
     SET @CurrentDatabaseMirroringRole = NULL
-    SET @CurrentIsReadOnly = NULL
 
     SET @CurrentCommand01 = NULL
     SET @CurrentCommand02 = NULL
@@ -5458,7 +5491,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2019-06-07 22:53:29                                                               //--
+  --// Version: 2019-06-09 13:18:25                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -5489,13 +5522,19 @@ BEGIN
   DECLARE @QueueStartTime datetime
 
   DECLARE @CurrentDBID int
-  DECLARE @CurrentDatabaseID int
   DECLARE @CurrentDatabaseName nvarchar(max)
+
+  DECLARE @CurrentDatabaseID int
+  DECLARE @CurrentUserAccess nvarchar(max)
+  DECLARE @CurrentIsReadOnly bit
+  DECLARE @CurrentDatabaseState nvarchar(max)
+  DECLARE @CurrentInStandby bit
+  DECLARE @CurrentRecoveryModel nvarchar(max)
+
   DECLARE @CurrentIsDatabaseAccessible bit
   DECLARE @CurrentAvailabilityGroup nvarchar(max)
   DECLARE @CurrentAvailabilityGroupRole nvarchar(max)
   DECLARE @CurrentDatabaseMirroringRole nvarchar(max)
-  DECLARE @CurrentIsReadOnly bit
 
   DECLARE @CurrentCommand01 nvarchar(max)
   DECLARE @CurrentCommand02 nvarchar(max)
@@ -6755,9 +6794,16 @@ BEGIN
       BREAK
     END
 
-    SET @CurrentDatabaseID = DB_ID(@CurrentDatabaseName)
+    SELECT @CurrentDatabaseID = database_id,
+           @CurrentUserAccess = user_access_desc,
+           @CurrentIsReadOnly = is_read_only,
+           @CurrentDatabaseState = state_desc,
+           @CurrentInStandby = is_in_standby,
+           @CurrentRecoveryModel = recovery_model_desc
+    FROM sys.databases
+    WHERE [name] = @CurrentDatabaseName
 
-    IF DATABASEPROPERTYEX(@CurrentDatabaseName,'Status') = 'ONLINE' AND SERVERPROPERTY('EngineEdition') <> 5
+    IF @CurrentDatabaseState = 'ONLINE' AND SERVERPROPERTY('EngineEdition') <> 5
     BEGIN
       IF EXISTS (SELECT * FROM sys.database_recovery_status WHERE database_id = @CurrentDatabaseID AND database_guid IS NOT NULL)
       BEGIN
@@ -6786,26 +6832,22 @@ BEGIN
       WHERE database_id = @CurrentDatabaseID
     END
 
-    SELECT @CurrentIsReadOnly = is_read_only
-    FROM sys.databases
-    WHERE name = @CurrentDatabaseName
-
     SET @DatabaseMessage = 'Date and time: ' + CONVERT(nvarchar,GETDATE(),120)
     RAISERROR('%s',10,1,@DatabaseMessage) WITH NOWAIT
 
     SET @DatabaseMessage = 'Database: ' + QUOTENAME(@CurrentDatabaseName)
     RAISERROR('%s',10,1,@DatabaseMessage) WITH NOWAIT
 
-    SET @DatabaseMessage = 'Status: ' + CAST(DATABASEPROPERTYEX(@CurrentDatabaseName,'Status') AS nvarchar)
+    SET @DatabaseMessage = 'State: ' + @CurrentDatabaseState
     RAISERROR('%s',10,1,@DatabaseMessage) WITH NOWAIT
 
-    SET @DatabaseMessage = 'Standby: ' + CASE WHEN DATABASEPROPERTYEX(@CurrentDatabaseName,'IsInStandBy') = 1 THEN 'Yes' ELSE 'No' END
+    SET @DatabaseMessage = 'Standby: ' + CASE WHEN @CurrentInStandby = 1 THEN 'Yes' ELSE 'No' END
     RAISERROR('%s',10,1,@DatabaseMessage) WITH NOWAIT
 
     SET @DatabaseMessage = 'Updateability: ' + CASE WHEN @CurrentIsReadOnly = 1 THEN 'READ_ONLY' WHEN  @CurrentIsReadOnly = 0 THEN 'READ_WRITE' END
     RAISERROR('%s',10,1,@DatabaseMessage) WITH NOWAIT
 
-    SET @DatabaseMessage = 'User access: ' + CAST(DATABASEPROPERTYEX(@CurrentDatabaseName,'UserAccess') AS nvarchar)
+    SET @DatabaseMessage = 'User access: ' + @CurrentUserAccess
     RAISERROR('%s',10,1,@DatabaseMessage) WITH NOWAIT
 
     IF @CurrentIsDatabaseAccessible IS NOT NULL
@@ -6814,7 +6856,7 @@ BEGIN
       RAISERROR('%s',10,1,@DatabaseMessage) WITH NOWAIT
     END
 
-    SET @DatabaseMessage = 'Recovery model: ' + CAST(DATABASEPROPERTYEX(@CurrentDatabaseName,'Recovery') AS nvarchar)
+    SET @DatabaseMessage = 'Recovery model: ' + @CurrentRecoveryModel
     RAISERROR('%s',10,1,@DatabaseMessage) WITH NOWAIT
 
     IF @CurrentAvailabilityGroup IS NOT NULL
@@ -6834,7 +6876,7 @@ BEGIN
 
     RAISERROR(@EmptyLine,10,1) WITH NOWAIT
 
-    IF DATABASEPROPERTYEX(@CurrentDatabaseName,'Status') = 'ONLINE'
+    IF @CurrentDatabaseState = 'ONLINE'
     AND (@CurrentIsDatabaseAccessible = 1 OR @CurrentIsDatabaseAccessible IS NULL)
     AND DATABASEPROPERTYEX(@CurrentDatabaseName,'Updateability') = 'READ_WRITE'
     BEGIN
@@ -7666,7 +7708,7 @@ BEGIN
 
     END
 
-    IF DATABASEPROPERTYEX(@CurrentDatabaseName,'Status') = 'SUSPECT'
+    IF @CurrentDatabaseState = 'SUSPECT'
     BEGIN
       SET @ErrorMessage = 'The database ' + QUOTENAME(@CurrentDatabaseName) + ' is in a SUSPECT state.'
       RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
@@ -7693,13 +7735,19 @@ BEGIN
 
     -- Clear variables
     SET @CurrentDBID = NULL
-    SET @CurrentDatabaseID = NULL
     SET @CurrentDatabaseName = NULL
+
+    SET @CurrentDatabaseID = NULL
+    SET @CurrentUserAccess = NULL
+    SET @CurrentIsReadOnly = NULL
+    SET @CurrentDatabaseState = NULL
+    SET @CurrentInStandby = NULL
+    SET @CurrentRecoveryModel = NULL
+
     SET @CurrentIsDatabaseAccessible = NULL
     SET @CurrentAvailabilityGroup = NULL
     SET @CurrentAvailabilityGroupRole = NULL
     SET @CurrentDatabaseMirroringRole = NULL
-    SET @CurrentIsReadOnly = NULL
 
     SET @CurrentCommand01 = NULL
 
