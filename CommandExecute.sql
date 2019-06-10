@@ -1,13 +1,18 @@
-﻿SET ANSI_NULLS ON
+﻿IF (SCHEMA_ID('sqlservermaint') IS NULL) 
+BEGIN
+    EXEC ('CREATE SCHEMA [sqlservermaint] AUTHORIZATION [dbo]')
+END
+
+SET ANSI_NULLS ON
 GO
 SET QUOTED_IDENTIFIER ON
 GO
-IF NOT EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'[dbo].[CommandExecute]') AND type in (N'P', N'PC'))
+IF NOT EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'[sqlservermaint].[CommandExecute]') AND type in (N'P', N'PC'))
 BEGIN
-EXEC dbo.sp_executesql @statement = N'CREATE PROCEDURE [dbo].[CommandExecute] AS'
+EXEC dbo.sp_executesql @statement = N'CREATE PROCEDURE [sqlservermaint].[CommandExecute] AS'
 END
 GO
-ALTER PROCEDURE [dbo].[CommandExecute]
+ALTER PROCEDURE [sqlservermaint].[CommandExecute]
 
 @Command nvarchar(max),
 @CommandType nvarchar(max),
@@ -91,7 +96,7 @@ BEGIN
     RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
-  IF @LogToTable = 'Y' AND NOT EXISTS (SELECT * FROM sys.objects objects INNER JOIN sys.schemas schemas ON objects.[schema_id] = schemas.[schema_id] WHERE objects.[type] = 'U' AND schemas.[name] = 'dbo' AND objects.[name] = 'CommandLog')
+  IF @LogToTable = 'Y' AND NOT EXISTS (SELECT * FROM sys.objects objects INNER JOIN sys.schemas schemas ON objects.[schema_id] = schemas.[schema_id] WHERE objects.[type] = 'U' AND schemas.[name] = 'sqlservermaint' AND objects.[name] = 'CommandLog')
   BEGIN
     SET @ErrorMessage = 'The table CommandLog is missing. Download https://ola.hallengren.com/scripts/CommandLog.sql.'
     RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
@@ -184,7 +189,7 @@ BEGIN
 
   IF @LogToTable = 'Y'
   BEGIN
-    INSERT INTO dbo.CommandLog (DatabaseName, SchemaName, ObjectName, ObjectType, IndexName, IndexType, StatisticsName, PartitionNumber, ExtendedInfo, CommandType, Command, StartTime)
+    INSERT INTO sqlservermaint.CommandLog (DatabaseName, SchemaName, ObjectName, ObjectType, IndexName, IndexType, StatisticsName, PartitionNumber, ExtendedInfo, CommandType, Command, StartTime)
     VALUES (@DatabaseName, @SchemaName, @ObjectName, @ObjectType, @IndexName, @IndexType, @StatisticsName, @PartitionNumber, @ExtendedInfo, @CommandType, @Command, @StartTime)
   END
 
@@ -241,7 +246,7 @@ BEGIN
 
   IF @LogToTable = 'Y'
   BEGIN
-    UPDATE dbo.CommandLog
+    UPDATE sqlservermaint.CommandLog
     SET EndTime = @EndTime,
         ErrorNumber = CASE WHEN @Execute = 'N' THEN NULL ELSE @Error END,
         ErrorMessage = @ErrorMessageOriginal
