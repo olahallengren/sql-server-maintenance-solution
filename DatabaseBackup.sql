@@ -2012,7 +2012,15 @@ BEGIN
 	  FROM sys.master_files 
 	  WHERE database_id = @CurrentDatabaseID
 
-	  IF @NumberOfFiles < 1 OR @NumberOfFiles > 64 OR (@NumberOfFiles > 32 AND @BackupSoftware = 'SQLBACKUP') OR @NumberOfFiles IS NULL OR @NumberOfFiles < (SELECT COUNT(*) FROM @Directories WHERE Mirror = 0) OR @NumberOfFiles % (SELECT NULLIF(COUNT(*),0) FROM @Directories WHERE Mirror = 0) > 0 OR (@URL IS NOT NULL AND @Credential IS NOT NULL AND @NumberOfFiles <> 1) OR (@NumberOfFiles > 1 AND @BackupSoftware IN('SQLBACKUP','SQLSAFE') AND EXISTS(SELECT * FROM @Directories WHERE Mirror = 1)) OR (@NumberOfFiles > 32 AND @BackupSoftware = 'DATA_DOMAIN_BOOST') OR @NumberOfFiles < (SELECT COUNT(*) FROM @URLs WHERE Mirror = 0) OR @NumberOfFiles % (SELECT NULLIF(COUNT(*),0) FROM @URLs WHERE Mirror = 0) > 0
+	  IF @NumberOfFiles > 32 AND (@BackupSoftware = 'SQLBACKUP' OR @BackupSoftware = 'DATA_DOMAIN_BOOST')
+	  BEGIN
+	    SET @NumberOfFiles = 32
+	  END
+	  ELSE IF (@NumberOfFiles > 64)
+	  BEGIN
+	    SET @NumberOfFiles = 64
+	  END
+	  ELSE IF @NumberOfFiles < 1 OR @NumberOfFiles IS NULL OR @NumberOfFiles < (SELECT COUNT(*) FROM @Directories WHERE Mirror = 0) OR @NumberOfFiles % (SELECT NULLIF(COUNT(*),0) FROM @Directories WHERE Mirror = 0) > 0 OR (@URL IS NOT NULL AND @Credential IS NOT NULL AND @NumberOfFiles <> 1) OR (@NumberOfFiles > 1 AND @BackupSoftware IN('SQLBACKUP','SQLSAFE') AND EXISTS(SELECT * FROM @Directories WHERE Mirror = 1)) OR @NumberOfFiles < (SELECT COUNT(*) FROM @URLs WHERE Mirror = 0) OR @NumberOfFiles % (SELECT NULLIF(COUNT(*),0) FROM @URLs WHERE Mirror = 0) > 0
 	  BEGIN
 		SET @ErrorMessage = 'The value for the parameter @NumberOfFiles as determined by @DatabaseSplitSize parameter is not supported.'
 		RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
