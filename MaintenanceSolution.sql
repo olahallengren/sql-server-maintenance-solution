@@ -415,7 +415,8 @@ ALTER PROCEDURE [dbo].[DatabaseBackup]
 @DatabaseOrder nvarchar(max) = NULL,
 @DatabasesInParallel nvarchar(max) = 'N',
 @LogToTable nvarchar(max) = 'N',
-@Execute nvarchar(max) = 'Y'
+@Execute nvarchar(max) = 'Y',
+@Stats int = null
 
 AS
 
@@ -683,6 +684,7 @@ BEGIN
   SET @Parameters = @Parameters + ', @DatabasesInParallel = ' + ISNULL('''' + REPLACE(@DatabasesInParallel,'''','''''') + '''','NULL')
   SET @Parameters = @Parameters + ', @LogToTable = ' + ISNULL('''' + REPLACE(@LogToTable,'''','''''') + '''','NULL')
   SET @Parameters = @Parameters + ', @Execute = ' + ISNULL('''' + REPLACE(@Execute,'''','''''') + '''','NULL')
+  SET @Parameters = @Parameters + ', @Stats = ' + ISNULL(CAST(@Stats AS nvarchar), 'NULL')
 
   SET @StartMessage = 'Date and time: ' + CONVERT(nvarchar,@StartTime,120)
   RAISERROR('%s',10,1,@StartMessage) WITH NOWAIT
@@ -1959,6 +1961,13 @@ BEGIN
     RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
+  IF ISNULL(@Stats, 1) NOT BETWEEN 1 AND 100
+  BEGIN;
+    SET @ErrorMessage = 'The value for the parameter @stats is not supported.' + CHAR(13) + CHAR(10) + ' '
+    RAISERROR(@ErrorMessage,16,1) WITH NOWAIT;
+    SET @Error = @@ERROR
+  END;
+
   IF @Error <> 0
   BEGIN
     SET @ErrorMessage = 'The documentation is available at https://ola.hallengren.com/sql-server-backup.html.'
@@ -1967,6 +1976,7 @@ BEGIN
     SET @ReturnCode = @Error
     GOTO Logging
   END
+
 
   ----------------------------------------------------------------------------------------------------
   --// Check that selected databases and availability groups exist                                //--
@@ -3202,6 +3212,7 @@ BEGIN
           IF @Encrypt = 'Y' AND @ServerAsymmetricKey IS NOT NULL SET @CurrentCommand03 = @CurrentCommand03 + 'SERVER ASYMMETRIC KEY = ' + QUOTENAME(@ServerAsymmetricKey)
           IF @Encrypt = 'Y' SET @CurrentCommand03 = @CurrentCommand03 + ')'
           IF @URL IS NOT NULL AND @Credential IS NOT NULL SET @CurrentCommand03 = @CurrentCommand03 + ', CREDENTIAL = N''' + REPLACE(@Credential,'''','''''') + ''''
+          IF @Stats IS NOT NULL SET @CurrentCommand03 = @CurrentCommand03 + ', STATS = ' + CAST(@Stats AS nvarchar)
         END
 
         IF @BackupSoftware = 'LITESPEED'
@@ -3421,6 +3432,7 @@ BEGIN
             SET @CurrentCommand04 = @CurrentCommand04 + ' WITH '
             IF @CheckSum = 'Y' SET @CurrentCommand04 = @CurrentCommand04 + 'CHECKSUM'
             IF @CheckSum = 'N' SET @CurrentCommand04 = @CurrentCommand04 + 'NO_CHECKSUM'
+            IF @Stats IS NOT NULL SET @CurrentCommand04 = @CurrentCommand04 + ', STATS = ' + CAST(@Stats AS nvarchar)
             IF @URL IS NOT NULL AND @Credential IS NOT NULL SET @CurrentCommand04 = @CurrentCommand04 + ', CREDENTIAL = N''' + REPLACE(@Credential,'''','''''') + ''''
           END
 
