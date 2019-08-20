@@ -914,7 +914,7 @@ BEGIN
   IF @DatabaseOrder IN('DATABASE_SIZE_ASC','DATABASE_SIZE_DESC')
   BEGIN
     UPDATE tmpDatabases
-    SET DatabaseSize = (SELECT SUM(size) FROM sys.master_files WHERE [type] = 0 AND database_id = DB_ID(tmpDatabases.DatabaseName))
+    SET DatabaseSize = (SELECT SUM(cast(size as bigint)) FROM sys.master_files WHERE [type] = 0 AND database_id = DB_ID(tmpDatabases.DatabaseName))
     FROM @tmpDatabases tmpDatabases
   END
 
