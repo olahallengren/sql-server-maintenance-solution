@@ -26,6 +26,10 @@ ALTER PROCEDURE [dbo].[IndexOptimize]
 @OnlyModifiedStatistics nvarchar(max) = 'N',
 @StatisticsModificationLevel int = NULL,
 @StatisticsSample int = NULL,
+@StatisticsSampleLT int = NULL,
+@StatisticsSampleVLT int = NULL,
+@LTRowLimit bigint = NULL,
+@VLTRowLimit bigint = NULL,
 @StatisticsResample nvarchar(max) = 'N',
 @PartitionLevel nvarchar(max) = 'Y',
 @MSShippedObjects nvarchar(max) = 'N',
@@ -304,6 +308,10 @@ BEGIN
   SET @Parameters = @Parameters + ', @OnlyModifiedStatistics = ' + ISNULL('''' + REPLACE(@OnlyModifiedStatistics,'''','''''') + '''','NULL')
   SET @Parameters = @Parameters + ', @StatisticsModificationLevel = ' + ISNULL(CAST(@StatisticsModificationLevel AS nvarchar),'NULL')
   SET @Parameters = @Parameters + ', @StatisticsSample = ' + ISNULL(CAST(@StatisticsSample AS nvarchar),'NULL')
+  SET @Parameters = @Parameters + ', @StatisticsSampleLT = ' + ISNULL(CAST(@StatisticsSampleLT AS nvarchar(3)),'NULL')
+  SET @Parameters = @Parameters + ', @StatisticsSampleVLT = ' + ISNULL(CAST(@StatisticsSampleVLT AS nvarchar(3)),'NULL')
+  SET @Parameters = @Parameters + ', @LTRowLimit = ' + ISNULL(CAST(@LTRowLimit AS nvarchar(11)),'NULL')
+  SET @Parameters = @Parameters + ', @VLTRowLimit = ' + ISNULL(CAST(@VLTRowLimit AS nvarchar(18)),'NULL')
   SET @Parameters = @Parameters + ', @StatisticsResample = ' + ISNULL('''' + REPLACE(@StatisticsResample,'''','''''') + '''','NULL')
   SET @Parameters = @Parameters + ', @PartitionLevel = ' + ISNULL('''' + REPLACE(@PartitionLevel,'''','''''') + '''','NULL')
   SET @Parameters = @Parameters + ', @MSShippedObjects = ' + ISNULL('''' + REPLACE(@MSShippedObjects,'''','''''') + '''','NULL')
@@ -935,6 +943,30 @@ BEGIN
     RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
+  IF @StatisticsSampleLT <= 0 OR @StatisticsSampleLT  > 100
+  BEGIN
+    SET @ErrorMessage = 'The value for the parameter @StatisticsSampleLT is not supported.'
+    RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
+    SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
+  END
+
+  IF @StatisticsSampleVLT <= 0 OR @StatisticsSampleVLT  > 100
+  BEGIN
+    SET @ErrorMessage = 'The value for the parameter @StatisticsSampleVLT is not supported.'
+    RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
+    SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
+  END
+
+  IF @VLTRowLimit < @LTRowLimit
+  BEGIN
+    SET @ErrorMessage = 'The value for the parameter @VLTRowLimit must be higher than @LTRowLimit.'
+    RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
+    SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
+  END
+  
   IF @StatisticsResample NOT IN('Y','N') OR @StatisticsResample IS NULL OR (@StatisticsResample = 'Y' AND @StatisticsSample IS NOT NULL)
   BEGIN
     SET @ErrorMessage = 'The value for the parameter @StatisticsResample is not supported.'
@@ -1559,7 +1591,7 @@ BEGIN
 
         SET @CurrentCommand01 = @CurrentCommand01 + ') IndexesStatistics'
 
-        INSERT INTO @tmpIndexesStatistics (SchemaID, SchemaName, ObjectID, ObjectName, ObjectType, IsMemoryOptimized, IndexID, IndexName, IndexType, AllowPageLocks, IsImageText, IsNewLOB, IsFileStream, IsColumnStore, IsComputed, IsTimestamp, OnReadOnlyFileGroup, ResumableIndexOperation, StatisticsID, StatisticsName, [NoRecompute], IsIncremental, PartitionID, PartitionNumber, PartitionCount, [Order], Selected, Completed)
+        INSERT INTO @tmpIndexesStatistics (SchemaID, SchemaName, ObjectID, ObjectName, ObjectType, IsMemoryOptimized, IndexID, IndexName, IndexType, AllowPageLocks, IsImageText, IsNewLOB, IsFileStream, IsColumnStore, IsComputed, IsTimestamp, OnReadOnlyFileGroup, ResumableIndexOperation, StatisticsID, StatisticsName, [NoRecompute], IsIncremental, [rows], PartitionID, PartitionNumber, PartitionCount, [Order], Selected, Completed)
         EXECUTE sp_executesql @statement = @CurrentCommand01
         SET @Error = @@ERROR
         IF @Error <> 0
@@ -1923,7 +1955,14 @@ BEGIN
           SET @CurrentUpdateStatistics = 'N'
         END
 
-        SET @CurrentStatisticsSample = @StatisticsSample
+        -- Define current statistics sample based on table rows
+        SET @CurrentStatisticsSample = 
+          CASE 
+            WHEN @CurrentRowCount <= @LTRowLimit THEN @StatisticsSample
+            WHEN @CurrentRowCount >  @LTRowLimit AND @CurrentRowCount <= @VLTRowLimit THEN COALESCE(@StatisticsSampleLT, @StatisticsSample)
+            WHEN @CurrentRowCount >  @VLTRowLimit THEN COALESCE(@StatisticsSampleVLT, @StatisticsSampleLT, @StatisticsSample)
+            ELSE @StatisticsSample
+          END;
         SET @CurrentStatisticsResample = @StatisticsResample
 
         -- Memory-optimized tables only supports FULLSCAN and RESAMPLE in SQL Server 2014
