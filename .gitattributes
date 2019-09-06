@@ -1,0 +1,2 @@
+# linguist overrides
+*.sql linguist-language=TSQL
