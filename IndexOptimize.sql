@@ -60,6 +60,19 @@ BEGIN
 
   SET NUMERIC_ROUNDABORT OFF
 
+  IF OBJECT_ID(N'tempdb..#IncrementalStatsCache', N'U') IS NOT NULL DROP TABLE #IncrementalStatsCache;
+  CREATE TABLE #IncrementalStatsCache ([partition_number] int PRIMARY KEY,
+                                       [last_updated] datetime2,
+                                       [rows] bigint,
+                                       [rows_sampled] bigint,
+                                       [steps] int,
+                                       [unfiltered_rows] bigint,
+                                       [modification_counter] bigint);
+
+  DECLARE @IncStatsCacheObjectID        int = 0;
+  DECLARE @IncStatsCacheStatisticsID    int = 0;
+  DECLARE @GetIncStatsCacheCommand      nvarchar(max);
+
   DECLARE @StartMessage nvarchar(max)
   DECLARE @EndMessage nvarchar(max)
   DECLARE @DatabaseMessage nvarchar(max)
@@ -1510,7 +1523,7 @@ BEGIN
 
         IF (EXISTS(SELECT * FROM @ActionsPreferred) AND @UpdateStatistics = 'COLUMNS') OR @UpdateStatistics = 'ALL'
         BEGIN
-          SET @CurrentCommand01 = @CurrentCommand01 + ' UNION '
+          SET @CurrentCommand01 = @CurrentCommand01 + ' UNION ALL '
         END
 
         IF @UpdateStatistics IN('ALL','COLUMNS')
@@ -1766,7 +1779,27 @@ BEGIN
 
           IF @PartitionLevelStatistics = 1 AND @CurrentIsIncremental = 1
           BEGIN
-            SET @CurrentCommand04 = @CurrentCommand04 + 'SELECT @ParamRowCount = [rows], @ParamModificationCounter = modification_counter FROM sys.dm_db_incremental_stats_properties (@ParamObjectID, @ParamStatisticsID) WHERE partition_number = @ParamPartitionNumber'
+            IF (@IncStatsCacheObjectID <> @CurrentObjectID OR @IncStatsCacheStatisticsID <> @CurrentStatisticsID)
+            BEGIN
+              SET @GetIncStatsCacheCommand = N'USE ' + QUOTENAME(@CurrentDatabaseName) + '; ' +
+                  N'TRUNCATE TABLE #IncrementalStatsCache; ' +
+				  N'INSERT INTO #IncrementalStatsCache ([partition_number], [last_updated], [rows], [rows_sampled],	[steps], [unfiltered_rows], [modification_counter]) ' +
+                  N'SELECT [partition_number], [last_updated], [rows], [rows_sampled],	[steps], [unfiltered_rows], [modification_counter] FROM sys.dm_db_incremental_stats_properties (@ParamObjectID, @ParamStatisticsID);';
+
+              BEGIN TRY
+                EXECUTE sp_executesql @statement = @GetIncStatsCacheCommand, @params = N'@ParamObjectID int, @ParamStatisticsID int', @ParamObjectID = @CurrentObjectID, @ParamStatisticsID = @CurrentStatisticsID;
+                SET @IncStatsCacheObjectID = @CurrentObjectID;
+                SET @IncStatsCacheStatisticsID = @CurrentStatisticsID;
+              END TRY
+              BEGIN CATCH
+                SET @ErrorMessage = 'Msg ' + CAST(ERROR_NUMBER() AS nvarchar) + ', ' + ISNULL(ERROR_MESSAGE(),'');
+                SET @Severity = 16;
+                RAISERROR('%s',@Severity,1,@ErrorMessage) WITH NOWAIT;
+                RAISERROR(@EmptyLine,10,1) WITH NOWAIT;
+              END CATCH
+            END
+
+            SET @CurrentCommand04 = @CurrentCommand04 + 'SELECT @ParamRowCount = [rows], @ParamModificationCounter = modification_counter FROM #IncrementalStatsCache WHERE partition_number = @ParamPartitionNumber;'
           END
           ELSE
           IF (@Version >= 10.504000 AND @Version < 11) OR @Version >= 11.03000
@@ -2176,8 +2209,8 @@ BEGIN
           IF @CurrentUpdateStatisticsWithClause IS NOT NULL SET @CurrentCommand07 = @CurrentCommand07 + @CurrentUpdateStatisticsWithClause
 
           IF @PartitionLevelStatistics = 1 AND @CurrentIsIncremental = 1 AND @CurrentPartitionNumber IS NOT NULL SET @CurrentCommand07 = @CurrentCommand07 + ' ON PARTITIONS(' + CAST(@CurrentPartitionNumber AS nvarchar(max)) + ')'
-
-          EXECUTE @CurrentCommandOutput07 = [dbo].[CommandExecute] @Command = @CurrentCommand07, @CommandType = @CurrentCommandType07, @Mode = 2, @Comment = @CurrentComment07, @DatabaseName = @CurrentDatabaseName, @SchemaName = @CurrentSchemaName, @ObjectName = @CurrentObjectName, @ObjectType = @CurrentObjectType, @IndexName = @CurrentIndexName, @IndexType = @CurrentIndexType, @StatisticsName = @CurrentStatisticsName, @ExtendedInfo = @CurrentExtendedInfo07, @LockMessageSeverity = @LockMessageSeverity, @LogToTable = @LogToTable, @Execute = @Execute
+          
+          EXECUTE @CurrentCommandOutput07 = [dbo].[CommandExecute] @Command = @CurrentCommand07, @CommandType = @CurrentCommandType07, @Mode = 2, @Comment = @CurrentComment07, @DatabaseName = @CurrentDatabaseName, @SchemaName = @CurrentSchemaName, @ObjectName = @CurrentObjectName, @ObjectType = @CurrentObjectType, @IndexName = @CurrentIndexName, @IndexType = @CurrentIndexType, @StatisticsName = @CurrentStatisticsName, @PartitionNumber = @CurrentPartitionNumber, @ExtendedInfo = @CurrentExtendedInfo07, @LockMessageSeverity = @LockMessageSeverity, @LogToTable = @LogToTable, @Execute = @Execute
           SET @Error = @@ERROR
           IF @Error <> 0 SET @CurrentCommandOutput07 = @Error
           IF @CurrentCommandOutput07 <> 0 SET @ReturnCode = @CurrentCommandOutput07
