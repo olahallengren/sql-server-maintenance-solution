@@ -1,4 +1,4 @@
-﻿SET ANSI_NULLS ON
+SET ANSI_NULLS ON
 GO
 SET QUOTED_IDENTIFIER ON
 GO
@@ -139,6 +139,7 @@ BEGIN
   DECLARE @CurrentAvailabilityGroup nvarchar(max)
   DECLARE @CurrentAvailabilityGroupRole nvarchar(max)
   DECLARE @CurrentAvailabilityGroupBackupPreference nvarchar(max)
+  DECLARE @CurrentAvailabilityGroupPrimaryNode nvarchar(max)
   DECLARE @CurrentIsPreferredBackupReplica bit
   DECLARE @CurrentDatabaseMirroringRole nvarchar(max)
   DECLARE @CurrentLogShippingRole nvarchar(max)
@@ -240,6 +241,8 @@ BEGIN
                                Mirror bit)
 
   DECLARE @CurrentCleanupDates TABLE (CleanupDate datetime, Mirror bit)
+
+  DECLARE @CurrentLogValues TABLE (log_backup_time datetime, log_since_last_log_backup_mb float)
 
   DECLARE @DirectoryCheck bit
 
@@ -1950,10 +1953,12 @@ BEGIN
     BEGIN
       SELECT @CurrentAvailabilityGroup = availability_groups.name,
              @CurrentAvailabilityGroupRole = dm_hadr_availability_replica_states.role_desc,
-             @CurrentAvailabilityGroupBackupPreference = UPPER(availability_groups.automated_backup_preference_desc)
+             @CurrentAvailabilityGroupBackupPreference = UPPER(availability_groups.automated_backup_preference_desc),
+			 @CurrentAvailabilityGroupPrimaryNode = dm_hadr_availability_group_states.primary_replica
       FROM sys.databases databases
       INNER JOIN sys.dm_hadr_availability_replica_states dm_hadr_availability_replica_states ON databases.replica_id = dm_hadr_availability_replica_states.replica_id
       INNER JOIN sys.availability_groups availability_groups ON dm_hadr_availability_replica_states.group_id = availability_groups.group_id
+	  INNER JOIN sys.dm_hadr_availability_group_states dm_hadr_availability_group_states ON dm_hadr_availability_replica_states.group_id = dm_hadr_availability_group_states.group_id
       WHERE databases.name = @CurrentDatabaseName
     END
 
@@ -2005,9 +2010,34 @@ BEGIN
 
     IF @CurrentDatabaseState = 'ONLINE' AND ((@Version >= 12.06024 AND @Version < 13) OR @Version >= 13.05026)
     BEGIN
-      SELECT @CurrentLastLogBackup = log_backup_time,
-             @CurrentLogSizeSinceLastLogBackup = log_since_last_log_backup_mb
-      FROM sys.dm_db_log_stats (@CurrentDatabaseID)
+	  IF @CurrentAvailabilityGroupPrimaryNode != @@SERVERNAME
+	  BEGIN
+		-- Check existence of linked server
+		IF NOT EXISTS (SELECT TOP 1 1 FROM sys.servers where name = @CurrentAvailabilityGroupPrimaryNode)
+		BEGIN
+		  SET @ErrorMessage = 'The linked server '+@CurrentAvailabilityGroupPrimaryNode+' does not exists or access is forbidden.'
+		  RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
+		END
+
+		-- retrieve values on primary server
+	    SET @CurrentCommand01 = 'SELECT log_backup_time,
+        log_since_last_log_backup_mb
+        FROM master.sys.dm_db_log_stats (DB_ID('''+@CurrentDatabaseName+'''))'
+	    SET @CurrentCommand01 = 'EXEC ('''+replace (@CurrentCommand01,'''','''''')+''') at [' + @CurrentAvailabilityGroupPrimaryNode + ']'
+	    
+	    INSERT INTO @CurrentLogValues (log_backup_time, log_since_last_log_backup_mb)
+	    EXEC (@CurrentCommand01)
+	    
+	    SELECT @CurrentLastLogBackup = log_backup_time
+	           , @CurrentLogSizeSinceLastLogBackup = log_since_last_log_backup_mb
+	    FROM @CurrentLogValues
+	  END
+	  ELSE
+	  BEGIN
+		  SELECT @CurrentLastLogBackup = log_backup_time,
+				 @CurrentLogSizeSinceLastLogBackup = log_since_last_log_backup_mb
+		  FROM sys.dm_db_log_stats (@CurrentDatabaseID)
+	  END
     END
 
     IF @CurrentBackupType = 'DIFF'
