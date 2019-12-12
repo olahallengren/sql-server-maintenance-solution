@@ -41,7 +41,8 @@ ALTER PROCEDURE [dbo].[IndexOptimize]
 @DatabaseOrder nvarchar(max) = NULL,
 @DatabasesInParallel nvarchar(max) = 'N',
 @LogToTable nvarchar(max) = 'N',
-@Execute nvarchar(max) = 'Y'
+@Execute nvarchar(max) = 'Y',
+@ErrorsOnly nvarchar(1) = 'Y'
 
 AS
 
@@ -320,35 +321,39 @@ BEGIN
   SET @Parameters = @Parameters + ', @DatabasesInParallel = ' + ISNULL('''' + REPLACE(@DatabasesInParallel,'''','''''') + '''','NULL')
   SET @Parameters = @Parameters + ', @LogToTable = ' + ISNULL('''' + REPLACE(@LogToTable,'''','''''') + '''','NULL')
   SET @Parameters = @Parameters + ', @Execute = ' + ISNULL('''' + REPLACE(@Execute,'''','''''') + '''','NULL')
+  SET @Parameters = @Parameters + ', @ErrorsOnly = ' + ISNULL('''' + REPLACE(@ErrorsOnly,'''','''''') + '''','NULL')
 
-  SET @StartMessage = 'Date and time: ' + CONVERT(nvarchar,@StartTime,120)
-  RAISERROR('%s',10,1,@StartMessage) WITH NOWAIT
+  IF @ErrorsOnly = 'N'
+  BEGIN
+	  SET @StartMessage = 'Date and time: ' + CONVERT(nvarchar,@StartTime,120)
+	  RAISERROR('%s',10,1,@StartMessage) WITH NOWAIT
 
-  SET @StartMessage = 'Server: ' + CAST(SERVERPROPERTY('ServerName') AS nvarchar(max))
-  RAISERROR('%s',10,1,@StartMessage) WITH NOWAIT
+	  SET @StartMessage = 'Server: ' + CAST(SERVERPROPERTY('ServerName') AS nvarchar(max))
+	  RAISERROR('%s',10,1,@StartMessage) WITH NOWAIT
 
-  SET @StartMessage = 'Version: ' + CAST(SERVERPROPERTY('ProductVersion') AS nvarchar(max))
-  RAISERROR('%s',10,1,@StartMessage) WITH NOWAIT
+	  SET @StartMessage = 'Version: ' + CAST(SERVERPROPERTY('ProductVersion') AS nvarchar(max))
+	  RAISERROR('%s',10,1,@StartMessage) WITH NOWAIT
 
-  SET @StartMessage = 'Edition: ' + CAST(SERVERPROPERTY('Edition') AS nvarchar(max))
-  RAISERROR('%s',10,1,@StartMessage) WITH NOWAIT
+	  SET @StartMessage = 'Edition: ' + CAST(SERVERPROPERTY('Edition') AS nvarchar(max))
+	  RAISERROR('%s',10,1,@StartMessage) WITH NOWAIT
 
-  SET @StartMessage = 'Platform: ' + @HostPlatform
-  RAISERROR('%s',10,1,@StartMessage) WITH NOWAIT
+	  SET @StartMessage = 'Platform: ' + @HostPlatform
+	  RAISERROR('%s',10,1,@StartMessage) WITH NOWAIT
 
-  SET @StartMessage = 'Procedure: ' + QUOTENAME(DB_NAME(DB_ID())) + '.' + QUOTENAME(@SchemaName) + '.' + QUOTENAME(@ObjectName)
-  RAISERROR('%s',10,1,@StartMessage) WITH NOWAIT
+	  SET @StartMessage = 'Procedure: ' + QUOTENAME(DB_NAME(DB_ID())) + '.' + QUOTENAME(@SchemaName) + '.' + QUOTENAME(@ObjectName)
+	  RAISERROR('%s',10,1,@StartMessage) WITH NOWAIT
 
-  SET @StartMessage = 'Parameters: ' + @Parameters
-  RAISERROR('%s',10,1,@StartMessage) WITH NOWAIT
+	  SET @StartMessage = 'Parameters: ' + @Parameters
+	  RAISERROR('%s',10,1,@StartMessage) WITH NOWAIT
 
-  SET @StartMessage = 'Version: ' + @VersionTimestamp
-  RAISERROR('%s',10,1,@StartMessage) WITH NOWAIT
+	  SET @StartMessage = 'Version: ' + @VersionTimestamp
+	  RAISERROR('%s',10,1,@StartMessage) WITH NOWAIT
 
-  SET @StartMessage = 'Source: https://ola.hallengren.com'
-  RAISERROR('%s',10,1,@StartMessage) WITH NOWAIT
+	  SET @StartMessage = 'Source: https://ola.hallengren.com'
+	  RAISERROR('%s',10,1,@StartMessage) WITH NOWAIT
 
-  RAISERROR(@EmptyLine,10,1) WITH NOWAIT
+	  RAISERROR(@EmptyLine,10,1) WITH NOWAIT
+  END
 
   ----------------------------------------------------------------------------------------------------
   --// Check core requirements                                                                    //--
@@ -1063,6 +1068,14 @@ BEGIN
     RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
+  IF @ErrorsOnly NOT IN('Y','N') OR @ErrorsOnly IS NULL
+  BEGIN
+    SET @ErrorMessage = 'The value for the parameter @ErrorsOnly is not supported.'
+    RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
+    SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
+  END
+
   IF @Error <> 0
   BEGIN
     SET @ErrorMessage = 'The documentation is available at https://ola.hallengren.com/sql-server-index-and-statistics-maintenance.html.'
@@ -1392,49 +1405,52 @@ BEGIN
       WHERE database_id = @CurrentDatabaseID
     END
 
-    SET @DatabaseMessage = 'Date and time: ' + CONVERT(nvarchar,GETDATE(),120)
-    RAISERROR('%s',10,1,@DatabaseMessage) WITH NOWAIT
+	IF @ErrorsOnly = 'N'
+	BEGIN
+		SET @DatabaseMessage = 'Date and time: ' + CONVERT(nvarchar,GETDATE(),120)
+		RAISERROR('%s',10,1,@DatabaseMessage) WITH NOWAIT
 
-    SET @DatabaseMessage = 'Database: ' + QUOTENAME(@CurrentDatabaseName)
-    RAISERROR('%s',10,1,@DatabaseMessage) WITH NOWAIT
+		SET @DatabaseMessage = 'Database: ' + QUOTENAME(@CurrentDatabaseName)
+		RAISERROR('%s',10,1,@DatabaseMessage) WITH NOWAIT
 
-    SET @DatabaseMessage = 'State: ' + @CurrentDatabaseState
-    RAISERROR('%s',10,1,@DatabaseMessage) WITH NOWAIT
+		SET @DatabaseMessage = 'State: ' + @CurrentDatabaseState
+		RAISERROR('%s',10,1,@DatabaseMessage) WITH NOWAIT
 
-    SET @DatabaseMessage = 'Standby: ' + CASE WHEN @CurrentInStandby = 1 THEN 'Yes' ELSE 'No' END
-    RAISERROR('%s',10,1,@DatabaseMessage) WITH NOWAIT
+		SET @DatabaseMessage = 'Standby: ' + CASE WHEN @CurrentInStandby = 1 THEN 'Yes' ELSE 'No' END
+		RAISERROR('%s',10,1,@DatabaseMessage) WITH NOWAIT
 
-    SET @DatabaseMessage = 'Updateability: ' + CASE WHEN @CurrentIsReadOnly = 1 THEN 'READ_ONLY' WHEN  @CurrentIsReadOnly = 0 THEN 'READ_WRITE' END
-    RAISERROR('%s',10,1,@DatabaseMessage) WITH NOWAIT
+		SET @DatabaseMessage = 'Updateability: ' + CASE WHEN @CurrentIsReadOnly = 1 THEN 'READ_ONLY' WHEN  @CurrentIsReadOnly = 0 THEN 'READ_WRITE' END
+		RAISERROR('%s',10,1,@DatabaseMessage) WITH NOWAIT
 
-    SET @DatabaseMessage = 'User access: ' + @CurrentUserAccess
-    RAISERROR('%s',10,1,@DatabaseMessage) WITH NOWAIT
+		SET @DatabaseMessage = 'User access: ' + @CurrentUserAccess
+		RAISERROR('%s',10,1,@DatabaseMessage) WITH NOWAIT
 
-    IF @CurrentIsDatabaseAccessible IS NOT NULL
-    BEGIN
-      SET @DatabaseMessage = 'Is accessible: ' + CASE WHEN @CurrentIsDatabaseAccessible = 1 THEN 'Yes' ELSE 'No' END
-      RAISERROR('%s',10,1,@DatabaseMessage) WITH NOWAIT
-    END
+		IF @CurrentIsDatabaseAccessible IS NOT NULL
+		BEGIN
+		  SET @DatabaseMessage = 'Is accessible: ' + CASE WHEN @CurrentIsDatabaseAccessible = 1 THEN 'Yes' ELSE 'No' END
+		  RAISERROR('%s',10,1,@DatabaseMessage) WITH NOWAIT
+		END
 
-    SET @DatabaseMessage = 'Recovery model: ' + @CurrentRecoveryModel
-    RAISERROR('%s',10,1,@DatabaseMessage) WITH NOWAIT
+		SET @DatabaseMessage = 'Recovery model: ' + @CurrentRecoveryModel
+		RAISERROR('%s',10,1,@DatabaseMessage) WITH NOWAIT
 
-    IF @CurrentAvailabilityGroup IS NOT NULL
-    BEGIN
-      SET @DatabaseMessage = 'Availability group: ' + ISNULL(@CurrentAvailabilityGroup,'N/A')
-      RAISERROR('%s',10,1,@DatabaseMessage) WITH NOWAIT
+		IF @CurrentAvailabilityGroup IS NOT NULL
+		BEGIN
+		  SET @DatabaseMessage = 'Availability group: ' + ISNULL(@CurrentAvailabilityGroup,'N/A')
+		  RAISERROR('%s',10,1,@DatabaseMessage) WITH NOWAIT
 
-      SET @DatabaseMessage = 'Availability group role: ' + ISNULL(@CurrentAvailabilityGroupRole,'N/A')
-      RAISERROR('%s',10,1,@DatabaseMessage) WITH NOWAIT
-    END
+		  SET @DatabaseMessage = 'Availability group role: ' + ISNULL(@CurrentAvailabilityGroupRole,'N/A')
+		  RAISERROR('%s',10,1,@DatabaseMessage) WITH NOWAIT
+		END
 
-    IF @CurrentDatabaseMirroringRole IS NOT NULL
-    BEGIN
-      SET @DatabaseMessage = 'Database mirroring role: ' + @CurrentDatabaseMirroringRole
-      RAISERROR('%s',10,1,@DatabaseMessage) WITH NOWAIT
-    END
+		IF @CurrentDatabaseMirroringRole IS NOT NULL
+		BEGIN
+		  SET @DatabaseMessage = 'Database mirroring role: ' + @CurrentDatabaseMirroringRole
+		  RAISERROR('%s',10,1,@DatabaseMessage) WITH NOWAIT
+		END
 
-    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
+		RAISERROR(@EmptyLine,10,1) WITH NOWAIT
+	END
 
     IF @CurrentDatabaseState = 'ONLINE'
     AND NOT (@CurrentUserAccess = 'SINGLE_USER' AND @CurrentIsDatabaseAccessible = 0)
@@ -2320,10 +2336,13 @@ BEGIN
   ----------------------------------------------------------------------------------------------------
 
   Logging:
-  SET @EndMessage = 'Date and time: ' + CONVERT(nvarchar,GETDATE(),120)
-  RAISERROR('%s',10,1,@EndMessage) WITH NOWAIT
+  IF @ErrorsOnly = 'N'
+  BEGIN
+	  SET @EndMessage = 'Date and time: ' + CONVERT(nvarchar,GETDATE(),120)
+	  RAISERROR('%s',10,1,@EndMessage) WITH NOWAIT
 
-  RAISERROR(@EmptyLine,10,1) WITH NOWAIT
+	  RAISERROR(@EmptyLine,10,1) WITH NOWAIT
+  END
 
   IF @ReturnCode <> 0
   BEGIN
