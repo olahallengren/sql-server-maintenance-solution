@@ -332,11 +332,11 @@ BEGIN
   SET @EndTime = GETDATE()
   SET @EndTimeSec = CONVERT(datetime,CONVERT(varchar,@EndTime,120),120)
 
-  SET @EndMessage = 'Outcome: ' + CASE WHEN @Execute = 'N' THEN 'Not Executed' WHEN @Error = 0 THEN 'Succeeded' ELSE 'Failed' END
-  RAISERROR('%s',10,1,@EndMessage) WITH NOWAIT
-
   IF @ErrorsOnly = 'N'
   BEGIN
+	  SET @EndMessage = 'Outcome: ' + CASE WHEN @Execute = 'N' THEN 'Not Executed' WHEN @Error = 0 THEN 'Succeeded' ELSE 'Failed' END
+	  RAISERROR('%s',10,1,@EndMessage) WITH NOWAIT
+
 	  SET @EndMessage = 'Duration: ' + CASE WHEN DATEDIFF(ss,@StartTimeSec, @EndTimeSec)/(24*3600) > 0 THEN CAST(DATEDIFF(ss,@StartTimeSec, @EndTimeSec)/(24*3600) AS nvarchar) + '.' ELSE '' END + CONVERT(nvarchar,@EndTimeSec - @StartTimeSec,108)
 	  RAISERROR('%s',10,1,@EndMessage) WITH NOWAIT
 
