@@ -64,7 +64,7 @@ ALTER PROCEDURE [dbo].[DatabaseBackup]
 @DatabasesInParallel nvarchar(max) = 'N',
 @LogToTable nvarchar(max) = 'N',
 @Execute nvarchar(max) = 'Y',
-@ErrorsOnly nvarchar(1) = 'Y'
+@OutputErrorsOnly nvarchar(max) = 'Y'
 
 AS
 
@@ -332,9 +332,9 @@ BEGIN
   SET @Parameters = @Parameters + ', @DatabasesInParallel = ' + ISNULL('''' + REPLACE(@DatabasesInParallel,'''','''''') + '''','NULL')
   SET @Parameters = @Parameters + ', @LogToTable = ' + ISNULL('''' + REPLACE(@LogToTable,'''','''''') + '''','NULL')
   SET @Parameters = @Parameters + ', @Execute = ' + ISNULL('''' + REPLACE(@Execute,'''','''''') + '''','NULL')
-  SET @Parameters = @Parameters + ', @ErrorsOnly = ' + ISNULL('''' + REPLACE(@ErrorsOnly,'''','''''') + '''','NULL')
+  SET @Parameters = @Parameters + ', @OutputErrorsOnly = ' + ISNULL('''' + REPLACE(@OutputErrorsOnly,'''','''''') + '''','NULL')
 
-  IF @ErrorsOnly = 'N'
+  IF @OutputErrorsOnly = 'N'
   BEGIN
 	SET @StartMessage = 'Date and time: ' + CONVERT(nvarchar,@StartTime,120)
 	RAISERROR('%s',10,1,@StartMessage) WITH NOWAIT
@@ -1612,9 +1612,9 @@ BEGIN
     RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
-  IF @ErrorsOnly NOT IN('Y','N') OR @ErrorsOnly IS NULL
+  IF @OutputErrorsOnly NOT IN('Y','N') OR @OutputErrorsOnly IS NULL
   BEGIN
-    SET @ErrorMessage = 'The value for the parameter @ErrorsOnly is not supported.'
+    SET @ErrorMessage = 'The value for the parameter @OutputErrorsOnly is not supported.'
     RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
     SET @Error = @@ERROR
     RAISERROR(@EmptyLine,10,1) WITH NOWAIT
@@ -2054,7 +2054,7 @@ BEGIN
       SET @CurrentLogShippingRole = 'SECONDARY'
     END
 
-	IF @ErrorsOnly = 'N'
+	IF @OutputErrorsOnly = 'N'
 	BEGIN
 		SET @DatabaseMessage = 'Date and time: ' + CONVERT(nvarchar,GETDATE(),120)
 		RAISERROR('%s',10,1,@DatabaseMessage) WITH NOWAIT
@@ -3351,7 +3351,7 @@ BEGIN
   ----------------------------------------------------------------------------------------------------
 
   Logging:
-  IF @ErrorsOnly = 'N'
+  IF @OutputErrorsOnly = 'N'
   BEGIN
 	  SET @EndMessage = 'Date and time: ' + CONVERT(nvarchar,GETDATE(),120)
 	  RAISERROR('%s',10,1,@EndMessage) WITH NOWAIT

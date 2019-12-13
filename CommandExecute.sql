@@ -25,7 +25,7 @@ ALTER PROCEDURE [dbo].[CommandExecute]
 @LockMessageSeverity int = 16,
 @LogToTable nvarchar(max),
 @Execute nvarchar(max),
-@ErrorsOnly nvarchar(1) = 'Y'
+@OutputErrorsOnly nvarchar(max) = 'Y'
 
 AS
 
@@ -158,9 +158,9 @@ BEGIN
     RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
-  IF @ErrorsOnly NOT IN('Y','N') OR @ErrorsOnly IS NULL
+  IF @OutputErrorsOnly NOT IN('Y','N') OR @OutputErrorsOnly IS NULL
   BEGIN
-    SET @ErrorMessage = 'The value for the parameter @ErrorsOnly is not supported.'
+    SET @ErrorMessage = 'The value for the parameter @OutputErrorsOnly is not supported.'
     RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
     SET @Error = @@ERROR
     RAISERROR(@EmptyLine,10,1) WITH NOWAIT
@@ -179,7 +179,7 @@ BEGIN
   SET @StartTime = GETDATE()
   SET @StartTimeSec = CONVERT(datetime,CONVERT(nvarchar,@StartTime,120),120)
 
-  IF @ErrorsOnly = 'N'
+  IF @OutputErrorsOnly = 'N'
   BEGIN
 	SET @StartMessage = 'Date and time: ' + CONVERT(nvarchar,@StartTimeSec,120)
 	RAISERROR('%s',10,1,@StartMessage) WITH NOWAIT
@@ -240,7 +240,7 @@ BEGIN
   SET @EndTime = GETDATE()
   SET @EndTimeSec = CONVERT(datetime,CONVERT(varchar,@EndTime,120),120)
 
-  IF @ErrorsOnly = 'N'
+  IF @OutputErrorsOnly = 'N'
   BEGIN
 	SET @EndMessage = 'Outcome: ' + CASE WHEN @Execute = 'N' THEN 'Not Executed' WHEN @Error = 0 THEN 'Succeeded' ELSE 'Failed' END
 	RAISERROR('%s',10,1,@EndMessage) WITH NOWAIT
