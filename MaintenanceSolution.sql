@@ -10,7 +10,7 @@ License: https://ola.hallengren.com/license.html
 
 GitHub: https://github.com/olahallengren/sql-server-maintenance-solution
 
-Version: 2019-12-01 21:32:32
+Version: 2019-12-26 15:59:04
 
 You can contact me by e-mail at ola@hallengren.com.
 
@@ -126,7 +126,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2019-12-01 21:32:32                                                               //--
+  --// Version: 2019-12-26 15:59:04                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -412,6 +412,7 @@ ALTER PROCEDURE [dbo].[DatabaseBackup]
 @FileExtensionDiff nvarchar(max) = NULL,
 @FileExtensionLog nvarchar(max) = NULL,
 @Init nvarchar(max) = 'N',
+@Format nvarchar(max) = 'N',
 @DatabaseOrder nvarchar(max) = NULL,
 @DatabasesInParallel nvarchar(max) = 'N',
 @LogToTable nvarchar(max) = 'N',
@@ -425,7 +426,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2019-12-01 21:32:32                                                               //--
+  --// Version: 2019-12-26 15:59:04                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -679,6 +680,7 @@ BEGIN
   SET @Parameters = @Parameters + ', @FileExtensionDiff = ' + ISNULL('''' + REPLACE(@FileExtensionDiff,'''','''''') + '''','NULL')
   SET @Parameters = @Parameters + ', @FileExtensionLog = ' + ISNULL('''' + REPLACE(@FileExtensionLog,'''','''''') + '''','NULL')
   SET @Parameters = @Parameters + ', @Init = ' + ISNULL('''' + REPLACE(@Init,'''','''''') + '''','NULL')
+  SET @Parameters = @Parameters + ', @Format = ' + ISNULL('''' + REPLACE(@Format,'''','''''') + '''','NULL')
   SET @Parameters = @Parameters + ', @DatabaseOrder = ' + ISNULL('''' + REPLACE(@DatabaseOrder,'''','''''') + '''','NULL')
   SET @Parameters = @Parameters + ', @DatabasesInParallel = ' + ISNULL('''' + REPLACE(@DatabasesInParallel,'''','''''') + '''','NULL')
   SET @Parameters = @Parameters + ', @LogToTable = ' + ISNULL('''' + REPLACE(@LogToTable,'''','''''') + '''','NULL')
@@ -1922,6 +1924,14 @@ BEGIN
   IF @Init NOT IN('Y','N') OR @Init IS NULL OR (@Init = 'Y' AND @BackupType = 'LOG') OR (@Init = 'Y' AND @BackupSoftware = 'DATA_DOMAIN_BOOST')
   BEGIN
     SET @ErrorMessage = 'The value for the parameter @Init is not supported.'
+    RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
+    SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
+  END
+
+  IF @Format NOT IN('Y','N') OR @Format IS NULL OR (@Format = 'Y' AND @BackupType = 'LOG') OR (@Format = 'Y' AND @BackupSoftware = 'DATA_DOMAIN_BOOST')
+  BEGIN
+    SET @ErrorMessage = 'The value for the parameter @Format is not supported.'
     RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
     SET @Error = @@ERROR
     RAISERROR(@EmptyLine,10,1) WITH NOWAIT
@@ -3193,6 +3203,7 @@ BEGIN
           IF @CopyOnly = 'Y' SET @CurrentCommand03 = @CurrentCommand03 + ', COPY_ONLY'
           IF @NoRecovery = 'Y' AND @CurrentBackupType = 'LOG' SET @CurrentCommand03 = @CurrentCommand03 + ', NORECOVERY'
           IF @Init = 'Y' SET @CurrentCommand03 = @CurrentCommand03 + ', INIT'
+          IF @Format = 'Y' SET @CurrentCommand03 = @CurrentCommand03 + ', FORMAT'
           IF @BlockSize IS NOT NULL SET @CurrentCommand03 = @CurrentCommand03 + ', BLOCKSIZE = ' + CAST(@BlockSize AS nvarchar)
           IF @BufferCount IS NOT NULL SET @CurrentCommand03 = @CurrentCommand03 + ', BUFFERCOUNT = ' + CAST(@BufferCount AS nvarchar)
           IF @MaxTransferSize IS NOT NULL SET @CurrentCommand03 = @CurrentCommand03 + ', MAXTRANSFERSIZE = ' + CAST(@MaxTransferSize AS nvarchar)
@@ -3244,6 +3255,7 @@ BEGIN
           IF @MaxTransferSize IS NOT NULL SET @CurrentCommand03 = @CurrentCommand03 + ', @maxtransfersize = ' + CAST(@MaxTransferSize AS nvarchar)
           IF @Threads IS NOT NULL SET @CurrentCommand03 = @CurrentCommand03 + ', @threads = ' + CAST(@Threads AS nvarchar)
           IF @Init = 'Y' SET @CurrentCommand03 = @CurrentCommand03 + ', @init = 1'
+          IF @Format = 'Y' SET @CurrentCommand03 = @CurrentCommand03 + ', @format = 1'
           IF @Throttle IS NOT NULL SET @CurrentCommand03 = @CurrentCommand03 + ', @throttle = ' + CAST(@Throttle AS nvarchar)
           IF @Description IS NOT NULL SET @CurrentCommand03 = @CurrentCommand03 + ', @desc = N''' + REPLACE(@Description,'''','''''') + ''''
 
@@ -3294,6 +3306,7 @@ BEGIN
           IF @CopyOnly = 'Y' SET @CurrentCommand03 = @CurrentCommand03 + ', COPY_ONLY'
           IF @NoRecovery = 'Y' AND @CurrentBackupType = 'LOG' SET @CurrentCommand03 = @CurrentCommand03 + ', NORECOVERY'
           IF @Init = 'Y' SET @CurrentCommand03 = @CurrentCommand03 + ', INIT'
+          IF @Format = 'Y' SET @CurrentCommand03 = @CurrentCommand03 + ', FORMAT'
           IF @CompressionLevel IS NOT NULL SET @CurrentCommand03 = @CurrentCommand03 + ', COMPRESSION = ' + CAST(@CompressionLevel AS nvarchar)
           IF @Threads IS NOT NULL SET @CurrentCommand03 = @CurrentCommand03 + ', THREADCOUNT = ' + CAST(@Threads AS nvarchar)
           IF @MaxTransferSize IS NOT NULL SET @CurrentCommand03 = @CurrentCommand03 + ', MAXTRANSFERSIZE = ' + CAST(@MaxTransferSize AS nvarchar)
@@ -3740,7 +3753,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2019-12-01 21:32:32                                                               //--
+  --// Version: 2019-12-26 15:59:04                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -5534,7 +5547,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2019-12-01 21:32:32                                                               //--
+  --// Version: 2019-12-26 15:59:04                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
