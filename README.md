@@ -5,6 +5,7 @@
 [![issues badge]][issues]
 [![bug_report badge]][bug_report]
 [![feature_request badge]][feature_request]
+[![feature_request badge]][questions]
 
 ## Getting Started
 
