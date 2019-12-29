@@ -61,6 +61,7 @@ ALTER PROCEDURE [dbo].[DatabaseBackup]
 @FileExtensionLog nvarchar(max) = NULL,
 @Init nvarchar(max) = 'N',
 @Format nvarchar(max) = 'N',
+@ObjectLevelRecovery nvarchar(max) = 'N',
 @DatabaseOrder nvarchar(max) = NULL,
 @DatabasesInParallel nvarchar(max) = 'N',
 @LogToTable nvarchar(max) = 'N',
@@ -74,7 +75,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2019-12-26 19:56:44                                                               //--
+  --// Version: 2019-12-29 23:00:46                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -110,7 +111,6 @@ BEGIN
   DECLARE @CurrentDBID int
   DECLARE @CurrentDatabaseName nvarchar(max)
 
-  DECLARE @CurrentDatabaseID int
   DECLARE @CurrentUserAccess nvarchar(max)
   DECLARE @CurrentIsReadOnly bit
   DECLARE @CurrentDatabaseState nvarchar(max)
@@ -120,6 +120,7 @@ BEGIN
   DECLARE @CurrentIsEncrypted bit
 
   DECLARE @CurrentBackupType nvarchar(max)
+  DECLARE @CurrentMaxTransferSize int
   DECLARE @CurrentFileExtension nvarchar(max)
   DECLARE @CurrentFileNumber int
   DECLARE @CurrentDifferentialBaseLSN numeric(25,0)
@@ -329,6 +330,7 @@ BEGIN
   SET @Parameters = @Parameters + ', @FileExtensionLog = ' + ISNULL('''' + REPLACE(@FileExtensionLog,'''','''''') + '''','NULL')
   SET @Parameters = @Parameters + ', @Init = ' + ISNULL('''' + REPLACE(@Init,'''','''''') + '''','NULL')
   SET @Parameters = @Parameters + ', @Format = ' + ISNULL('''' + REPLACE(@Format,'''','''''') + '''','NULL')
+  SET @Parameters = @Parameters + ', @ObjectLevelRecovery = ' + ISNULL('''' + REPLACE(@ObjectLevelRecovery,'''','''''') + '''','NULL')
   SET @Parameters = @Parameters + ', @DatabaseOrder = ' + ISNULL('''' + REPLACE(@DatabaseOrder,'''','''''') + '''','NULL')
   SET @Parameters = @Parameters + ', @DatabasesInParallel = ' + ISNULL('''' + REPLACE(@DatabasesInParallel,'''','''''') + '''','NULL')
   SET @Parameters = @Parameters + ', @LogToTable = ' + ISNULL('''' + REPLACE(@LogToTable,'''','''''') + '''','NULL')
@@ -1585,6 +1587,14 @@ BEGIN
     RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
+  IF @ObjectLevelRecovery NOT IN('Y','N') OR @ObjectLevelRecovery IS NULL OR (@ObjectLevelRecovery = 'Y' AND @BackupSoftware IS NULL) OR (@ObjectLevelRecovery = 'Y' AND @BackupSoftware <> 'LITESPEED') OR (@ObjectLevelRecovery = 'Y' AND @BackupType = 'LOG')
+  BEGIN
+    SET @ErrorMessage = 'The value for the parameter @ObjectLevelRecovery is not supported.'
+    RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
+    SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
+  END
+
   IF @DatabaseOrder NOT IN('DATABASE_NAME_ASC','DATABASE_NAME_DESC','DATABASE_SIZE_ASC','DATABASE_SIZE_DESC','LOG_SIZE_SINCE_LAST_LOG_BACKUP_ASC','LOG_SIZE_SINCE_LAST_LOG_BACKUP_DESC') OR (@DatabaseOrder IN('LOG_SIZE_SINCE_LAST_LOG_BACKUP_ASC','LOG_SIZE_SINCE_LAST_LOG_BACKUP_DESC') AND NOT ((@Version >= 12.06024 AND @Version < 13) OR @Version >= 13.05026 OR SERVERPROPERTY('EngineEdition') = 8)) OR (@DatabaseOrder IS NOT NULL AND SERVERPROPERTY('EngineEdition') = 5)
   BEGIN
     SET @ErrorMessage = 'The value for the parameter @DatabaseOrder is not supported.'
@@ -1928,8 +1938,7 @@ BEGIN
       BREAK
     END
 
-    SELECT @CurrentDatabaseID = database_id,
-           @CurrentUserAccess = user_access_desc,
+    SELECT @CurrentUserAccess = user_access_desc,
            @CurrentIsReadOnly = is_read_only,
            @CurrentDatabaseState = state_desc,
            @CurrentInStandby = is_in_standby,
@@ -1944,9 +1953,11 @@ BEGIN
       EXECUTE sp_executesql @statement = @CurrentCommand06, @params = N'@ParamDatabaseName nvarchar(max), @ParamIsEncrypted bit OUTPUT', @ParamDatabaseName = @CurrentDatabaseName, @ParamIsEncrypted = @CurrentIsEncrypted OUTPUT
     END
 
+    SET @CurrentMaxTransferSize = @MaxTransferSize
+
     IF @CurrentDatabaseState = 'ONLINE'
     BEGIN
-      IF EXISTS (SELECT * FROM sys.database_recovery_status WHERE database_id = @CurrentDatabaseID AND database_guid IS NOT NULL)
+      IF EXISTS (SELECT * FROM sys.database_recovery_status WHERE database_id = DB_ID(@CurrentDatabaseName) AND database_guid IS NOT NULL)
       BEGIN
         SET @CurrentIsDatabaseAccessible = 1
       END
@@ -1974,13 +1985,13 @@ BEGIN
 
     SELECT @CurrentDifferentialBaseLSN = differential_base_lsn
     FROM sys.master_files
-    WHERE database_id = @CurrentDatabaseID
+    WHERE database_id = DB_ID(@CurrentDatabaseName)
     AND [type] = 0
     AND [file_id] = 1
 
     -- Workaround for a bug in SQL Server 2005
     IF @Version >= 9 AND @Version < 10
-    AND EXISTS(SELECT * FROM sys.master_files WHERE database_id = @CurrentDatabaseID AND [type] = 0 AND [file_id] = 1 AND differential_base_lsn IS NOT NULL AND differential_base_guid IS NOT NULL AND differential_base_time IS NULL)
+    AND EXISTS(SELECT * FROM sys.master_files WHERE database_id = DB_ID(@CurrentDatabaseName) AND [type] = 0 AND [file_id] = 1 AND differential_base_lsn IS NOT NULL AND differential_base_guid IS NOT NULL AND differential_base_time IS NULL)
     BEGIN
       SET @CurrentDifferentialBaseLSN = NULL
     END
@@ -1989,7 +2000,7 @@ BEGIN
     BEGIN
       SELECT @CurrentLogLSN = last_log_backup_lsn
       FROM sys.database_recovery_status
-      WHERE database_id = @CurrentDatabaseID
+      WHERE database_id = DB_ID(@CurrentDatabaseName)
     END
 
     IF @CurrentDatabaseState = 'ONLINE' AND ((@Version >= 12.06024 AND @Version < 13) OR @Version >= 13.05026) AND (@CurrentAvailabilityGroupRole = 'PRIMARY' OR @CurrentAvailabilityGroupRole IS NULL) AND @ChangeBackupType = 'Y' AND @ModificationLevel IS NOT NULL
@@ -2017,7 +2028,7 @@ BEGIN
     BEGIN
       SELECT @CurrentLastLogBackup = log_backup_time,
              @CurrentLogSizeSinceLastLogBackup = log_since_last_log_backup_mb
-      FROM sys.dm_db_log_stats (@CurrentDatabaseID)
+      FROM sys.dm_db_log_stats (DB_ID(@CurrentDatabaseName))
     END
 
     IF @CurrentBackupType = 'DIFF'
@@ -2039,7 +2050,7 @@ BEGIN
 
     SELECT @CurrentDatabaseMirroringRole = UPPER(mirroring_role_desc)
     FROM sys.database_mirroring
-    WHERE database_id = @CurrentDatabaseID
+    WHERE database_id = DB_ID(@CurrentDatabaseName)
 
     IF EXISTS (SELECT * FROM msdb.dbo.log_shipping_primary_databases WHERE primary_database = @CurrentDatabaseName)
     BEGIN
@@ -2838,7 +2849,7 @@ BEGIN
 
           IF @Version >= 10
           BEGIN
-            SET @CurrentCommand03 = @CurrentCommand03 + CASE WHEN @Compress = 'Y' AND (@CurrentIsEncrypted = 0 OR (@CurrentIsEncrypted = 1 AND @Version >= 13 AND @MaxTransferSize > 65536)) THEN ', COMPRESSION' ELSE ', NO_COMPRESSION' END
+            SET @CurrentCommand03 = @CurrentCommand03 + CASE WHEN @Compress = 'Y' AND (@CurrentIsEncrypted = 0 OR (@CurrentIsEncrypted = 1 AND @Version >= 13 AND @CurrentMaxTransferSize > 65536)) THEN ', COMPRESSION' ELSE ', NO_COMPRESSION' END
           END
 
           IF @CurrentBackupType = 'DIFF' SET @CurrentCommand03 = @CurrentCommand03 + ', DIFFERENTIAL'
@@ -2854,7 +2865,7 @@ BEGIN
           IF @Format = 'Y' SET @CurrentCommand03 = @CurrentCommand03 + ', FORMAT'
           IF @BlockSize IS NOT NULL SET @CurrentCommand03 = @CurrentCommand03 + ', BLOCKSIZE = ' + CAST(@BlockSize AS nvarchar)
           IF @BufferCount IS NOT NULL SET @CurrentCommand03 = @CurrentCommand03 + ', BUFFERCOUNT = ' + CAST(@BufferCount AS nvarchar)
-          IF @MaxTransferSize IS NOT NULL SET @CurrentCommand03 = @CurrentCommand03 + ', MAXTRANSFERSIZE = ' + CAST(@MaxTransferSize AS nvarchar)
+          IF @CurrentMaxTransferSize IS NOT NULL SET @CurrentCommand03 = @CurrentCommand03 + ', MAXTRANSFERSIZE = ' + CAST(@CurrentMaxTransferSize AS nvarchar)
           IF @Description IS NOT NULL SET @CurrentCommand03 = @CurrentCommand03 + ', DESCRIPTION = N''' + REPLACE(@Description,'''','''''') + ''''
           IF @Encrypt = 'Y' SET @CurrentCommand03 = @CurrentCommand03 + ', ENCRYPTION (ALGORITHM = ' + UPPER(@EncryptionAlgorithm) + ', '
           IF @Encrypt = 'Y' AND @ServerCertificate IS NOT NULL SET @CurrentCommand03 = @CurrentCommand03 + 'SERVER CERTIFICATE = ' + QUOTENAME(@ServerCertificate)
@@ -2900,12 +2911,13 @@ BEGIN
           IF @CompressionLevel IS NOT NULL SET @CurrentCommand03 = @CurrentCommand03 + ', @compressionlevel = ' + CAST(@CompressionLevel AS nvarchar)
           IF @AdaptiveCompression IS NOT NULL SET @CurrentCommand03 = @CurrentCommand03 + ', @adaptivecompression = ''' + CASE WHEN @AdaptiveCompression = 'SIZE' THEN 'Size' WHEN @AdaptiveCompression = 'SPEED' THEN 'Speed' END + ''''
           IF @BufferCount IS NOT NULL SET @CurrentCommand03 = @CurrentCommand03 + ', @buffercount = ' + CAST(@BufferCount AS nvarchar)
-          IF @MaxTransferSize IS NOT NULL SET @CurrentCommand03 = @CurrentCommand03 + ', @maxtransfersize = ' + CAST(@MaxTransferSize AS nvarchar)
+          IF @CurrentMaxTransferSize IS NOT NULL SET @CurrentCommand03 = @CurrentCommand03 + ', @maxtransfersize = ' + CAST(@CurrentMaxTransferSize AS nvarchar)
           IF @Threads IS NOT NULL SET @CurrentCommand03 = @CurrentCommand03 + ', @threads = ' + CAST(@Threads AS nvarchar)
           IF @Init = 'Y' SET @CurrentCommand03 = @CurrentCommand03 + ', @init = 1'
           IF @Format = 'Y' SET @CurrentCommand03 = @CurrentCommand03 + ', @format = 1'
           IF @Throttle IS NOT NULL SET @CurrentCommand03 = @CurrentCommand03 + ', @throttle = ' + CAST(@Throttle AS nvarchar)
           IF @Description IS NOT NULL SET @CurrentCommand03 = @CurrentCommand03 + ', @desc = N''' + REPLACE(@Description,'''','''''') + ''''
+          IF @ObjectLevelRecovery = 'Y' SET @CurrentCommand03 = @CurrentCommand03 + ', @olrmap = 1'
 
           IF @EncryptionAlgorithm IS NOT NULL SET @CurrentCommand03 = @CurrentCommand03 + ', @cryptlevel = ' + CASE
           WHEN @EncryptionAlgorithm = 'RC2_40' THEN '0'
@@ -2957,7 +2969,7 @@ BEGIN
           IF @Format = 'Y' SET @CurrentCommand03 = @CurrentCommand03 + ', FORMAT'
           IF @CompressionLevel IS NOT NULL SET @CurrentCommand03 = @CurrentCommand03 + ', COMPRESSION = ' + CAST(@CompressionLevel AS nvarchar)
           IF @Threads IS NOT NULL SET @CurrentCommand03 = @CurrentCommand03 + ', THREADCOUNT = ' + CAST(@Threads AS nvarchar)
-          IF @MaxTransferSize IS NOT NULL SET @CurrentCommand03 = @CurrentCommand03 + ', MAXTRANSFERSIZE = ' + CAST(@MaxTransferSize AS nvarchar)
+          IF @CurrentMaxTransferSize IS NOT NULL SET @CurrentCommand03 = @CurrentCommand03 + ', MAXTRANSFERSIZE = ' + CAST(@CurrentMaxTransferSize AS nvarchar)
           IF @Description IS NOT NULL SET @CurrentCommand03 = @CurrentCommand03 + ', DESCRIPTION = N''' + REPLACE(@Description,'''','''''') + ''''
 
           IF @EncryptionAlgorithm IS NOT NULL SET @CurrentCommand03 = @CurrentCommand03 + ', KEYSIZE = ' + CASE
@@ -3294,7 +3306,6 @@ BEGIN
     SET @CurrentDBID = NULL
     SET @CurrentDatabaseName = NULL
 
-    SET @CurrentDatabaseID = NULL
     SET @CurrentUserAccess = NULL
     SET @CurrentIsReadOnly = NULL
     SET @CurrentDatabaseState = NULL
@@ -3303,6 +3314,7 @@ BEGIN
     SET @CurrentIsEncrypted = NULL
 
     SET @CurrentBackupType = NULL
+    SET @CurrentMaxTransferSize = NULL
     SET @CurrentFileExtension = NULL
     SET @CurrentFileNumber = NULL
     SET @CurrentDifferentialBaseLSN = NULL

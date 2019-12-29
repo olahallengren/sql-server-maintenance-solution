@@ -51,7 +51,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2019-12-26 19:56:44                                                               //--
+  --// Version: 2019-12-29 23:00:46                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -84,7 +84,6 @@ BEGIN
   DECLARE @CurrentDBID int
   DECLARE @CurrentDatabaseName nvarchar(max)
 
-  DECLARE @CurrentDatabaseID int
   DECLARE @CurrentUserAccess nvarchar(max)
   DECLARE @CurrentIsReadOnly bit
   DECLARE @CurrentDatabaseState nvarchar(max)
@@ -1354,8 +1353,7 @@ BEGIN
       BREAK
     END
 
-    SELECT @CurrentDatabaseID = database_id,
-           @CurrentUserAccess = user_access_desc,
+    SELECT @CurrentUserAccess = user_access_desc,
            @CurrentIsReadOnly = is_read_only,
            @CurrentDatabaseState = state_desc,
            @CurrentInStandby = is_in_standby,
@@ -1365,7 +1363,7 @@ BEGIN
 
     IF @CurrentDatabaseState = 'ONLINE' AND SERVERPROPERTY('EngineEdition') <> 5
     BEGIN
-      IF EXISTS (SELECT * FROM sys.database_recovery_status WHERE database_id = @CurrentDatabaseID AND database_guid IS NOT NULL)
+      IF EXISTS (SELECT * FROM sys.database_recovery_status WHERE database_id = DB_ID(@CurrentDatabaseName) AND database_guid IS NOT NULL)
       BEGIN
         SET @CurrentIsDatabaseAccessible = 1
       END
@@ -1389,7 +1387,7 @@ BEGIN
     BEGIN
       SELECT @CurrentDatabaseMirroringRole = UPPER(mirroring_role_desc)
       FROM sys.database_mirroring
-      WHERE database_id = @CurrentDatabaseID
+      WHERE database_id = DB_ID(@CurrentDatabaseName)
     END
 
     SET @DatabaseMessage = 'Date and time: ' + CONVERT(nvarchar,GETDATE(),120)
@@ -1809,10 +1807,10 @@ BEGIN
 
           IF @LockTimeout IS NOT NULL SET @CurrentCommand05 = 'SET LOCK_TIMEOUT ' + CAST(@LockTimeout * 1000 AS nvarchar) + '; '
 
-          SET @CurrentCommand05 = @CurrentCommand05 + 'SELECT @ParamFragmentationLevel = MAX(avg_fragmentation_in_percent), @ParamPageCount = SUM(page_count) FROM sys.dm_db_index_physical_stats(@ParamDatabaseID, @ParamObjectID, @ParamIndexID, @ParamPartitionNumber, ''LIMITED'') WHERE alloc_unit_type_desc = ''IN_ROW_DATA'' AND index_level = 0'
+          SET @CurrentCommand05 = @CurrentCommand05 + 'SELECT @ParamFragmentationLevel = MAX(avg_fragmentation_in_percent), @ParamPageCount = SUM(page_count) FROM sys.dm_db_index_physical_stats(DB_ID(@ParamDatabaseName), @ParamObjectID, @ParamIndexID, @ParamPartitionNumber, ''LIMITED'') WHERE alloc_unit_type_desc = ''IN_ROW_DATA'' AND index_level = 0'
 
           BEGIN TRY
-            EXECUTE sp_executesql @statement = @CurrentCommand05, @params = N'@ParamDatabaseID int, @ParamObjectID int, @ParamIndexID int, @ParamPartitionNumber int, @ParamFragmentationLevel float OUTPUT, @ParamPageCount bigint OUTPUT', @ParamDatabaseID = @CurrentDatabaseID, @ParamObjectID = @CurrentObjectID, @ParamIndexID = @CurrentIndexID, @ParamPartitionNumber = @CurrentPartitionNumber, @ParamFragmentationLevel = @CurrentFragmentationLevel OUTPUT, @ParamPageCount = @CurrentPageCount OUTPUT
+            EXECUTE sp_executesql @statement = @CurrentCommand05, @params = N'@ParamDatabaseName nvarchar(max), @ParamObjectID int, @ParamIndexID int, @ParamPartitionNumber int, @ParamFragmentationLevel float OUTPUT, @ParamPageCount bigint OUTPUT', @ParamDatabaseName = @CurrentDatabaseName, @ParamObjectID = @CurrentObjectID, @ParamIndexID = @CurrentIndexID, @ParamPartitionNumber = @CurrentPartitionNumber, @ParamFragmentationLevel = @CurrentFragmentationLevel OUTPUT, @ParamPageCount = @CurrentPageCount OUTPUT
           END TRY
           BEGIN CATCH
             SET @ErrorMessage = 'Msg ' + CAST(ERROR_NUMBER() AS nvarchar) + ', ' + ISNULL(ERROR_MESSAGE(),'') + CASE WHEN ERROR_NUMBER() = 1222 THEN ' The index ' + QUOTENAME(@CurrentIndexName) + ' on the object ' + QUOTENAME(@CurrentDatabaseName) + '.' + QUOTENAME(@CurrentSchemaName) + '.' + QUOTENAME(@CurrentObjectName) + ' is locked. The page_count and avg_fragmentation_in_percent could not be checked.' ELSE '' END
@@ -2297,7 +2295,6 @@ BEGIN
     SET @CurrentDBID = NULL
     SET @CurrentDatabaseName = NULL
 
-    SET @CurrentDatabaseID = NULL
     SET @CurrentUserAccess = NULL
     SET @CurrentIsReadOnly = NULL
     SET @CurrentDatabaseState = NULL

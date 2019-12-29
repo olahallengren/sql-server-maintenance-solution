@@ -37,7 +37,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2019-12-26 19:56:44                                                               //--
+  --// Version: 2019-12-29 23:00:46                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -64,7 +64,6 @@ BEGIN
   DECLARE @CurrentDBID int
   DECLARE @CurrentDatabaseName nvarchar(max)
 
-  DECLARE @CurrentDatabaseID int
   DECLARE @CurrentUserAccess nvarchar(max)
   DECLARE @CurrentIsReadOnly bit
   DECLARE @CurrentDatabaseState nvarchar(max)
@@ -1241,8 +1240,7 @@ BEGIN
      BREAK
     END
 
-    SELECT @CurrentDatabaseID = database_id,
-           @CurrentUserAccess = user_access_desc,
+    SELECT @CurrentUserAccess = user_access_desc,
            @CurrentIsReadOnly = is_read_only,
            @CurrentDatabaseState = state_desc,
            @CurrentInStandby = is_in_standby,
@@ -1252,7 +1250,7 @@ BEGIN
 
     IF @CurrentDatabaseState = 'ONLINE' AND SERVERPROPERTY('EngineEdition') <> 5
     BEGIN
-      IF EXISTS (SELECT * FROM sys.database_recovery_status WHERE database_id = @CurrentDatabaseID AND database_guid IS NOT NULL)
+      IF EXISTS (SELECT * FROM sys.database_recovery_status WHERE database_id = DB_ID(@CurrentDatabaseName) AND database_guid IS NOT NULL)
       BEGIN
         SET @CurrentIsDatabaseAccessible = 1
       END
@@ -1282,7 +1280,7 @@ BEGIN
     BEGIN
       SELECT @CurrentDatabaseMirroringRole = UPPER(mirroring_role_desc)
       FROM sys.database_mirroring
-      WHERE database_id = @CurrentDatabaseID
+      WHERE database_id = DB_ID(@CurrentDatabaseName)
     END
 
     SET @DatabaseMessage = 'Date and time: ' + CONVERT(nvarchar,GETDATE(),120)
@@ -1725,7 +1723,6 @@ BEGIN
     SET @CurrentDBID = NULL
     SET @CurrentDatabaseName = NULL
 
-    SET @CurrentDatabaseID = NULL
     SET @CurrentUserAccess = NULL
     SET @CurrentIsReadOnly = NULL
     SET @CurrentDatabaseState = NULL
