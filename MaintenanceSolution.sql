@@ -10,7 +10,7 @@ License: https://ola.hallengren.com/license.html
 
 GitHub: https://github.com/olahallengren/sql-server-maintenance-solution
 
-Version: 2019-12-29 23:00:46
+Version: 2019-12-29 23:27:44
 
 You can contact me by e-mail at ola@hallengren.com.
 
@@ -126,7 +126,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2019-12-29 23:00:46                                                               //--
+  --// Version: 2019-12-29 23:27:44                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -413,7 +413,7 @@ ALTER PROCEDURE [dbo].[DatabaseBackup]
 @FileExtensionLog nvarchar(max) = NULL,
 @Init nvarchar(max) = 'N',
 @Format nvarchar(max) = 'N',
-@ObjectLevelRecovery nvarchar(max) = 'N',
+@ObjectLevelRecoveryMap nvarchar(max) = 'N',
 @DatabaseOrder nvarchar(max) = NULL,
 @DatabasesInParallel nvarchar(max) = 'N',
 @LogToTable nvarchar(max) = 'N',
@@ -427,7 +427,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2019-12-29 23:00:46                                                               //--
+  --// Version: 2019-12-29 23:27:44                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -682,7 +682,7 @@ BEGIN
   SET @Parameters = @Parameters + ', @FileExtensionLog = ' + ISNULL('''' + REPLACE(@FileExtensionLog,'''','''''') + '''','NULL')
   SET @Parameters = @Parameters + ', @Init = ' + ISNULL('''' + REPLACE(@Init,'''','''''') + '''','NULL')
   SET @Parameters = @Parameters + ', @Format = ' + ISNULL('''' + REPLACE(@Format,'''','''''') + '''','NULL')
-  SET @Parameters = @Parameters + ', @ObjectLevelRecovery = ' + ISNULL('''' + REPLACE(@ObjectLevelRecovery,'''','''''') + '''','NULL')
+  SET @Parameters = @Parameters + ', @ObjectLevelRecoveryMap = ' + ISNULL('''' + REPLACE(@ObjectLevelRecoveryMap,'''','''''') + '''','NULL')
   SET @Parameters = @Parameters + ', @DatabaseOrder = ' + ISNULL('''' + REPLACE(@DatabaseOrder,'''','''''') + '''','NULL')
   SET @Parameters = @Parameters + ', @DatabasesInParallel = ' + ISNULL('''' + REPLACE(@DatabasesInParallel,'''','''''') + '''','NULL')
   SET @Parameters = @Parameters + ', @LogToTable = ' + ISNULL('''' + REPLACE(@LogToTable,'''','''''') + '''','NULL')
@@ -1939,7 +1939,7 @@ BEGIN
     RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
-  IF @ObjectLevelRecovery NOT IN('Y','N') OR @ObjectLevelRecovery IS NULL OR (@ObjectLevelRecovery = 'Y' AND @BackupSoftware IS NULL) OR (@ObjectLevelRecovery = 'Y' AND @BackupSoftware <> 'LITESPEED') OR (@ObjectLevelRecovery = 'Y' AND @BackupType = 'LOG')
+  IF @ObjectLevelRecoveryMap NOT IN('Y','N') OR @ObjectLevelRecoveryMap IS NULL OR (@ObjectLevelRecoveryMap = 'Y' AND @BackupSoftware IS NULL) OR (@ObjectLevelRecoveryMap = 'Y' AND @BackupSoftware <> 'LITESPEED') OR (@ObjectLevelRecoveryMap = 'Y' AND @BackupType = 'LOG')
   BEGIN
     SET @ErrorMessage = 'The value for the parameter @ObjectLevelRecovery is not supported.'
     RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
@@ -3269,7 +3269,7 @@ BEGIN
           IF @Format = 'Y' SET @CurrentCommand03 = @CurrentCommand03 + ', @format = 1'
           IF @Throttle IS NOT NULL SET @CurrentCommand03 = @CurrentCommand03 + ', @throttle = ' + CAST(@Throttle AS nvarchar)
           IF @Description IS NOT NULL SET @CurrentCommand03 = @CurrentCommand03 + ', @desc = N''' + REPLACE(@Description,'''','''''') + ''''
-          IF @ObjectLevelRecovery = 'Y' SET @CurrentCommand03 = @CurrentCommand03 + ', @olrmap = 1'
+          IF @ObjectLevelRecoveryMap = 'Y' SET @CurrentCommand03 = @CurrentCommand03 + ', @olrmap = 1'
 
           IF @EncryptionAlgorithm IS NOT NULL SET @CurrentCommand03 = @CurrentCommand03 + ', @cryptlevel = ' + CASE
           WHEN @EncryptionAlgorithm = 'RC2_40' THEN '0'
@@ -3765,7 +3765,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2019-12-29 23:00:46                                                               //--
+  --// Version: 2019-12-29 23:27:44                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -5556,7 +5556,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2019-12-29 23:00:46                                                               //--
+  --// Version: 2019-12-29 23:27:44                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
