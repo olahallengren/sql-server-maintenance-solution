@@ -75,7 +75,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2019-12-29 23:27:44                                                               //--
+  --// Version: 2019-12-30 17:18:25                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -1953,7 +1953,10 @@ BEGIN
       EXECUTE sp_executesql @statement = @CurrentCommand06, @params = N'@ParamDatabaseName nvarchar(max), @ParamIsEncrypted bit OUTPUT', @ParamDatabaseName = @CurrentDatabaseName, @ParamIsEncrypted = @CurrentIsEncrypted OUTPUT
     END
 
-    SET @CurrentMaxTransferSize = @MaxTransferSize
+    SELECT @CurrentMaxTransferSize = CASE
+    WHEN @MaxTransferSize IS NOT NULL THEN @MaxTransferSize
+    WHEN @MaxTransferSize IS NULL AND @Compress = 'Y' AND @CurrentIsEncrypted = 1 AND @BackupSoftware IS NULL AND @Version >= 13.04446 THEN 65537
+    END
 
     IF @CurrentDatabaseState = 'ONLINE'
     BEGIN
