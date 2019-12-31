@@ -24,7 +24,8 @@ ALTER PROCEDURE [dbo].[CommandExecute]
 @ExtendedInfo xml = NULL,
 @LockMessageSeverity int = 16,
 @LogToTable nvarchar(max),
-@Execute nvarchar(max)
+@Execute nvarchar(max),
+@OutputErrorsOnly nvarchar(max) = 'Y'
 
 AS
 
@@ -157,6 +158,14 @@ BEGIN
     RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
+  IF @OutputErrorsOnly NOT IN('Y','N') OR @OutputErrorsOnly IS NULL
+  BEGIN
+    SET @ErrorMessage = 'The value for the parameter @OutputErrorsOnly is not supported.'
+    RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
+    SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
+  END
+
   IF @Error <> 0
   BEGIN
     SET @ReturnCode = @Error
@@ -170,16 +179,19 @@ BEGIN
   SET @StartTime = GETDATE()
   SET @StartTimeSec = CONVERT(datetime,CONVERT(nvarchar,@StartTime,120),120)
 
-  SET @StartMessage = 'Date and time: ' + CONVERT(nvarchar,@StartTimeSec,120)
-  RAISERROR('%s',10,1,@StartMessage) WITH NOWAIT
-
-  SET @StartMessage = 'Command: ' + @Command
-  RAISERROR('%s',10,1,@StartMessage) WITH NOWAIT
-
-  IF @Comment IS NOT NULL
+  IF @OutputErrorsOnly = 'N'
   BEGIN
-    SET @StartMessage = 'Comment: ' + @Comment
-    RAISERROR('%s',10,1,@StartMessage) WITH NOWAIT
+	SET @StartMessage = 'Date and time: ' + CONVERT(nvarchar,@StartTimeSec,120)
+	RAISERROR('%s',10,1,@StartMessage) WITH NOWAIT
+  
+	SET @StartMessage = 'Command: ' + @Command
+	RAISERROR('%s',10,1,@StartMessage) WITH NOWAIT
+  
+	IF @Comment IS NOT NULL
+	BEGIN
+		SET @StartMessage = 'Comment: ' + @Comment
+		RAISERROR('%s',10,1,@StartMessage) WITH NOWAIT
+	END
   END
 
   IF @LogToTable = 'Y'
@@ -228,16 +240,19 @@ BEGIN
   SET @EndTime = GETDATE()
   SET @EndTimeSec = CONVERT(datetime,CONVERT(varchar,@EndTime,120),120)
 
-  SET @EndMessage = 'Outcome: ' + CASE WHEN @Execute = 'N' THEN 'Not Executed' WHEN @Error = 0 THEN 'Succeeded' ELSE 'Failed' END
-  RAISERROR('%s',10,1,@EndMessage) WITH NOWAIT
+  IF @OutputErrorsOnly = 'N'
+  BEGIN
+	SET @EndMessage = 'Outcome: ' + CASE WHEN @Execute = 'N' THEN 'Not Executed' WHEN @Error = 0 THEN 'Succeeded' ELSE 'Failed' END
+	RAISERROR('%s',10,1,@EndMessage) WITH NOWAIT
 
-  SET @EndMessage = 'Duration: ' + CASE WHEN DATEDIFF(ss,@StartTimeSec, @EndTimeSec)/(24*3600) > 0 THEN CAST(DATEDIFF(ss,@StartTimeSec, @EndTimeSec)/(24*3600) AS nvarchar) + '.' ELSE '' END + CONVERT(nvarchar,@EndTimeSec - @StartTimeSec,108)
-  RAISERROR('%s',10,1,@EndMessage) WITH NOWAIT
-
-  SET @EndMessage = 'Date and time: ' + CONVERT(nvarchar,@EndTimeSec,120)
-  RAISERROR('%s',10,1,@EndMessage) WITH NOWAIT
-
-  RAISERROR(@EmptyLine,10,1) WITH NOWAIT
+	SET @EndMessage = 'Duration: ' + CASE WHEN DATEDIFF(ss,@StartTimeSec, @EndTimeSec)/(24*3600) > 0 THEN CAST(DATEDIFF(ss,@StartTimeSec, @EndTimeSec)/(24*3600) AS nvarchar) + '.' ELSE '' END + CONVERT(nvarchar,@EndTimeSec - @StartTimeSec,108)
+	RAISERROR('%s',10,1,@EndMessage) WITH NOWAIT
+  
+	SET @EndMessage = 'Date and time: ' + CONVERT(nvarchar,@EndTimeSec,120)
+	RAISERROR('%s',10,1,@EndMessage) WITH NOWAIT
+  
+	RAISERROR(@EmptyLine,10,1) WITH NOWAIT
+  END
 
   IF @LogToTable = 'Y'
   BEGIN
