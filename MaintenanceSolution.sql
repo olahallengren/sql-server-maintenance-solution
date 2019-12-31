@@ -10,7 +10,7 @@ License: https://ola.hallengren.com/license.html
 
 GitHub: https://github.com/olahallengren/sql-server-maintenance-solution
 
-Version: 2019-12-30 17:18:25
+Version: 2019-12-31 15:48:33
 
 You can contact me by e-mail at ola@hallengren.com.
 
@@ -126,7 +126,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2019-12-30 17:18:25                                                               //--
+  --// Version: 2019-12-31 15:48:33                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -427,7 +427,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2019-12-30 17:18:25                                                               //--
+  --// Version: 2019-12-31 15:48:33                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -2155,7 +2155,7 @@ BEGIN
         BEGIN TRANSACTION
 
         SELECT @QueueID = QueueID
-        FROM dbo.[Queue] WITH (UPDLOCK, TABLOCK)
+        FROM dbo.[Queue] WITH (UPDLOCK, HOLDLOCK)
         WHERE SchemaName = @SchemaName
         AND ObjectName = @ObjectName
         AND [Parameters] = @Parameters
@@ -3768,7 +3768,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2019-12-30 17:18:25                                                               //--
+  --// Version: 2019-12-31 15:48:33                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -4838,7 +4838,7 @@ BEGIN
         BEGIN TRANSACTION
 
         SELECT @QueueID = QueueID
-        FROM dbo.[Queue] WITH (UPDLOCK, TABLOCK)
+        FROM dbo.[Queue] WITH (UPDLOCK, HOLDLOCK)
         WHERE SchemaName = @SchemaName
         AND ObjectName = @ObjectName
         AND [Parameters] = @Parameters
@@ -5559,7 +5559,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2019-12-30 17:18:25                                                               //--
+  --// Version: 2019-12-31 15:48:33                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -6728,7 +6728,7 @@ BEGIN
         BEGIN TRANSACTION
 
         SELECT @QueueID = QueueID
-        FROM dbo.[Queue] WITH (UPDLOCK, TABLOCK)
+        FROM dbo.[Queue] WITH (UPDLOCK, HOLDLOCK)
         WHERE SchemaName = @SchemaName
         AND ObjectName = @ObjectName
         AND [Parameters] = @Parameters
