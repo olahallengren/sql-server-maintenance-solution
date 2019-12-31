@@ -2,7 +2,7 @@
 [![licence badge]][licence]
 [![stars badge]][stars]
 [![forks badge]][forks]
-[![issues badge]][issues]
+[![issues badgee]][issues]
 [![bug_report badge]][bug_report]
 [![feature_request badge]][feature_request]
 [![Question badge]][Question]
