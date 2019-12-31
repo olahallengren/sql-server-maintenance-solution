@@ -45,5 +45,5 @@ Supported versions: SQL Server 2005, SQL Server 2008, SQL Server 2008 R2, SQL Se
 [forks]:https://github.com/olahallengren/sql-server-maintenance-solution/network
 [issues]:https://github.com/olahallengren/sql-server-maintenance-solution/issues
 [bug_report]:https://github.com/olahallengren/sql-server-maintenance-solution/issues?q=is%3Aopen+is%3Aissue+label%3Abug_report
-[feature_request]:https://github.com/olahallengren/sql-server-maintenance-solution/issues?q=is%3Aopen+is%3Aissue+label%3Afeature_request
+[feature_request]:https://github.com/olahallengren/sql-server-maintenance-solution/issues?q=is%3Aopen+is%3Aissue+label%3AFeature%20Request
 [Question]:https://github.com/olahallengren/sql-server-maintenance-solution/issues?q=is%3Aopen+is%3Aissue+label%3AQuestion
