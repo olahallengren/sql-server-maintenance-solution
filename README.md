@@ -36,7 +36,7 @@ Supported versions: SQL Server 2005, SQL Server 2008, SQL Server 2008 R2, SQL Se
 [stars badge]:https://img.shields.io/github/stars/olahallengren/sql-server-maintenance-solution.svg
 [forks badge]:https://img.shields.io/github/forks/olahallengren/sql-server-maintenance-solution.svg
 [issues badge]:https://img.shields.io/github/issues/olahallengren/sql-server-maintenance-solution.svg
-[bug_report badge]:https://img.shields.io/github/issues/olahallengren/sql-server-maintenance-solution/bug_report.svg
+[bug_report badge]:https://img.shields.io/github/issues/olahallengren/sql-server-maintenance-solution/Bug%20Report.svg
 [feature_request badge]:https://img.shields.io/github/issues/olahallengren/sql-server-maintenance-solution/Feature%20Request.svg
 [Question badge]:https://img.shields.io/github/issues/olahallengren/sql-server-maintenance-solution/Question.svg
 
