@@ -3,7 +3,7 @@
 [![stars badge]][stars]
 [![forks badge]][forks]
 [![issues badge]][issues]
-[![bug report badge]][bug_report]
+[![bug report badge]][bug report]
 [![feature request badge]][feature request]
 [![question badge]][question]
 
