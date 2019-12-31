@@ -9,6 +9,7 @@ END
 GO
 ALTER PROCEDURE [dbo].[CommandExecute]
 
+@DatabaseContext nvarchar(max),
 @Command nvarchar(max),
 @CommandType nvarchar(max),
 @Mode int,
@@ -34,7 +35,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2019-12-31 15:48:33                                                               //--
+  --// Version: 2019-12-31 23:31:36                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -44,6 +45,8 @@ BEGIN
   DECLARE @ErrorMessage nvarchar(max)
   DECLARE @ErrorMessageOriginal nvarchar(max)
   DECLARE @Severity int
+
+  DECLARE @sp_executesql nvarchar(max)
 
   DECLARE @StartTime datetime
   DECLARE @EndTime datetime
@@ -57,6 +60,8 @@ BEGIN
   DECLARE @ReturnCode int
 
   DECLARE @EmptyLine nvarchar(max)
+
+  SET @sp_executesql = QUOTENAME(@DatabaseContext) + '.sys.sp_executesql'
 
   SET @Error = 0
   SET @ReturnCode = 0
@@ -108,6 +113,14 @@ BEGIN
   ----------------------------------------------------------------------------------------------------
   --// Check input parameters                                                                     //--
   ----------------------------------------------------------------------------------------------------
+
+  IF @DatabaseContext IS NULL OR NOT EXISTS (SELECT * FROM sys.databases WHERE name = @DatabaseContext)
+  BEGIN
+    SET @ErrorMessage = 'The value for the parameter @DatabaseContext is not supported.'
+    RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
+    SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
+  END
 
   IF @Command IS NULL OR @Command = ''
   BEGIN
@@ -173,6 +186,9 @@ BEGIN
   SET @StartMessage = 'Date and time: ' + CONVERT(nvarchar,@StartTimeSec,120)
   RAISERROR('%s',10,1,@StartMessage) WITH NOWAIT
 
+  SET @StartMessage = 'Database context: ' + QUOTENAME(@DatabaseContext)
+  RAISERROR('%s',10,1,@StartMessage) WITH NOWAIT
+
   SET @StartMessage = 'Command: ' + @Command
   RAISERROR('%s',10,1,@StartMessage) WITH NOWAIT
 
@@ -196,7 +212,7 @@ BEGIN
 
   IF @Mode = 1 AND @Execute = 'Y'
   BEGIN
-    EXECUTE(@Command)
+    EXECUTE @sp_executesql @Command
     SET @Error = @@ERROR
     SET @ReturnCode = @Error
   END
@@ -204,7 +220,7 @@ BEGIN
   IF @Mode = 2 AND @Execute = 'Y'
   BEGIN
     BEGIN TRY
-      EXECUTE(@Command)
+      EXECUTE @sp_executesql @Command
     END TRY
     BEGIN CATCH
       SET @Error = ERROR_NUMBER()
