@@ -10,7 +10,7 @@ License: https://ola.hallengren.com/license.html
 
 GitHub: https://github.com/olahallengren/sql-server-maintenance-solution
 
-Version: 2019-12-31 23:31:36
+Version: 2020-01-01 22:34:07
 
 You can contact me by e-mail at ola@hallengren.com.
 
@@ -127,7 +127,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2019-12-31 23:31:36                                                               //--
+  --// Version: 2020-01-01 22:34:07                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -443,7 +443,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2019-12-31 23:31:36                                                               //--
+  --// Version: 2020-01-01 22:34:07                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -3784,7 +3784,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2019-12-31 23:31:36                                                               //--
+  --// Version: 2020-01-01 22:34:07                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -4435,11 +4435,13 @@ BEGIN
   INSERT INTO @SelectedObjects (DatabaseName, SchemaName, ObjectName, StartPosition, Selected)
   SELECT DatabaseName, SchemaName, ObjectName, StartPosition, Selected
   FROM Objects4
-  OPTION (MAXRECURSION 0);
+  OPTION (MAXRECURSION 0)
 
   ----------------------------------------------------------------------------------------------------
   --// Select check commands                                                                      //--
   ----------------------------------------------------------------------------------------------------
+
+  SET @CheckCommands = REPLACE(@CheckCommands,', ',',');
 
   WITH CheckCommands (StartPosition, EndPosition, CheckCommand) AS
   (
@@ -5575,7 +5577,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2019-12-31 23:31:36                                                               //--
+  --// Version: 2020-01-01 22:34:07                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -6249,11 +6251,13 @@ BEGIN
   INSERT INTO @SelectedIndexes (DatabaseName, SchemaName, ObjectName, IndexName, StartPosition, Selected)
   SELECT DatabaseName, SchemaName, ObjectName, IndexName, StartPosition, Selected
   FROM Indexes4
-  OPTION (MAXRECURSION 0);
+  OPTION (MAXRECURSION 0)
 
   ----------------------------------------------------------------------------------------------------
   --// Select actions                                                                             //--
   ----------------------------------------------------------------------------------------------------
+
+  SET @FragmentationLow = REPLACE(@FragmentationLow,', ',',');
 
   WITH FragmentationLow (StartPosition, EndPosition, [Action]) AS
   (
@@ -6273,7 +6277,9 @@ BEGIN
          ROW_NUMBER() OVER(ORDER BY StartPosition ASC) AS [Priority],
          [Action]
   FROM FragmentationLow
-  OPTION (MAXRECURSION 0);
+  OPTION (MAXRECURSION 0)
+
+  SET @FragmentationMedium = REPLACE(@FragmentationMedium,', ',',');
 
   WITH FragmentationMedium (StartPosition, EndPosition, [Action]) AS
   (
@@ -6293,7 +6299,9 @@ BEGIN
          ROW_NUMBER() OVER(ORDER BY StartPosition ASC) AS [Priority],
          [Action]
   FROM FragmentationMedium
-  OPTION (MAXRECURSION 0);
+  OPTION (MAXRECURSION 0)
+
+  SET @FragmentationHigh = REPLACE(@FragmentationHigh,', ',',');
 
   WITH FragmentationHigh (StartPosition, EndPosition, [Action]) AS
   (

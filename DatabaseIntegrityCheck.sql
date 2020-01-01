@@ -37,7 +37,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2019-12-31 23:31:36                                                               //--
+  --// Version: 2020-01-01 22:34:07                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -688,11 +688,13 @@ BEGIN
   INSERT INTO @SelectedObjects (DatabaseName, SchemaName, ObjectName, StartPosition, Selected)
   SELECT DatabaseName, SchemaName, ObjectName, StartPosition, Selected
   FROM Objects4
-  OPTION (MAXRECURSION 0);
+  OPTION (MAXRECURSION 0)
 
   ----------------------------------------------------------------------------------------------------
   --// Select check commands                                                                      //--
   ----------------------------------------------------------------------------------------------------
+
+  SET @CheckCommands = REPLACE(@CheckCommands,', ',',');
 
   WITH CheckCommands (StartPosition, EndPosition, CheckCommand) AS
   (
