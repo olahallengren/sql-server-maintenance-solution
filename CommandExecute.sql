@@ -35,7 +35,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2020-01-02 20:43:38                                                               //--
+  --// Version: 2020-01-03 23:04:49                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -212,7 +212,7 @@ BEGIN
 
   IF @Mode = 1 AND @Execute = 'Y'
   BEGIN
-    EXECUTE @sp_executesql @Command
+    EXECUTE @sp_executesql @stmt = @Command
     SET @Error = @@ERROR
     SET @ReturnCode = @Error
   END
@@ -220,7 +220,7 @@ BEGIN
   IF @Mode = 2 AND @Execute = 'Y'
   BEGIN
     BEGIN TRY
-      EXECUTE @sp_executesql @Command
+      EXECUTE @sp_executesql @stmt = @Command
     END TRY
     BEGIN CATCH
       SET @Error = ERROR_NUMBER()
