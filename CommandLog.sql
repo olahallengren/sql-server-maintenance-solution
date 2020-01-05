@@ -17,8 +17,8 @@ CREATE TABLE [dbo].[CommandLog](
   [ExtendedInfo] [xml] NULL,
   [Command] [nvarchar](max) NOT NULL,
   [CommandType] [nvarchar](60) NOT NULL,
-  [StartTime] [datetime] NOT NULL,
-  [EndTime] [datetime] NULL,
+  [StartTime] [datetime2](7) NOT NULL,
+  [EndTime] [datetime2](7) NULL,
   [ErrorNumber] [int] NULL,
   [ErrorMessage] [nvarchar](max) NULL,
  CONSTRAINT [PK_CommandLog] PRIMARY KEY CLUSTERED
