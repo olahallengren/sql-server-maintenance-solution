@@ -22,7 +22,7 @@ You can also download the objects as separate scripts:
 Note that you always need CommandExecute; DatabaseBackup, DatabaseIntegrityCheck, and IndexOptimize are using it.
 You need CommandLog if you are going to use the option to log commands to a table.
 
-Supported versions: SQL Server 2005, SQL Server 2008, SQL Server 2008 R2, SQL Server 2012, SQL Server 2014, SQL Server 2016, SQL Server 2017, SQL Server 2019, Azure SQL Database, and Azure SQL Database Managed Instance
+Supported versions: SQL Server 2008, SQL Server 2008 R2, SQL Server 2012, SQL Server 2014, SQL Server 2016, SQL Server 2017, SQL Server 2019, Azure SQL Database, and Azure SQL Database Managed Instance
 
 ## Documentation
 
