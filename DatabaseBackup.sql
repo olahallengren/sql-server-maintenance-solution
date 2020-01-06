@@ -1,11 +1,6 @@
-﻿SET ANSI_NULLS ON
+SET ANSI_NULLS ON
 GO
 SET QUOTED_IDENTIFIER ON
-GO
-IF NOT EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'[dbo].[DatabaseBackup]') AND type in (N'P', N'PC'))
-BEGIN
-EXEC dbo.sp_executesql @statement = N'CREATE PROCEDURE [dbo].[DatabaseBackup] AS'
-END
 GO
 ALTER PROCEDURE [dbo].[DatabaseBackup]
 
@@ -60,13 +55,11 @@ ALTER PROCEDURE [dbo].[DatabaseBackup]
 @FileExtensionDiff nvarchar(max) = NULL,
 @FileExtensionLog nvarchar(max) = NULL,
 @Init nvarchar(max) = 'N',
-@Format nvarchar(max) = 'N',
-@ObjectLevelRecoveryMap nvarchar(max) = 'N',
 @DatabaseOrder nvarchar(max) = NULL,
 @DatabasesInParallel nvarchar(max) = 'N',
 @LogToTable nvarchar(max) = 'N',
-@Execute nvarchar(max) = 'Y'
-
+@Execute nvarchar(max) = 'Y',
+@Raiserror nvarchar(max) = 'Y'
 AS
 
 BEGIN
@@ -75,7 +68,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2020-01-06 16:38:06                                                               //--
+  --// Version: 2019-06-14 00:05:34                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -85,14 +78,16 @@ BEGIN
   DECLARE @DatabaseMessage nvarchar(max)
   DECLARE @ErrorMessage nvarchar(max)
 
-  DECLARE @StartTime datetime2 = SYSDATETIME()
-  DECLARE @SchemaName nvarchar(max) = OBJECT_SCHEMA_NAME(@@PROCID)
-  DECLARE @ObjectName nvarchar(max) = OBJECT_NAME(@@PROCID)
-  DECLARE @VersionTimestamp nvarchar(max) = SUBSTRING(OBJECT_DEFINITION(@@PROCID),CHARINDEX('--// Version: ',OBJECT_DEFINITION(@@PROCID)) + LEN('--// Version: ') + 1, 19)
+  DECLARE @StartTime datetime
+  DECLARE @SchemaName nvarchar(max)
+  DECLARE @ObjectName nvarchar(max)
+  DECLARE @VersionTimestamp nvarchar(max)
   DECLARE @Parameters nvarchar(max)
 
+  DECLARE @Version numeric(18,10)
   DECLARE @HostPlatform nvarchar(max)
   DECLARE @DirectorySeparator nvarchar(max)
+  DECLARE @AmazonRDS bit
 
   DECLARE @Updated bit
 
@@ -101,7 +96,7 @@ BEGIN
   DECLARE @DefaultDirectory nvarchar(4000)
 
   DECLARE @QueueID int
-  DECLARE @QueueStartTime datetime2
+  DECLARE @QueueStartTime datetime
 
   DECLARE @CurrentRootDirectoryID int
   DECLARE @CurrentRootDirectoryPath nvarchar(4000)
@@ -109,26 +104,22 @@ BEGIN
   DECLARE @CurrentDBID int
   DECLARE @CurrentDatabaseName nvarchar(max)
 
-  DECLARE @CurrentDatabase_sp_executesql nvarchar(max)
-
+  DECLARE @CurrentDatabaseID int
   DECLARE @CurrentUserAccess nvarchar(max)
   DECLARE @CurrentIsReadOnly bit
   DECLARE @CurrentDatabaseState nvarchar(max)
   DECLARE @CurrentInStandby bit
   DECLARE @CurrentRecoveryModel nvarchar(max)
-  DECLARE @CurrentDatabaseSize bigint
 
   DECLARE @CurrentIsEncrypted bit
 
   DECLARE @CurrentBackupType nvarchar(max)
-  DECLARE @CurrentMaxTransferSize int
-  DECLARE @CurrentNumberOfFiles int
   DECLARE @CurrentFileExtension nvarchar(max)
   DECLARE @CurrentFileNumber int
   DECLARE @CurrentDifferentialBaseLSN numeric(25,0)
   DECLARE @CurrentDifferentialBaseIsSnapshot bit
   DECLARE @CurrentLogLSN numeric(25,0)
-  DECLARE @CurrentLatestBackup datetime2
+  DECLARE @CurrentLatestBackup datetime
   DECLARE @CurrentDatabaseNameFS nvarchar(max)
   DECLARE @CurrentDirectoryStructure nvarchar(max)
   DECLARE @CurrentDatabaseFileName nvarchar(max)
@@ -137,8 +128,8 @@ BEGIN
   DECLARE @CurrentDirectoryID int
   DECLARE @CurrentDirectoryPath nvarchar(max)
   DECLARE @CurrentFilePath nvarchar(max)
-  DECLARE @CurrentDate datetime2
-  DECLARE @CurrentCleanupDate datetime2
+  DECLARE @CurrentDate datetime
+  DECLARE @CurrentCleanupDate datetime
   DECLARE @CurrentIsDatabaseAccessible bit
   DECLARE @CurrentAvailabilityGroup nvarchar(max)
   DECLARE @CurrentAvailabilityGroupRole nvarchar(max)
@@ -149,7 +140,7 @@ BEGIN
 
   DECLARE @CurrentBackupSetID int
   DECLARE @CurrentIsMirror bit
-  DECLARE @CurrentLastLogBackup datetime2
+  DECLARE @CurrentLastLogBackup datetime
   DECLARE @CurrentLogSizeSinceLastLogBackup float
   DECLARE @CurrentAllocatedExtentPageCount bigint
   DECLARE @CurrentModifiedExtentPageCount bigint
@@ -159,6 +150,7 @@ BEGIN
   DECLARE @CurrentCommand03 nvarchar(max)
   DECLARE @CurrentCommand04 nvarchar(max)
   DECLARE @CurrentCommand05 nvarchar(max)
+  DECLARE @CurrentCommand06 nvarchar(max)
   DECLARE @CurrentCommand07 nvarchar(max)
 
   DECLARE @CurrentCommandOutput01 int
@@ -172,11 +164,6 @@ BEGIN
   DECLARE @CurrentCommandType03 nvarchar(max)
   DECLARE @CurrentCommandType04 nvarchar(max)
   DECLARE @CurrentCommandType05 nvarchar(max)
-
-  DECLARE @Errors TABLE (ID int IDENTITY PRIMARY KEY,
-                         [Message] nvarchar(max))
-
-  DECLARE @CurrentMessage nvarchar(max)
 
   DECLARE @Directories TABLE (ID int PRIMARY KEY,
                               DirectoryPath nvarchar(max),
@@ -231,7 +218,7 @@ BEGIN
                                      DirectoryPath nvarchar(max),
                                      Mirror bit,
                                      DirectoryNumber int,
-                                     CleanupDate datetime2,
+                                     CleanupDate datetime,
                                      CleanupMode nvarchar(max),
                                      CreateCompleted bit,
                                      CleanupCompleted bit,
@@ -247,15 +234,21 @@ BEGIN
                                FilePath nvarchar(max),
                                Mirror bit)
 
-  DECLARE @CurrentCleanupDates TABLE (CleanupDate datetime2,
-                                      Mirror bit)
+  DECLARE @CurrentCleanupDates TABLE (CleanupDate datetime, Mirror bit)
 
-  DECLARE @Error int = 0
-  DECLARE @ReturnCode int = 0
+  DECLARE @DirectoryCheck bit
 
-  DECLARE @EmptyLine nvarchar(max) = CHAR(9)
+  DECLARE @Error int
+  DECLARE @ReturnCode int
 
-  DECLARE @Version numeric(18,10) = CAST(LEFT(CAST(SERVERPROPERTY('ProductVersion') AS nvarchar(max)),CHARINDEX('.',CAST(SERVERPROPERTY('ProductVersion') AS nvarchar(max))) - 1) + '.' + REPLACE(RIGHT(CAST(SERVERPROPERTY('ProductVersion') AS nvarchar(max)), LEN(CAST(SERVERPROPERTY('ProductVersion') AS nvarchar(max))) - CHARINDEX('.',CAST(SERVERPROPERTY('ProductVersion') AS nvarchar(max)))),'.','') AS numeric(18,10))
+  DECLARE @EmptyLine nvarchar(max)
+
+  SET @Error = 0
+  SET @ReturnCode = 0
+
+  SET @EmptyLine = CHAR(9)
+
+  SET @Version = CAST(LEFT(CAST(SERVERPROPERTY('ProductVersion') AS nvarchar(max)),CHARINDEX('.',CAST(SERVERPROPERTY('ProductVersion') AS nvarchar(max))) - 1) + '.' + REPLACE(RIGHT(CAST(SERVERPROPERTY('ProductVersion') AS nvarchar(max)), LEN(CAST(SERVERPROPERTY('ProductVersion') AS nvarchar(max))) - CHARINDEX('.',CAST(SERVERPROPERTY('ProductVersion') AS nvarchar(max)))),'.','') AS numeric(18,10))
 
   IF @Version >= 14
   BEGIN
@@ -267,69 +260,72 @@ BEGIN
     SET @HostPlatform = 'Windows'
   END
 
-  DECLARE @AmazonRDS bit = CASE WHEN DB_ID('rdsadmin') IS NOT NULL AND SUSER_SNAME(0x01) = 'rdsa' THEN 1 ELSE 0 END
+  SET @AmazonRDS = CASE WHEN DB_ID('rdsadmin') IS NOT NULL AND SUSER_SNAME(0x01) = 'rdsa' THEN 1 ELSE 0 END
 
   ----------------------------------------------------------------------------------------------------
   --// Log initial information                                                                    //--
   ----------------------------------------------------------------------------------------------------
 
+  SET @StartTime = GETDATE()
+  SET @SchemaName = (SELECT schemas.name FROM sys.schemas schemas INNER JOIN sys.objects objects ON schemas.[schema_id] = objects.[schema_id] WHERE [object_id] = @@PROCID)
+  SET @ObjectName = OBJECT_NAME(@@PROCID)
+  SET @VersionTimestamp = SUBSTRING(OBJECT_DEFINITION(@@PROCID),CHARINDEX('--// Version: ',OBJECT_DEFINITION(@@PROCID)) + LEN('--// Version: ') + 1, 19)
+
   SET @Parameters = '@Databases = ' + ISNULL('''' + REPLACE(@Databases,'''','''''') + '''','NULL')
-  SET @Parameters += ', @Directory = ' + ISNULL('''' + REPLACE(@Directory,'''','''''') + '''','NULL')
-  SET @Parameters += ', @BackupType = ' + ISNULL('''' + REPLACE(@BackupType,'''','''''') + '''','NULL')
-  SET @Parameters += ', @Verify = ' + ISNULL('''' + REPLACE(@Verify,'''','''''') + '''','NULL')
-  SET @Parameters += ', @CleanupTime = ' + ISNULL(CAST(@CleanupTime AS nvarchar),'NULL')
-  SET @Parameters += ', @CleanupMode = ' + ISNULL('''' + REPLACE(@CleanupMode,'''','''''') + '''','NULL')
-  SET @Parameters += ', @Compress = ' + ISNULL('''' + REPLACE(@Compress,'''','''''') + '''','NULL')
-  SET @Parameters += ', @CopyOnly = ' + ISNULL('''' + REPLACE(@CopyOnly,'''','''''') + '''','NULL')
-  SET @Parameters += ', @ChangeBackupType = ' + ISNULL('''' + REPLACE(@ChangeBackupType,'''','''''') + '''','NULL')
-  SET @Parameters += ', @BackupSoftware = ' + ISNULL('''' + REPLACE(@BackupSoftware,'''','''''') + '''','NULL')
-  SET @Parameters += ', @CheckSum = ' + ISNULL('''' + REPLACE(@CheckSum,'''','''''') + '''','NULL')
-  SET @Parameters += ', @BlockSize = ' + ISNULL(CAST(@BlockSize AS nvarchar),'NULL')
-  SET @Parameters += ', @BufferCount = ' + ISNULL(CAST(@BufferCount AS nvarchar),'NULL')
-  SET @Parameters += ', @MaxTransferSize = ' + ISNULL(CAST(@MaxTransferSize AS nvarchar),'NULL')
-  SET @Parameters += ', @NumberOfFiles = ' + ISNULL(CAST(@NumberOfFiles AS nvarchar),'NULL')
-  SET @Parameters += ', @CompressionLevel = ' + ISNULL(CAST(@CompressionLevel AS nvarchar),'NULL')
-  SET @Parameters += ', @Description = ' + ISNULL('''' + REPLACE(@Description,'''','''''') + '''','NULL')
-  SET @Parameters += ', @Threads = ' + ISNULL(CAST(@Threads AS nvarchar),'NULL')
-  SET @Parameters += ', @Throttle = ' + ISNULL(CAST(@Throttle AS nvarchar),'NULL')
-  SET @Parameters += ', @Encrypt = ' + ISNULL('''' + REPLACE(@Encrypt,'''','''''') + '''','NULL')
-  SET @Parameters += ', @EncryptionAlgorithm = ' + ISNULL('''' + REPLACE(@EncryptionAlgorithm,'''','''''') + '''','NULL')
-  SET @Parameters += ', @ServerCertificate = ' + ISNULL('''' + REPLACE(@ServerCertificate,'''','''''') + '''','NULL')
-  SET @Parameters += ', @ServerAsymmetricKey = ' + ISNULL('''' + REPLACE(@ServerAsymmetricKey,'''','''''') + '''','NULL')
-  SET @Parameters += ', @EncryptionKey = ' + ISNULL('''' + REPLACE(@EncryptionKey,'''','''''') + '''','NULL')
-  SET @Parameters += ', @ReadWriteFileGroups = ' + ISNULL('''' + REPLACE(@ReadWriteFileGroups,'''','''''') + '''','NULL')
-  SET @Parameters += ', @OverrideBackupPreference = ' + ISNULL('''' + REPLACE(@OverrideBackupPreference,'''','''''') + '''','NULL')
-  SET @Parameters += ', @NoRecovery = ' + ISNULL('''' + REPLACE(@NoRecovery,'''','''''') + '''','NULL')
-  SET @Parameters += ', @URL = ' + ISNULL('''' + REPLACE(@URL,'''','''''') + '''','NULL')
-  SET @Parameters += ', @Credential = ' + ISNULL('''' + REPLACE(@Credential,'''','''''') + '''','NULL')
-  SET @Parameters += ', @MirrorDirectory = ' + ISNULL('''' + REPLACE(@MirrorDirectory,'''','''''') + '''','NULL')
-  SET @Parameters += ', @MirrorCleanupTime = ' + ISNULL(CAST(@MirrorCleanupTime AS nvarchar),'NULL')
-  SET @Parameters += ', @MirrorCleanupMode = ' + ISNULL('''' + REPLACE(@MirrorCleanupMode,'''','''''') + '''','NULL')
-  SET @Parameters += ', @MirrorURL = ' + ISNULL('''' + REPLACE(@MirrorURL,'''','''''') + '''','NULL')
-  SET @Parameters += ', @AvailabilityGroups = ' + ISNULL('''' + REPLACE(@AvailabilityGroups,'''','''''') + '''','NULL')
-  SET @Parameters += ', @Updateability = ' + ISNULL('''' + REPLACE(@Updateability,'''','''''') + '''','NULL')
-  SET @Parameters += ', @AdaptiveCompression = ' + ISNULL('''' + REPLACE(@AdaptiveCompression,'''','''''') + '''','NULL')
-  SET @Parameters += ', @ModificationLevel = ' + ISNULL(CAST(@ModificationLevel AS nvarchar),'NULL')
-  SET @Parameters += ', @LogSizeSinceLastLogBackup = ' + ISNULL(CAST(@LogSizeSinceLastLogBackup AS nvarchar),'NULL')
-  SET @Parameters += ', @TimeSinceLastLogBackup = ' + ISNULL(CAST(@TimeSinceLastLogBackup AS nvarchar),'NULL')
-  SET @Parameters += ', @DataDomainBoostHost = ' + ISNULL('''' + REPLACE(@DataDomainBoostHost,'''','''''') + '''','NULL')
-  SET @Parameters += ', @DataDomainBoostUser = ' + ISNULL('''' + REPLACE(@DataDomainBoostUser,'''','''''') + '''','NULL')
-  SET @Parameters += ', @DataDomainBoostDevicePath = ' + ISNULL('''' + REPLACE(@DataDomainBoostDevicePath,'''','''''') + '''','NULL')
-  SET @Parameters += ', @DataDomainBoostLockboxPath = ' + ISNULL('''' + REPLACE(@DataDomainBoostLockboxPath,'''','''''') + '''','NULL')
-  SET @Parameters += ', @DirectoryStructure = ' + ISNULL('''' + REPLACE(@DirectoryStructure,'''','''''') + '''','NULL')
-  SET @Parameters += ', @AvailabilityGroupDirectoryStructure = ' + ISNULL('''' + REPLACE(@AvailabilityGroupDirectoryStructure,'''','''''') + '''','NULL')
-  SET @Parameters += ', @FileName = ' + ISNULL('''' + REPLACE(@FileName,'''','''''') + '''','NULL')
-  SET @Parameters += ', @AvailabilityGroupFileName = ' + ISNULL('''' + REPLACE(@AvailabilityGroupFileName,'''','''''') + '''','NULL')
-  SET @Parameters += ', @FileExtensionFull = ' + ISNULL('''' + REPLACE(@FileExtensionFull,'''','''''') + '''','NULL')
-  SET @Parameters += ', @FileExtensionDiff = ' + ISNULL('''' + REPLACE(@FileExtensionDiff,'''','''''') + '''','NULL')
-  SET @Parameters += ', @FileExtensionLog = ' + ISNULL('''' + REPLACE(@FileExtensionLog,'''','''''') + '''','NULL')
-  SET @Parameters += ', @Init = ' + ISNULL('''' + REPLACE(@Init,'''','''''') + '''','NULL')
-  SET @Parameters += ', @Format = ' + ISNULL('''' + REPLACE(@Format,'''','''''') + '''','NULL')
-  SET @Parameters += ', @ObjectLevelRecoveryMap = ' + ISNULL('''' + REPLACE(@ObjectLevelRecoveryMap,'''','''''') + '''','NULL')
-  SET @Parameters += ', @DatabaseOrder = ' + ISNULL('''' + REPLACE(@DatabaseOrder,'''','''''') + '''','NULL')
-  SET @Parameters += ', @DatabasesInParallel = ' + ISNULL('''' + REPLACE(@DatabasesInParallel,'''','''''') + '''','NULL')
-  SET @Parameters += ', @LogToTable = ' + ISNULL('''' + REPLACE(@LogToTable,'''','''''') + '''','NULL')
-  SET @Parameters += ', @Execute = ' + ISNULL('''' + REPLACE(@Execute,'''','''''') + '''','NULL')
+  SET @Parameters = @Parameters + ', @Directory = ' + ISNULL('''' + REPLACE(@Directory,'''','''''') + '''','NULL')
+  SET @Parameters = @Parameters + ', @BackupType = ' + ISNULL('''' + REPLACE(@BackupType,'''','''''') + '''','NULL')
+  SET @Parameters = @Parameters + ', @Verify = ' + ISNULL('''' + REPLACE(@Verify,'''','''''') + '''','NULL')
+  SET @Parameters = @Parameters + ', @CleanupTime = ' + ISNULL(CAST(@CleanupTime AS nvarchar),'NULL')
+  SET @Parameters = @Parameters + ', @CleanupMode = ' + ISNULL('''' + REPLACE(@CleanupMode,'''','''''') + '''','NULL')
+  SET @Parameters = @Parameters + ', @Compress = ' + ISNULL('''' + REPLACE(@Compress,'''','''''') + '''','NULL')
+  SET @Parameters = @Parameters + ', @CopyOnly = ' + ISNULL('''' + REPLACE(@CopyOnly,'''','''''') + '''','NULL')
+  SET @Parameters = @Parameters + ', @ChangeBackupType = ' + ISNULL('''' + REPLACE(@ChangeBackupType,'''','''''') + '''','NULL')
+  SET @Parameters = @Parameters + ', @BackupSoftware = ' + ISNULL('''' + REPLACE(@BackupSoftware,'''','''''') + '''','NULL')
+  SET @Parameters = @Parameters + ', @CheckSum = ' + ISNULL('''' + REPLACE(@CheckSum,'''','''''') + '''','NULL')
+  SET @Parameters = @Parameters + ', @BlockSize = ' + ISNULL(CAST(@BlockSize AS nvarchar),'NULL')
+  SET @Parameters = @Parameters + ', @BufferCount = ' + ISNULL(CAST(@BufferCount AS nvarchar),'NULL')
+  SET @Parameters = @Parameters + ', @MaxTransferSize = ' + ISNULL(CAST(@MaxTransferSize AS nvarchar),'NULL')
+  SET @Parameters = @Parameters + ', @NumberOfFiles = ' + ISNULL(CAST(@NumberOfFiles AS nvarchar),'NULL')
+  SET @Parameters = @Parameters + ', @CompressionLevel = ' + ISNULL(CAST(@CompressionLevel AS nvarchar),'NULL')
+  SET @Parameters = @Parameters + ', @Description = ' + ISNULL('''' + REPLACE(@Description,'''','''''') + '''','NULL')
+  SET @Parameters = @Parameters + ', @Threads = ' + ISNULL(CAST(@Threads AS nvarchar),'NULL')
+  SET @Parameters = @Parameters + ', @Throttle = ' + ISNULL(CAST(@Throttle AS nvarchar),'NULL')
+  SET @Parameters = @Parameters + ', @Encrypt = ' + ISNULL('''' + REPLACE(@Encrypt,'''','''''') + '''','NULL')
+  SET @Parameters = @Parameters + ', @EncryptionAlgorithm = ' + ISNULL('''' + REPLACE(@EncryptionAlgorithm,'''','''''') + '''','NULL')
+  SET @Parameters = @Parameters + ', @ServerCertificate = ' + ISNULL('''' + REPLACE(@ServerCertificate,'''','''''') + '''','NULL')
+  SET @Parameters = @Parameters + ', @ServerAsymmetricKey = ' + ISNULL('''' + REPLACE(@ServerAsymmetricKey,'''','''''') + '''','NULL')
+  SET @Parameters = @Parameters + ', @EncryptionKey = ' + ISNULL('''' + REPLACE(@EncryptionKey,'''','''''') + '''','NULL')
+  SET @Parameters = @Parameters + ', @ReadWriteFileGroups = ' + ISNULL('''' + REPLACE(@ReadWriteFileGroups,'''','''''') + '''','NULL')
+  SET @Parameters = @Parameters + ', @OverrideBackupPreference = ' + ISNULL('''' + REPLACE(@OverrideBackupPreference,'''','''''') + '''','NULL')
+  SET @Parameters = @Parameters + ', @NoRecovery = ' + ISNULL('''' + REPLACE(@NoRecovery,'''','''''') + '''','NULL')
+  SET @Parameters = @Parameters + ', @URL = ' + ISNULL('''' + REPLACE(@URL,'''','''''') + '''','NULL')
+  SET @Parameters = @Parameters + ', @Credential = ' + ISNULL('''' + REPLACE(@Credential,'''','''''') + '''','NULL')
+  SET @Parameters = @Parameters + ', @MirrorDirectory = ' + ISNULL('''' + REPLACE(@MirrorDirectory,'''','''''') + '''','NULL')
+  SET @Parameters = @Parameters + ', @MirrorCleanupTime = ' + ISNULL(CAST(@MirrorCleanupTime AS nvarchar),'NULL')
+  SET @Parameters = @Parameters + ', @MirrorCleanupMode = ' + ISNULL('''' + REPLACE(@MirrorCleanupMode,'''','''''') + '''','NULL')
+  SET @Parameters = @Parameters + ', @MirrorURL = ' + ISNULL('''' + REPLACE(@MirrorURL,'''','''''') + '''','NULL')
+  SET @Parameters = @Parameters + ', @AvailabilityGroups = ' + ISNULL('''' + REPLACE(@AvailabilityGroups,'''','''''') + '''','NULL')
+  SET @Parameters = @Parameters + ', @Updateability = ' + ISNULL('''' + REPLACE(@Updateability,'''','''''') + '''','NULL')
+  SET @Parameters = @Parameters + ', @AdaptiveCompression = ' + ISNULL('''' + REPLACE(@AdaptiveCompression,'''','''''') + '''','NULL')
+  SET @Parameters = @Parameters + ', @ModificationLevel = ' + ISNULL(CAST(@ModificationLevel AS nvarchar),'NULL')
+  SET @Parameters = @Parameters + ', @LogSizeSinceLastLogBackup = ' + ISNULL(CAST(@LogSizeSinceLastLogBackup AS nvarchar),'NULL')
+  SET @Parameters = @Parameters + ', @TimeSinceLastLogBackup = ' + ISNULL(CAST(@TimeSinceLastLogBackup AS nvarchar),'NULL')
+  SET @Parameters = @Parameters + ', @DataDomainBoostHost = ' + ISNULL('''' + REPLACE(@DataDomainBoostHost,'''','''''') + '''','NULL')
+  SET @Parameters = @Parameters + ', @DataDomainBoostUser = ' + ISNULL('''' + REPLACE(@DataDomainBoostUser,'''','''''') + '''','NULL')
+  SET @Parameters = @Parameters + ', @DataDomainBoostDevicePath = ' + ISNULL('''' + REPLACE(@DataDomainBoostDevicePath,'''','''''') + '''','NULL')
+  SET @Parameters = @Parameters + ', @DataDomainBoostLockboxPath = ' + ISNULL('''' + REPLACE(@DataDomainBoostLockboxPath,'''','''''') + '''','NULL')
+  SET @Parameters = @Parameters + ', @DirectoryStructure = ' + ISNULL('''' + REPLACE(@DirectoryStructure,'''','''''') + '''','NULL')
+  SET @Parameters = @Parameters + ', @AvailabilityGroupDirectoryStructure = ' + ISNULL('''' + REPLACE(@AvailabilityGroupDirectoryStructure,'''','''''') + '''','NULL')
+  SET @Parameters = @Parameters + ', @FileName = ' + ISNULL('''' + REPLACE(@FileName,'''','''''') + '''','NULL')
+  SET @Parameters = @Parameters + ', @AvailabilityGroupFileName = ' + ISNULL('''' + REPLACE(@AvailabilityGroupFileName,'''','''''') + '''','NULL')
+  SET @Parameters = @Parameters + ', @FileExtensionFull = ' + ISNULL('''' + REPLACE(@FileExtensionFull,'''','''''') + '''','NULL')
+  SET @Parameters = @Parameters + ', @FileExtensionDiff = ' + ISNULL('''' + REPLACE(@FileExtensionDiff,'''','''''') + '''','NULL')
+  SET @Parameters = @Parameters + ', @FileExtensionLog = ' + ISNULL('''' + REPLACE(@FileExtensionLog,'''','''''') + '''','NULL')
+  SET @Parameters = @Parameters + ', @Init = ' + ISNULL('''' + REPLACE(@Init,'''','''''') + '''','NULL')
+  SET @Parameters = @Parameters + ', @DatabaseOrder = ' + ISNULL('''' + REPLACE(@DatabaseOrder,'''','''''') + '''','NULL')
+  SET @Parameters = @Parameters + ', @DatabasesInParallel = ' + ISNULL('''' + REPLACE(@DatabasesInParallel,'''','''''') + '''','NULL')
+  SET @Parameters = @Parameters + ', @LogToTable = ' + ISNULL('''' + REPLACE(@LogToTable,'''','''''') + '''','NULL')
+  SET @Parameters = @Parameters + ', @Execute = ' + ISNULL('''' + REPLACE(@Execute,'''','''''') + '''','NULL')
 
   SET @StartMessage = 'Date and time: ' + CONVERT(nvarchar,@StartTime,120)
   RAISERROR('%s',10,1,@StartMessage) WITH NOWAIT
@@ -366,62 +362,88 @@ BEGIN
 
   IF NOT (SELECT [compatibility_level] FROM sys.databases WHERE database_id = DB_ID()) >= 90
   BEGIN
-    INSERT INTO @Errors ([Message])
-    SELECT 'The database ' + QUOTENAME(DB_NAME(DB_ID())) + ' has to be in compatibility level 90 or higher.'
+    SET @ErrorMessage = 'The database ' + QUOTENAME(DB_NAME(DB_ID())) + ' has to be in compatibility level 90 or higher.'
+    RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
+    SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
   IF NOT (SELECT uses_ansi_nulls FROM sys.sql_modules WHERE [object_id] = @@PROCID) = 1
   BEGIN
-    INSERT INTO @Errors ([Message])
-    SELECT 'ANSI_NULLS has to be set to ON for the stored procedure.'
+    SET @ErrorMessage = 'ANSI_NULLS has to be set to ON for the stored procedure.'
+    RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
+    SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
   IF NOT (SELECT uses_quoted_identifier FROM sys.sql_modules WHERE [object_id] = @@PROCID) = 1
   BEGIN
-    INSERT INTO @Errors ([Message])
-    SELECT 'QUOTED_IDENTIFIER has to be set to ON for the stored procedure.'
+    SET @ErrorMessage = 'QUOTED_IDENTIFIER has to be set to ON for the stored procedure.'
+    RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
+    SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
   IF NOT EXISTS (SELECT * FROM sys.objects objects INNER JOIN sys.schemas schemas ON objects.[schema_id] = schemas.[schema_id] WHERE objects.[type] = 'P' AND schemas.[name] = 'dbo' AND objects.[name] = 'CommandExecute')
   BEGIN
-    INSERT INTO @Errors ([Message])
-    SELECT 'The stored procedure CommandExecute is missing. Download https://ola.hallengren.com/scripts/CommandExecute.sql.'
+    SET @ErrorMessage = 'The stored procedure CommandExecute is missing. Download https://ola.hallengren.com/scripts/CommandExecute.sql.'
+    RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
+    SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
-  IF EXISTS (SELECT * FROM sys.objects objects INNER JOIN sys.schemas schemas ON objects.[schema_id] = schemas.[schema_id] WHERE objects.[type] = 'P' AND schemas.[name] = 'dbo' AND objects.[name] = 'CommandExecute' AND OBJECT_DEFINITION(objects.[object_id]) NOT LIKE '%@DatabaseContext%')
+  IF EXISTS (SELECT * FROM sys.objects objects INNER JOIN sys.schemas schemas ON objects.[schema_id] = schemas.[schema_id] WHERE objects.[type] = 'P' AND schemas.[name] = 'dbo' AND objects.[name] = 'CommandExecute' AND OBJECT_DEFINITION(objects.[object_id]) NOT LIKE '%@LockMessageSeverity%')
   BEGIN
-    INSERT INTO @Errors ([Message])
-    SELECT 'The stored procedure CommandExecute needs to be updated. Download https://ola.hallengren.com/scripts/CommandExecute.sql.'
+    SET @ErrorMessage = 'The stored procedure CommandExecute needs to be updated. Download https://ola.hallengren.com/scripts/CommandExecute.sql.'
+    RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
+    SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
   IF @LogToTable = 'Y' AND NOT EXISTS (SELECT * FROM sys.objects objects INNER JOIN sys.schemas schemas ON objects.[schema_id] = schemas.[schema_id] WHERE objects.[type] = 'U' AND schemas.[name] = 'dbo' AND objects.[name] = 'CommandLog')
   BEGIN
-    INSERT INTO @Errors ([Message])
-    SELECT 'The table CommandLog is missing. Download https://ola.hallengren.com/scripts/CommandLog.sql.'
+    SET @ErrorMessage = 'The table CommandLog is missing. Download https://ola.hallengren.com/scripts/CommandLog.sql.'
+    RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
+    SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
   IF @DatabasesInParallel = 'Y' AND NOT EXISTS (SELECT * FROM sys.objects objects INNER JOIN sys.schemas schemas ON objects.[schema_id] = schemas.[schema_id] WHERE objects.[type] = 'U' AND schemas.[name] = 'dbo' AND objects.[name] = 'Queue')
   BEGIN
-    INSERT INTO @Errors ([Message])
-    SELECT 'The table Queue is missing. Download https://ola.hallengren.com/scripts/Queue.sql.'
+    SET @ErrorMessage = 'The table Queue is missing. Download https://ola.hallengren.com/scripts/Queue.sql.'
+    RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
+    SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
   IF @DatabasesInParallel = 'Y' AND NOT EXISTS (SELECT * FROM sys.objects objects INNER JOIN sys.schemas schemas ON objects.[schema_id] = schemas.[schema_id] WHERE objects.[type] = 'U' AND schemas.[name] = 'dbo' AND objects.[name] = 'QueueDatabase')
   BEGIN
-    INSERT INTO @Errors ([Message])
-    SELECT 'The table QueueDatabase is missing. Download https://ola.hallengren.com/scripts/QueueDatabase.sql.'
+    SET @ErrorMessage = 'The table QueueDatabase is missing. Download https://ola.hallengren.com/scripts/QueueDatabase.sql.'
+    RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
+    SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
   IF @@TRANCOUNT <> 0
   BEGIN
-    INSERT INTO @Errors ([Message])
-    SELECT 'The transaction count is not 0.'
+    SET @ErrorMessage = 'The transaction count is not 0.'
+    RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
+    SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
   IF @AmazonRDS = 1
   BEGIN
-    INSERT INTO @Errors ([Message])
-    SELECT 'The stored procedure DatabaseBackup is not supported on Amazon RDS.'
+    SET @ErrorMessage = 'The stored procedure DatabaseBackup is not supported on Amazon RDS.'
+    RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
+    SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
+  END
+
+  IF @Error <> 0
+  BEGIN
+    SET @ReturnCode = @Error
+    GOTO Logging
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -548,8 +570,10 @@ BEGIN
 
   IF @Databases IS NOT NULL AND (NOT EXISTS(SELECT * FROM @SelectedDatabases) OR EXISTS(SELECT * FROM @SelectedDatabases WHERE DatabaseName IS NULL OR DatabaseName = ''))
   BEGIN
-    INSERT INTO @Errors ([Message])
-    SELECT 'The value for the parameter @Databases is not supported.'
+    SET @ErrorMessage = 'The value for the parameter @Databases is not supported.'
+    RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
+    SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -643,20 +667,26 @@ BEGIN
 
   IF @AvailabilityGroups IS NOT NULL AND (NOT EXISTS(SELECT * FROM @SelectedAvailabilityGroups) OR EXISTS(SELECT * FROM @SelectedAvailabilityGroups WHERE AvailabilityGroupName IS NULL OR AvailabilityGroupName = '') OR @Version < 11 OR SERVERPROPERTY('IsHadrEnabled') = 0)
   BEGIN
-    INSERT INTO @Errors ([Message])
-    SELECT 'The value for the parameter @AvailabilityGroups is not supported.'
+    SET @ErrorMessage = 'The value for the parameter @AvailabilityGroups is not supported.'
+    RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
+    SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
   IF (@Databases IS NULL AND @AvailabilityGroups IS NULL)
   BEGIN
-    INSERT INTO @Errors ([Message])
-    SELECT 'You need to specify one of the parameters @Databases and @AvailabilityGroups.'
+    SET @ErrorMessage = 'You need to specify one of the parameters @Databases and @AvailabilityGroups.'
+    RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
+    SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
   IF (@Databases IS NOT NULL AND @AvailabilityGroups IS NOT NULL)
   BEGIN
-    INSERT INTO @Errors ([Message])
-    SELECT 'You can only specify one of the parameters @Databases and @AvailabilityGroups.'
+    SET @ErrorMessage = 'You can only specify one of the parameters @Databases and @AvailabilityGroups.'
+    RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
+    SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -671,8 +701,10 @@ BEGIN
   ORDER BY DatabaseName ASC
   IF @@ROWCOUNT > 0
   BEGIN
-    INSERT INTO @Errors ([Message])
-    SELECT 'The names of the following databases are not supported: ' + LEFT(@ErrorMessage,LEN(@ErrorMessage)-1) + '.'
+    SET @ErrorMessage = 'The names of the following databases are not supported: ' + LEFT(@ErrorMessage,LEN(@ErrorMessage)-1) + '.'
+    RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
+    SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
   SET @ErrorMessage = ''
@@ -685,8 +717,10 @@ BEGIN
   OPTION (RECOMPILE)
   IF @@ROWCOUNT > 0
   BEGIN
-    INSERT INTO @Errors ([Message])
-    SELECT 'The names of the following databases are not unique in the file system: ' + LEFT(@ErrorMessage,LEN(@ErrorMessage)-1) + '.'
+    SET @ErrorMessage = 'The names of the following databases are not unique in the file system: ' + LEFT(@ErrorMessage,LEN(@ErrorMessage)-1) + '.'
+    RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
+    SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -777,6 +811,8 @@ BEGIN
   --// Check directories                                                                          //--
   ----------------------------------------------------------------------------------------------------
 
+  SET @DirectoryCheck = 1
+
   IF EXISTS(SELECT * FROM @Directories WHERE Mirror = 0 AND (NOT (DirectoryPath LIKE '_:' OR DirectoryPath LIKE '_:\%' OR DirectoryPath LIKE '\\%\%' OR (DirectoryPath LIKE '/%/%' AND @HostPlatform = 'Linux') OR (DirectoryPath LIKE '.' AND @HostPlatform = 'Linux') OR (DirectoryPath = 'NUL' AND @HostPlatform = 'Windows'))
   OR DirectoryPath IS NULL
   OR LEFT(DirectoryPath,1) = ' '
@@ -787,8 +823,11 @@ BEGIN
   OR (EXISTS(SELECT * FROM @Directories WHERE Mirror = 0 AND DirectoryPath = 'NUL') AND EXISTS(SELECT * FROM @Directories WHERE Mirror = 0 AND DirectoryPath <> 'NUL'))
   OR (EXISTS(SELECT * FROM @Directories WHERE Mirror = 0 AND DirectoryPath = 'NUL') AND EXISTS(SELECT * FROM @Directories WHERE Mirror = 1))
   BEGIN
-    INSERT INTO @Errors ([Message])
-    SELECT 'The value for the parameter @Directory is not supported.'
+    SET @ErrorMessage = 'The value for the parameter @Directory is not supported.'
+    RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
+    SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
+    SET @DirectoryCheck = 0
   END
 
   IF EXISTS(SELECT * FROM @Directories WHERE Mirror = 1 AND (NOT (DirectoryPath LIKE '_:' OR DirectoryPath LIKE '_:\%' OR DirectoryPath LIKE '\\%\%' OR (DirectoryPath LIKE '/%/%' AND @HostPlatform = 'Linux') OR (DirectoryPath LIKE '.' AND @HostPlatform = 'Linux'))
@@ -803,17 +842,22 @@ BEGIN
   OR (@MirrorDirectory IS NOT NULL AND @BackupSoftware = 'DATA_DOMAIN_BOOST')
   OR (EXISTS(SELECT * FROM @Directories WHERE Mirror = 0 AND DirectoryPath = 'NUL') AND EXISTS(SELECT * FROM @Directories WHERE Mirror = 1))
   BEGIN
-    INSERT INTO @Errors ([Message])
-    SELECT 'The value for the parameter @MirrorDirectory is not supported.'
+    SET @ErrorMessage = 'The value for the parameter @MirrorDirectory is not supported.'
+    RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
+    SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
+    SET @DirectoryCheck = 0
   END
 
   IF (@BackupSoftware IS NULL AND EXISTS(SELECT * FROM @Directories WHERE Mirror = 1) AND SERVERPROPERTY('EngineEdition') <> 3)
   BEGIN
-    INSERT INTO @Errors ([Message])
-    SELECT 'Mirrored backup to disk is only available in Enterprise and Developer Edition.'
+    SET @ErrorMessage = 'Mirrored backup to disk is only available in Enterprise and Developer Edition.'
+    RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
+    SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
-  IF NOT EXISTS (SELECT * FROM @Errors WHERE [Message] IN('The value for the parameter @Directory is not supported.','The value for the parameter @MirrorDirectory is not supported.'))
+  IF @DirectoryCheck = 1
   BEGIN
     WHILE (1 = 1)
     BEGIN
@@ -834,8 +878,10 @@ BEGIN
 
       IF NOT EXISTS (SELECT * FROM @DirectoryInfo WHERE FileExists = 0 AND FileIsADirectory = 1 AND ParentDirectoryExists = 1)
       BEGIN
-        INSERT INTO @Errors ([Message])
-        SELECT 'The directory ' + @CurrentRootDirectoryPath + ' does not exist.'
+        SET @ErrorMessage = 'The directory ' + @CurrentRootDirectoryPath + ' does not exist.'
+        RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
+        SET @Error = @@ERROR
+        RAISERROR(@EmptyLine,10,1) WITH NOWAIT
       END
 
       UPDATE @Directories
@@ -917,16 +963,20 @@ BEGIN
   OR EXISTS (SELECT * FROM @URLs GROUP BY DirectoryPath HAVING COUNT(*) <> 1)
   OR ((SELECT COUNT(*) FROM @URLs WHERE Mirror = 0) <> (SELECT COUNT(*) FROM @URLs WHERE Mirror = 1) AND (SELECT COUNT(*) FROM @URLs WHERE Mirror = 1) > 0)
   BEGIN
-    INSERT INTO @Errors ([Message])
-    SELECT 'The value for the parameter @URL is not supported.'
+    SET @ErrorMessage = 'The value for the parameter @URL is not supported.'
+    RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
+    SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
   IF EXISTS(SELECT * FROM @URLs WHERE Mirror = 1 AND DirectoryPath NOT LIKE 'https://%/%')
   OR EXISTS (SELECT * FROM @URLs GROUP BY DirectoryPath HAVING COUNT(*) <> 1)
   OR ((SELECT COUNT(*) FROM @URLs WHERE Mirror = 0) <> (SELECT COUNT(*) FROM @URLs WHERE Mirror = 1) AND (SELECT COUNT(*) FROM @URLs WHERE Mirror = 1) > 0)
   BEGIN
-    INSERT INTO @Errors ([Message])
-    SELECT 'The value for the parameter @MirrorURL is not supported.'
+    SET @ErrorMessage = 'The value for the parameter @MirrorURL is not supported.'
+    RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
+    SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -1014,426 +1064,551 @@ BEGIN
 
   IF @BackupType NOT IN ('FULL','DIFF','LOG') OR @BackupType IS NULL
   BEGIN
-    INSERT INTO @Errors ([Message])
-    SELECT 'The value for the parameter @BackupType is not supported.'
+    SET @ErrorMessage = 'The value for the parameter @BackupType is not supported.'
+    RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
+    SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
   IF SERVERPROPERTY('EngineEdition') = 8 AND NOT (@BackupType = 'FULL' AND @CopyOnly = 'Y')
   BEGIN
-    INSERT INTO @Errors ([Message])
-    SELECT 'SQL Database Managed Instance only supports COPY_ONLY full backups.'
+    SET @ErrorMessage = 'SQL Database Managed Instance only supports COPY_ONLY full backups.'
+    RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
+    SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
   IF @Verify NOT IN ('Y','N') OR @Verify IS NULL OR (@BackupSoftware = 'SQLSAFE' AND @Encrypt = 'Y' AND @Verify = 'Y') OR (@Verify = 'Y' AND @BackupSoftware = 'DATA_DOMAIN_BOOST')
   BEGIN
-    INSERT INTO @Errors ([Message])
-    SELECT 'The value for the parameter @Verify is not supported.'
+    SET @ErrorMessage = 'The value for the parameter @Verify is not supported.'
+    RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
+    SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
   IF @Verify = 'Y' AND EXISTS(SELECT * FROM @Directories WHERE DirectoryPath = 'NUL')
   BEGIN
-    INSERT INTO @Errors ([Message])
-    SELECT 'The value for the parameter @Verify is not supported. Verify is not supported when backing up to NUL.'
+    SET @ErrorMessage = 'The value for the parameter @Verify is not supported. Verify is not supported when backing up to NUL.'
+    RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
+    SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
   IF @CleanupTime < 0
   BEGIN
-    INSERT INTO @Errors ([Message])
-    SELECT 'The value for the parameter @CleanupTime is not supported.'
+    SET @ErrorMessage = 'The value for the parameter @CleanupTime is not supported.'
+    RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
+    SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
   IF @CleanupTime IS NOT NULL AND @URL IS NOT NULL
   BEGIN
-    INSERT INTO @Errors ([Message])
-    SELECT 'The value for the parameter @CleanupTime is not supported. Cleanup is not supported on Azure Blob Storage.'
+    SET @ErrorMessage = 'The value for the parameter @CleanupTime is not supported. Cleanup is not supported on Azure Blob Storage.'
+    RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
+    SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
   IF @CleanupTime IS NOT NULL AND @HostPlatform = 'Linux'
   BEGIN
-    INSERT INTO @Errors ([Message])
-    SELECT 'The value for the parameter @CleanupTime is not supported. Cleanup is not supported on Linux.'
+    SET @ErrorMessage = 'The value for the parameter @CleanupTime is not supported. Cleanup is not supported on Linux.'
+    RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
+    SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
   IF @CleanupTime IS NOT NULL AND EXISTS(SELECT * FROM @Directories WHERE DirectoryPath = 'NUL')
   BEGIN
-    INSERT INTO @Errors ([Message])
-    SELECT 'The value for the parameter @CleanupTime is not supported. Cleanup is not supported when backing up to NUL.'
+    SET @ErrorMessage = 'The value for the parameter @CleanupTime is not supported. Cleanup is not supported when backing up to NUL.'
+    RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
+    SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
   IF @CleanupTime IS NOT NULL AND ((@DirectoryStructure NOT LIKE '%{DatabaseName}%' OR @DirectoryStructure IS NULL) OR (SERVERPROPERTY('IsHadrEnabled') = 1 AND (@AvailabilityGroupDirectoryStructure NOT LIKE '%{DatabaseName}%' OR @AvailabilityGroupDirectoryStructure IS NULL)))
   BEGIN
-    INSERT INTO @Errors ([Message])
-    SELECT 'The value for the parameter @CleanupTime is not supported. Cleanup is not supported if the token {DatabaseName} is not part of the directory.'
+    SET @ErrorMessage = 'The value for the parameter @CleanupTime is not supported. Cleanup is not supported if the token {DatabaseName} is not part of the directory.'
+    RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
+    SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
   IF @CleanupTime IS NOT NULL AND ((@DirectoryStructure NOT LIKE '%{BackupType}%' OR @DirectoryStructure IS NULL) OR (SERVERPROPERTY('IsHadrEnabled') = 1 AND (@AvailabilityGroupDirectoryStructure NOT LIKE '%{BackupType}%' OR @AvailabilityGroupDirectoryStructure IS NULL)))
   BEGIN
-    INSERT INTO @Errors ([Message])
-    SELECT 'The value for the parameter @CleanupTime is not supported. Cleanup is not supported if the token {BackupType} is not part of the directory.'
+    SET @ErrorMessage = 'The value for the parameter @CleanupTime is not supported. Cleanup is not supported if the token {BackupType} is not part of the directory.'
+    RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
+    SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
   IF @CleanupTime IS NOT NULL AND @CopyOnly = 'Y' AND ((@DirectoryStructure NOT LIKE '%{CopyOnly}%' OR @DirectoryStructure IS NULL) OR (SERVERPROPERTY('IsHadrEnabled') = 1 AND (@AvailabilityGroupDirectoryStructure NOT LIKE '%{CopyOnly}%' OR @AvailabilityGroupDirectoryStructure IS NULL)))
   BEGIN
-    INSERT INTO @Errors ([Message])
-    SELECT 'The value for the parameter @CleanupTime is not supported. Cleanup is not supported if the token {CopyOnly} is not part of the directory.'
+    SET @ErrorMessage = 'The value for the parameter @CleanupTime is not supported. Cleanup is not supported if the token {CopyOnly} is not part of the directory.'
+    RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
+    SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
   IF @CleanupMode NOT IN('BEFORE_BACKUP','AFTER_BACKUP') OR @CleanupMode IS NULL
   BEGIN
-    INSERT INTO @Errors ([Message])
-    SELECT 'The value for the parameter @CleanupMode is not supported.'
+    SET @ErrorMessage = 'The value for the parameter @CleanupMode is not supported.'
+    RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
+    SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
   IF @Compress NOT IN ('Y','N') OR @Compress IS NULL OR (@Compress = 'Y' AND @BackupSoftware IS NULL AND NOT ((@Version >= 10 AND @Version < 10.5 AND SERVERPROPERTY('EngineEdition') = 3) OR (@Version >= 10.5 AND (SERVERPROPERTY('EngineEdition') IN (3, 8) OR SERVERPROPERTY('EditionID') IN (-1534726760, 284895786))))) OR (@Compress = 'N' AND @BackupSoftware IN ('LITESPEED','SQLBACKUP','SQLSAFE') AND (@CompressionLevel IS NULL OR @CompressionLevel >= 1)) OR (@Compress = 'Y' AND @BackupSoftware IN ('LITESPEED','SQLBACKUP','SQLSAFE') AND @CompressionLevel = 0)
   BEGIN
-    INSERT INTO @Errors ([Message])
-    SELECT 'The value for the parameter @Compress is not supported.'
+    SET @ErrorMessage = 'The value for the parameter @Compress is not supported.'
+    RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
+    SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
   IF @CopyOnly NOT IN ('Y','N') OR @CopyOnly IS NULL
   BEGIN
-    INSERT INTO @Errors ([Message])
-    SELECT 'The value for the parameter @CopyOnly is not supported.'
+    SET @ErrorMessage = 'The value for the parameter @CopyOnly is not supported.'
+    RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
+    SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
   IF @ChangeBackupType NOT IN ('Y','N') OR @ChangeBackupType IS NULL
   BEGIN
-    INSERT INTO @Errors ([Message])
-    SELECT 'The value for the parameter @ChangeBackupType is not supported.'
+    SET @ErrorMessage = 'The value for the parameter @ChangeBackupType is not supported.'
+    RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
+    SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
   IF @BackupSoftware NOT IN ('LITESPEED','SQLBACKUP','SQLSAFE','DATA_DOMAIN_BOOST') OR (@BackupSoftware IS NOT NULL AND @HostPlatform = 'Linux')
   BEGIN
-    INSERT INTO @Errors ([Message])
-    SELECT 'The value for the parameter @BackupSoftware is not supported.'
+    SET @ErrorMessage = 'The value for the parameter @BackupSoftware is not supported.'
+    RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
+    SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
   IF @BackupSoftware = 'LITESPEED' AND NOT EXISTS (SELECT * FROM [master].sys.objects WHERE [type] = 'X' AND [name] = 'xp_backup_database')
   BEGIN
-    INSERT INTO @Errors ([Message])
-    SELECT 'LiteSpeed for SQL Server is not installed. Download https://www.quest.com/products/litespeed-for-sql-server/.'
+    SET @ErrorMessage = 'LiteSpeed for SQL Server is not installed. Download https://www.quest.com/products/litespeed-for-sql-server/.'
+    RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
+    SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
   IF @BackupSoftware = 'SQLBACKUP' AND NOT EXISTS (SELECT * FROM [master].sys.objects WHERE [type] = 'X' AND [name] = 'sqlbackup')
   BEGIN
-    INSERT INTO @Errors ([Message])
-    SELECT 'Red Gate SQL Backup Pro is not installed. Download https://www.red-gate.com/products/dba/sql-backup/.'
+    SET @ErrorMessage = 'Red Gate SQL Backup Pro is not installed. Download https://www.red-gate.com/products/dba/sql-backup/.'
+    RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
+    SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
   IF @BackupSoftware = 'SQLSAFE' AND NOT EXISTS (SELECT * FROM [master].sys.objects WHERE [type] = 'X' AND [name] = 'xp_ss_backup')
   BEGIN
-    INSERT INTO @Errors ([Message])
-    SELECT 'Idera SQL Safe Backup is not installed. Download https://www.idera.com/productssolutions/sqlserver/sqlsafebackup.'
+    SET @ErrorMessage = 'Idera SQL Safe Backup is not installed. Download https://www.idera.com/productssolutions/sqlserver/sqlsafebackup.'
+    RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
+    SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
   IF @BackupSoftware = 'DATA_DOMAIN_BOOST' AND NOT EXISTS (SELECT * FROM [master].sys.objects WHERE [type] = 'PC' AND [name] = 'emc_run_backup')
   BEGIN
-    INSERT INTO @Errors ([Message])
-    SELECT 'EMC Data Domain Boost is not installed. Download https://www.emc.com/en-us/data-protection/data-domain.htm.'
+    SET @ErrorMessage = 'EMC Data Domain Boost is not installed. Download https://www.emc.com/en-us/data-protection/data-domain.htm.'
+    RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
+    SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
   IF @CheckSum NOT IN ('Y','N') OR @CheckSum IS NULL
   BEGIN
-    INSERT INTO @Errors ([Message])
-    SELECT 'The value for the parameter @CheckSum is not supported.'
+    SET @ErrorMessage = 'The value for the parameter @CheckSum is not supported.'
+    RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
+    SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
   IF @BlockSize NOT IN (512,1024,2048,4096,8192,16384,32768,65536) OR (@BlockSize IS NOT NULL AND @BackupSoftware = 'SQLBACKUP') OR (@BlockSize IS NOT NULL AND @BackupSoftware = 'SQLSAFE') OR (@BlockSize IS NOT NULL AND @URL IS NOT NULL AND @Credential IS NOT NULL) OR (@BlockSize IS NOT NULL AND @BackupSoftware = 'DATA_DOMAIN_BOOST')
   BEGIN
-    INSERT INTO @Errors ([Message])
-    SELECT 'The value for the parameter @BlockSize is not supported.'
+    SET @ErrorMessage = 'The value for the parameter @BlockSize is not supported.'
+    RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
+    SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
   IF @BufferCount <= 0 OR @BufferCount > 2147483647 OR (@BufferCount IS NOT NULL AND @BackupSoftware = 'SQLBACKUP') OR (@BufferCount IS NOT NULL AND @BackupSoftware = 'SQLSAFE')
   BEGIN
-    INSERT INTO @Errors ([Message])
-    SELECT 'The value for the parameter @BufferCount is not supported.'
+    SET @ErrorMessage = 'The value for the parameter @BufferCount is not supported.'
+    RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
+    SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
   IF @MaxTransferSize < 65536 OR @MaxTransferSize > 4194304 OR (@MaxTransferSize > 1048576 AND @BackupSoftware = 'SQLBACKUP') OR (@MaxTransferSize IS NOT NULL AND @BackupSoftware = 'SQLSAFE') OR (@MaxTransferSize IS NOT NULL AND @URL IS NOT NULL AND @Credential IS NOT NULL) OR (@MaxTransferSize IS NOT NULL AND @BackupSoftware = 'DATA_DOMAIN_BOOST')
   BEGIN
-    INSERT INTO @Errors ([Message])
-    SELECT 'The value for the parameter @MaxTransferSize is not supported.'
+    SET @ErrorMessage = 'The value for the parameter @MaxTransferSize is not supported.'
+    RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
+    SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
   IF @NumberOfFiles < 1 OR @NumberOfFiles > 64 OR (@NumberOfFiles > 32 AND @BackupSoftware = 'SQLBACKUP') OR @NumberOfFiles IS NULL OR @NumberOfFiles < (SELECT COUNT(*) FROM @Directories WHERE Mirror = 0) OR @NumberOfFiles % (SELECT NULLIF(COUNT(*),0) FROM @Directories WHERE Mirror = 0) > 0 OR (@URL IS NOT NULL AND @Credential IS NOT NULL AND @NumberOfFiles <> 1) OR (@NumberOfFiles > 1 AND @BackupSoftware IN('SQLBACKUP','SQLSAFE') AND EXISTS(SELECT * FROM @Directories WHERE Mirror = 1)) OR (@NumberOfFiles > 32 AND @BackupSoftware = 'DATA_DOMAIN_BOOST') OR @NumberOfFiles < (SELECT COUNT(*) FROM @URLs WHERE Mirror = 0) OR @NumberOfFiles % (SELECT NULLIF(COUNT(*),0) FROM @URLs WHERE Mirror = 0) > 0
   BEGIN
-    INSERT INTO @Errors ([Message])
-    SELECT 'The value for the parameter @NumberOfFiles is not supported.'
+    SET @ErrorMessage = 'The value for the parameter @NumberOfFiles is not supported.'
+    RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
+    SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
   IF (@BackupSoftware IS NULL AND @CompressionLevel IS NOT NULL) OR (@BackupSoftware = 'LITESPEED' AND (@CompressionLevel < 0 OR @CompressionLevel > 8)) OR (@BackupSoftware = 'SQLBACKUP' AND (@CompressionLevel < 0 OR @CompressionLevel > 4)) OR (@BackupSoftware = 'SQLSAFE' AND (@CompressionLevel < 1 OR @CompressionLevel > 4)) OR (@CompressionLevel IS NOT NULL AND @BackupSoftware = 'DATA_DOMAIN_BOOST')
   BEGIN
-    INSERT INTO @Errors ([Message])
-    SELECT 'The value for the parameter @CompressionLevel is not supported.'
+    SET @ErrorMessage = 'The value for the parameter @CompressionLevel is not supported.'
+    RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
+    SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
   IF LEN(@Description) > 255 OR (@BackupSoftware = 'LITESPEED' AND LEN(@Description) > 128) OR (@BackupSoftware = 'DATA_DOMAIN_BOOST' AND LEN(@Description) > 254)
   BEGIN
-    INSERT INTO @Errors ([Message])
-    SELECT 'The value for the parameter @Description is not supported.'
+    SET @ErrorMessage = 'The value for the parameter @Description is not supported.'
+    RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
+    SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
   IF @Threads IS NOT NULL AND (@BackupSoftware NOT IN('LITESPEED','SQLBACKUP','SQLSAFE') OR @BackupSoftware IS NULL) OR (@BackupSoftware = 'LITESPEED' AND (@Threads < 1 OR @Threads > 32)) OR (@BackupSoftware = 'SQLBACKUP' AND (@Threads < 2 OR @Threads > 32)) OR (@BackupSoftware = 'SQLSAFE' AND (@Threads < 1 OR @Threads > 64))
   BEGIN
-    INSERT INTO @Errors ([Message])
-    SELECT 'The value for the parameter @Threads is not supported.'
+    SET @ErrorMessage = 'The value for the parameter @Threads is not supported.'
+    RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
+    SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
   IF @Throttle IS NOT NULL AND (@BackupSoftware NOT IN('LITESPEED') OR @BackupSoftware IS NULL) OR @Throttle < 1 OR @Throttle > 100
   BEGIN
-    INSERT INTO @Errors ([Message])
-    SELECT 'The value for the parameter @Throttle is not supported.'
+    SET @ErrorMessage = 'The value for the parameter @Throttle is not supported.'
+    RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
+    SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
   IF @Encrypt NOT IN('Y','N') OR @Encrypt IS NULL OR (@Encrypt = 'Y' AND @BackupSoftware IS NULL AND NOT (@Version >= 12 AND (SERVERPROPERTY('EngineEdition') = 3) OR SERVERPROPERTY('EditionID') IN(-1534726760, 284895786))) OR (@Encrypt = 'Y' AND @BackupSoftware = 'DATA_DOMAIN_BOOST')
   BEGIN
-    INSERT INTO @Errors ([Message])
-    SELECT 'The value for the parameter @Encrypt is not supported.'
+    SET @ErrorMessage = 'The value for the parameter @Encrypt is not supported.'
+    RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
+    SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
   IF (@BackupSoftware IS NULL AND @Encrypt = 'Y' AND (@EncryptionAlgorithm NOT IN('AES_128','AES_192','AES_256','TRIPLE_DES_3KEY') OR @EncryptionAlgorithm IS NULL)) OR (@BackupSoftware = 'LITESPEED' AND @Encrypt = 'Y' AND (@EncryptionAlgorithm NOT IN('RC2_40','RC2_56','RC2_112','RC2_128','TRIPLE_DES_3KEY','RC4_128','AES_128','AES_192','AES_256') OR @EncryptionAlgorithm IS NULL)) OR (@BackupSoftware = 'SQLBACKUP' AND @Encrypt = 'Y' AND (@EncryptionAlgorithm NOT IN('AES_128','AES_256') OR @EncryptionAlgorithm IS NULL)) OR (@BackupSoftware = 'SQLSAFE' AND @Encrypt = 'Y' AND (@EncryptionAlgorithm NOT IN('AES_128','AES_256') OR @EncryptionAlgorithm IS NULL)) OR (@EncryptionAlgorithm IS NOT NULL AND @BackupSoftware = 'DATA_DOMAIN_BOOST')
   BEGIN
-    INSERT INTO @Errors ([Message])
-    SELECT 'The value for the parameter @EncryptionAlgorithm is not supported.'
+    SET @ErrorMessage = 'The value for the parameter @EncryptionAlgorithm is not supported.'
+    RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
+    SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
   IF (NOT (@BackupSoftware IS NULL AND @Encrypt = 'Y') AND @ServerCertificate IS NOT NULL) OR (@BackupSoftware IS NULL AND @Encrypt = 'Y' AND @ServerCertificate IS NULL AND @ServerAsymmetricKey IS NULL) OR (@BackupSoftware IS NULL AND @Encrypt = 'Y' AND @ServerCertificate IS NOT NULL AND @ServerAsymmetricKey IS NOT NULL) OR (@ServerCertificate IS NOT NULL AND NOT EXISTS(SELECT * FROM master.sys.certificates WHERE name = @ServerCertificate))
   BEGIN
-    INSERT INTO @Errors ([Message])
-    SELECT 'The value for the parameter @ServerCertificate is not supported.'
+    SET @ErrorMessage = 'The value for the parameter @ServerCertificate is not supported.'
+    RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
+    SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
   IF (NOT (@BackupSoftware IS NULL AND @Encrypt = 'Y') AND @ServerAsymmetricKey IS NOT NULL) OR (@BackupSoftware IS NULL AND @Encrypt = 'Y' AND @ServerAsymmetricKey IS NULL AND @ServerCertificate IS NULL) OR (@BackupSoftware IS NULL AND @Encrypt = 'Y' AND @ServerAsymmetricKey IS NOT NULL AND @ServerCertificate IS NOT NULL) OR (@ServerAsymmetricKey IS NOT NULL AND NOT EXISTS(SELECT * FROM master.sys.asymmetric_keys WHERE name = @ServerAsymmetricKey))
   BEGIN
-    INSERT INTO @Errors ([Message])
-    SELECT 'The value for the parameter @ServerAsymmetricKey is not supported.'
+    SET @ErrorMessage = 'The value for the parameter @ServerAsymmetricKey is not supported.'
+    RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
+    SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
   IF (@EncryptionKey IS NOT NULL AND @BackupSoftware IS NULL) OR (@EncryptionKey IS NOT NULL AND @Encrypt = 'N') OR (@EncryptionKey IS NULL AND @Encrypt = 'Y' AND @BackupSoftware IN('LITESPEED','SQLBACKUP','SQLSAFE')) OR (@EncryptionKey IS NOT NULL AND @BackupSoftware = 'DATA_DOMAIN_BOOST')
   BEGIN
-    INSERT INTO @Errors ([Message])
-    SELECT 'The value for the parameter @EncryptionKey is not supported.'
+    SET @ErrorMessage = 'The value for the parameter @EncryptionKey is not supported.'
+    RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
+    SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
   IF @ReadWriteFileGroups NOT IN('Y','N') OR @ReadWriteFileGroups IS NULL OR (@ReadWriteFileGroups = 'Y' AND @BackupType = 'LOG')
   BEGIN
-    INSERT INTO @Errors ([Message])
-    SELECT 'The value for the parameter @ReadWriteFileGroups is not supported.'
+    SET @ErrorMessage = 'The value for the parameter @ReadWriteFileGroups is not supported.'
+    RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
+    SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
   IF @OverrideBackupPreference NOT IN('Y','N') OR @OverrideBackupPreference IS NULL
   BEGIN
-    INSERT INTO @Errors ([Message])
-    SELECT 'The value for the parameter @OverrideBackupPreference is not supported.'
+    SET @ErrorMessage = 'The value for the parameter @OverrideBackupPreference is not supported.'
+    RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
+    SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
   IF @NoRecovery NOT IN('Y','N') OR @NoRecovery IS NULL OR (@NoRecovery = 'Y' AND @BackupType <> 'LOG') OR (@NoRecovery = 'Y' AND @BackupSoftware = 'SQLSAFE')
   BEGIN
-    INSERT INTO @Errors ([Message])
-    SELECT 'The value for the parameter @NoRecovery is not supported.'
+    SET @ErrorMessage = 'The value for the parameter @NoRecovery is not supported.'
+    RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
+    SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
   IF (@URL IS NOT NULL AND @Directory IS NOT NULL) OR (@URL IS NOT NULL AND @MirrorDirectory IS NOT NULL) OR (@URL IS NOT NULL AND @Version < 11.03339) OR (@URL IS NOT NULL AND @BackupSoftware IS NOT NULL)
   BEGIN
-    INSERT INTO @Errors ([Message])
-    SELECT 'The value for the parameter @URL is not supported.'
+    SET @ErrorMessage = 'The value for the parameter @URL is not supported.'
+    RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
+    SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
   IF (@Credential IS NULL AND @URL IS NOT NULL AND NOT (@Version >= 13 OR SERVERPROPERTY('EngineEdition') = 8)) OR (@Credential IS NOT NULL AND @URL IS NULL) OR (@URL IS NOT NULL AND @Credential IS NULL AND NOT EXISTS(SELECT * FROM sys.credentials WHERE UPPER(credential_identity) = 'SHARED ACCESS SIGNATURE')) OR (@Credential IS NOT NULL AND NOT EXISTS(SELECT * FROM sys.credentials WHERE name = @Credential))
   BEGIN
-    INSERT INTO @Errors ([Message])
-    SELECT 'The value for the parameter @Credential is not supported.'
+    SET @ErrorMessage = 'The value for the parameter @Credential is not supported.'
+    RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
+    SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
   IF @MirrorCleanupTime < 0 OR (@MirrorCleanupTime IS NOT NULL AND @MirrorDirectory IS NULL)
   BEGIN
-    INSERT INTO @Errors ([Message])
-    SELECT 'The value for the parameter @MirrorCleanupTime is not supported.'
+    SET @ErrorMessage = 'The value for the parameter @MirrorCleanupTime is not supported.'
+    RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
+    SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
   IF @MirrorCleanupMode NOT IN('BEFORE_BACKUP','AFTER_BACKUP') OR @MirrorCleanupMode IS NULL
   BEGIN
-    INSERT INTO @Errors ([Message])
-    SELECT 'The value for the parameter @MirrorCleanupMode is not supported.'
+    SET @ErrorMessage = 'The value for the parameter @MirrorCleanupMode is not supported.'
+    RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
+    SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
   IF (@MirrorURL IS NOT NULL AND @Directory IS NOT NULL) OR (@MirrorURL IS NOT NULL AND @MirrorDirectory IS NOT NULL) OR (@MirrorURL IS NOT NULL AND @Version < 11.03339) OR (@MirrorURL IS NOT NULL AND @BackupSoftware IS NOT NULL) OR (@MirrorURL IS NOT NULL AND @URL IS NULL)
   BEGIN
-    INSERT INTO @Errors ([Message])
-    SELECT 'The value for the parameter @MirrorURL is not supported.'
+    SET @ErrorMessage = 'The value for the parameter @MirrorURL is not supported.'
+    RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
+    SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
   IF @Updateability NOT IN('READ_ONLY','READ_WRITE','ALL') OR @Updateability IS NULL
   BEGIN
-    INSERT INTO @Errors ([Message])
-    SELECT 'The value for the parameter @Updateability is not supported.'
+    SET @ErrorMessage = 'The value for the parameter @Updateability is not supported.'
+    RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
+    SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
   IF @AdaptiveCompression NOT IN('SIZE','SPEED') OR (@AdaptiveCompression IS NOT NULL AND (@BackupSoftware NOT IN('LITESPEED') OR @BackupSoftware IS NULL))
   BEGIN
-    INSERT INTO @Errors ([Message])
-    SELECT 'The value for the parameter @AdaptiveCompression is not supported.'
+    SET @ErrorMessage = 'The value for the parameter @AdaptiveCompression is not supported.'
+    RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
+    SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
   IF (@ModificationLevel IS NOT NULL AND NOT ((@Version >= 12.06024 AND @Version < 13) OR @Version >= 13.05026)) OR (@ModificationLevel IS NOT NULL AND @ChangeBackupType = 'N') OR (@ModificationLevel IS NOT NULL AND @BackupType <> 'DIFF')
   BEGIN
-    INSERT INTO @Errors ([Message])
-    SELECT 'The value for the parameter @ModificationLevel is not supported.'
+    SET @ErrorMessage = 'The value for the parameter @ModificationLevel is not supported.'
+    RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
+    SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
   IF (@LogSizeSinceLastLogBackup IS NOT NULL AND NOT ((@Version >= 12.06024 AND @Version < 13) OR @Version >= 13.05026)) OR (@LogSizeSinceLastLogBackup IS NOT NULL AND @TimeSinceLastLogBackup IS NULL) OR (@LogSizeSinceLastLogBackup IS NULL AND @TimeSinceLastLogBackup IS NOT NULL) OR (@LogSizeSinceLastLogBackup IS NOT NULL AND @BackupType <> 'LOG')
   BEGIN
-    INSERT INTO @Errors ([Message])
-    SELECT 'The value for the parameter @LogSizeSinceLastLogBackup is not supported.'
+    SET @ErrorMessage = 'The value for the parameter @LogSizeSinceLastLogBackup is not supported.'
+    RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
+    SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
   IF (@TimeSinceLastLogBackup IS NOT NULL AND NOT ((@Version >= 12.06024 AND @Version < 13) OR @Version >= 13.05026)) OR (@TimeSinceLastLogBackup IS NOT NULL AND @LogSizeSinceLastLogBackup IS NULL) OR (@TimeSinceLastLogBackup IS NULL AND @LogSizeSinceLastLogBackup IS NOT NULL) OR (@TimeSinceLastLogBackup IS NOT NULL AND @BackupType <> 'LOG')
   BEGIN
-    INSERT INTO @Errors ([Message])
-    SELECT 'The value for the parameter @TimeSinceLastLogBackup is not supported.'
+    SET @ErrorMessage = 'The value for the parameter @TimeSinceLastLogBackup is not supported.'
+    RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
+    SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
   IF (@DataDomainBoostHost IS NOT NULL AND (@BackupSoftware <> 'DATA_DOMAIN_BOOST' OR @BackupSoftware IS NULL)) OR (@DataDomainBoostHost IS NULL AND @BackupSoftware = 'DATA_DOMAIN_BOOST')
   BEGIN
-    INSERT INTO @Errors ([Message])
-    SELECT 'The value for the parameter @DataDomainBoostHost is not supported.'
+    SET @ErrorMessage = 'The value for the parameter @DataDomainBoostHost is not supported.'
+    RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
+    SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
   IF (@DataDomainBoostUser IS NOT NULL AND (@BackupSoftware <> 'DATA_DOMAIN_BOOST' OR @BackupSoftware IS NULL)) OR (@DataDomainBoostUser IS NULL AND @BackupSoftware = 'DATA_DOMAIN_BOOST')
   BEGIN
-    INSERT INTO @Errors ([Message])
-    SELECT 'The value for the parameter @DataDomainBoostUser is not supported.'
+    SET @ErrorMessage = 'The value for the parameter @DataDomainBoostUser is not supported.'
+    RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
+    SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
   IF (@DataDomainBoostDevicePath IS NOT NULL AND (@BackupSoftware <> 'DATA_DOMAIN_BOOST' OR @BackupSoftware IS NULL)) OR (@DataDomainBoostDevicePath IS NULL AND @BackupSoftware = 'DATA_DOMAIN_BOOST')
   BEGIN
-    INSERT INTO @Errors ([Message])
-    SELECT 'The value for the parameter @DataDomainBoostDevicePath is not supported.'
+    SET @ErrorMessage = 'The value for the parameter @DataDomainBoostDevicePath is not supported.'
+    RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
+    SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
   IF @DataDomainBoostLockboxPath IS NOT NULL AND (@BackupSoftware <> 'DATA_DOMAIN_BOOST' OR @BackupSoftware IS NULL)
   BEGIN
-    INSERT INTO @Errors ([Message])
-    SELECT 'The value for the parameter @DataDomainBoostLockboxPath is not supported.'
+    SET @ErrorMessage = 'The value for the parameter @DataDomainBoostLockboxPath is not supported.'
+    RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
+    SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
   IF @DirectoryStructure = ''
   BEGIN
-    INSERT INTO @Errors ([Message])
-    SELECT 'The value for the parameter @DirectoryStructure is not supported.'
+    SET @ErrorMessage = 'The value for the parameter @DirectoryStructure is not supported.'
+    RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
+    SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
   IF @AvailabilityGroupDirectoryStructure = ''
   BEGIN
-    INSERT INTO @Errors ([Message])
-    SELECT 'The value for the parameter @AvailabilityGroupDirectoryStructure is not supported.'
+    SET @ErrorMessage = 'The value for the parameter @AvailabilityGroupDirectoryStructure is not supported.'
+    RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
+    SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
   IF @FileName IS NULL OR @FileName = '' OR @FileName NOT LIKE '%.{FileExtension}' OR (@NumberOfFiles > 1 AND @FileName NOT LIKE '%{FileNumber}%') OR @FileName LIKE '%{DirectorySeperator}%' OR @FileName LIKE '%/%' OR @FileName LIKE '%\%'
   BEGIN
-    INSERT INTO @Errors ([Message])
-    SELECT 'The value for the parameter @FileName is not supported.'
+    SET @ErrorMessage = 'The value for the parameter @FileName is not supported.'
+    RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
+    SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
   IF (SERVERPROPERTY('IsHadrEnabled') = 1 AND @AvailabilityGroupFileName IS NULL) OR @AvailabilityGroupFileName = '' OR @AvailabilityGroupFileName NOT LIKE '%.{FileExtension}' OR (@NumberOfFiles > 1 AND @AvailabilityGroupFileName NOT LIKE '%{FileNumber}%') OR @AvailabilityGroupFileName LIKE '%{DirectorySeperator}%' OR @AvailabilityGroupFileName LIKE '%/%' OR @AvailabilityGroupFileName LIKE '%\%'
   BEGIN
-    INSERT INTO @Errors ([Message])
-    SELECT 'The value for the parameter @AvailabilityGroupFileName is not supported.'
+    SET @ErrorMessage = 'The value for the parameter @AvailabilityGroupFileName is not supported.'
+    RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
+    SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
-  IF REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(@DirectoryStructure,'{DirectorySeparator}',''),'{ServerName}',''),'{InstanceName}',''),'{ServiceName}',''),'{ClusterName}',''),'{AvailabilityGroupName}',''),'{DatabaseName}',''),'{BackupType}',''),'{Partial}',''),'{CopyOnly}',''),'{Description}',''),'{Year}',''),'{Month}',''),'{Day}',''),'{Hour}',''),'{Minute}',''),'{Second}',''),'{Millisecond}',''),'{Microsecond}',''),'{MajorVersion}',''),'{MinorVersion}','') LIKE '%{%'
-  OR REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(@DirectoryStructure,'{DirectorySeparator}',''),'{ServerName}',''),'{InstanceName}',''),'{ServiceName}',''),'{ClusterName}',''),'{AvailabilityGroupName}',''),'{DatabaseName}',''),'{BackupType}',''),'{Partial}',''),'{CopyOnly}',''),'{Description}',''),'{Year}',''),'{Month}',''),'{Day}',''),'{Hour}',''),'{Minute}',''),'{Second}',''),'{Millisecond}',''),'{Microsecond}',''),'{MajorVersion}',''),'{MinorVersion}','') LIKE '%}%'
+  IF REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(@DirectoryStructure,'{DirectorySeparator}',''),'{ServerName}',''),'{InstanceName}',''),'{ServiceName}',''),'{ClusterName}',''),'{AvailabilityGroupName}',''),'{DatabaseName}',''),'{BackupType}',''),'{Partial}',''),'{CopyOnly}',''),'{Description}',''),'{Year}',''),'{Month}',''),'{Day}',''),'{Hour}',''),'{Minute}',''),'{Second}',''),'{Millisecond}',''),'{MajorVersion}',''),'{MinorVersion}','') LIKE '%{%'
+  OR REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(@DirectoryStructure,'{DirectorySeparator}',''),'{ServerName}',''),'{InstanceName}',''),'{ServiceName}',''),'{ClusterName}',''),'{AvailabilityGroupName}',''),'{DatabaseName}',''),'{BackupType}',''),'{Partial}',''),'{CopyOnly}',''),'{Description}',''),'{Year}',''),'{Month}',''),'{Day}',''),'{Hour}',''),'{Minute}',''),'{Second}',''),'{Millisecond}',''),'{MajorVersion}',''),'{MinorVersion}','') LIKE '%}%'
   BEGIN
-    INSERT INTO @Errors ([Message])
-    SELECT 'The parameter @DirectoryStructure contains one or more tokens that are not supported.'
+    SET @ErrorMessage = 'The parameter @DirectoryStructure contains one or more tokens that are not supported.'
+    RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
+    SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
-  IF REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(@AvailabilityGroupDirectoryStructure,'{DirectorySeparator}',''),'{ServerName}',''),'{InstanceName}',''),'{ServiceName}',''),'{ClusterName}',''),'{AvailabilityGroupName}',''),'{DatabaseName}',''),'{BackupType}',''),'{Partial}',''),'{CopyOnly}',''),'{Description}',''),'{Year}',''),'{Month}',''),'{Day}',''),'{Hour}',''),'{Minute}',''),'{Second}',''),'{Millisecond}',''),'{Microsecond}',''),'{MajorVersion}',''),'{MinorVersion}','') LIKE '%{%'
-  OR REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(@AvailabilityGroupDirectoryStructure,'{DirectorySeparator}',''),'{ServerName}',''),'{InstanceName}',''),'{ServiceName}',''),'{ClusterName}',''),'{AvailabilityGroupName}',''),'{DatabaseName}',''),'{BackupType}',''),'{Partial}',''),'{CopyOnly}',''),'{Description}',''),'{Year}',''),'{Month}',''),'{Day}',''),'{Hour}',''),'{Minute}',''),'{Second}',''),'{Millisecond}',''),'{Microsecond}',''),'{MajorVersion}',''),'{MinorVersion}','') LIKE '%}%'
+  IF REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(@AvailabilityGroupDirectoryStructure,'{DirectorySeparator}',''),'{ServerName}',''),'{InstanceName}',''),'{ServiceName}',''),'{ClusterName}',''),'{AvailabilityGroupName}',''),'{DatabaseName}',''),'{BackupType}',''),'{Partial}',''),'{CopyOnly}',''),'{Description}',''),'{Year}',''),'{Month}',''),'{Day}',''),'{Hour}',''),'{Minute}',''),'{Second}',''),'{Millisecond}',''),'{MajorVersion}',''),'{MinorVersion}','') LIKE '%{%'
+  OR REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(@AvailabilityGroupDirectoryStructure,'{DirectorySeparator}',''),'{ServerName}',''),'{InstanceName}',''),'{ServiceName}',''),'{ClusterName}',''),'{AvailabilityGroupName}',''),'{DatabaseName}',''),'{BackupType}',''),'{Partial}',''),'{CopyOnly}',''),'{Description}',''),'{Year}',''),'{Month}',''),'{Day}',''),'{Hour}',''),'{Minute}',''),'{Second}',''),'{Millisecond}',''),'{MajorVersion}',''),'{MinorVersion}','') LIKE '%}%'
   BEGIN
-    INSERT INTO @Errors ([Message])
-    SELECT 'The parameter @AvailabilityGroupDirectoryStructure contains one or more tokens that are not supported.'
+    SET @ErrorMessage = 'The parameter @AvailabilityGroupDirectoryStructure contains one or more tokens that are not supported.'
+    RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
+    SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
-  IF REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(@FileName,'{DirectorySeparator}',''),'{ServerName}',''),'{InstanceName}',''),'{ServiceName}',''),'{ClusterName}',''),'{AvailabilityGroupName}',''),'{DatabaseName}',''),'{BackupType}',''),'{Partial}',''),'{CopyOnly}',''),'{Description}',''),'{Year}',''),'{Month}',''),'{Day}',''),'{Hour}',''),'{Minute}',''),'{Second}',''),'{Millisecond}',''),'{Microsecond}',''),'{FileNumber}',''),'{NumberOfFiles}',''),'{FileExtension}',''),'{MajorVersion}',''),'{MinorVersion}','') LIKE '%{%'
-  OR REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(@FileName,'{DirectorySeparator}',''),'{ServerName}',''),'{InstanceName}',''),'{ServiceName}',''),'{ClusterName}',''),'{AvailabilityGroupName}',''),'{DatabaseName}',''),'{BackupType}',''),'{Partial}',''),'{CopyOnly}',''),'{Description}',''),'{Year}',''),'{Month}',''),'{Day}',''),'{Hour}',''),'{Minute}',''),'{Second}',''),'{Millisecond}',''),'{Microsecond}',''),'{FileNumber}',''),'{NumberOfFiles}',''),'{FileExtension}',''),'{MajorVersion}',''),'{MinorVersion}','') LIKE '%}%'
+  IF REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(@FileName,'{DirectorySeparator}',''),'{ServerName}',''),'{InstanceName}',''),'{ServiceName}',''),'{ClusterName}',''),'{AvailabilityGroupName}',''),'{DatabaseName}',''),'{BackupType}',''),'{Partial}',''),'{CopyOnly}',''),'{Description}',''),'{Year}',''),'{Month}',''),'{Day}',''),'{Hour}',''),'{Minute}',''),'{Second}',''),'{Millisecond}',''),'{FileNumber}',''),'{NumberOfFiles}',''),'{FileExtension}',''),'{MajorVersion}',''),'{MinorVersion}','') LIKE '%{%'
+  OR REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(@FileName,'{DirectorySeparator}',''),'{ServerName}',''),'{InstanceName}',''),'{ServiceName}',''),'{ClusterName}',''),'{AvailabilityGroupName}',''),'{DatabaseName}',''),'{BackupType}',''),'{Partial}',''),'{CopyOnly}',''),'{Description}',''),'{Year}',''),'{Month}',''),'{Day}',''),'{Hour}',''),'{Minute}',''),'{Second}',''),'{Millisecond}',''),'{FileNumber}',''),'{NumberOfFiles}',''),'{FileExtension}',''),'{MajorVersion}',''),'{MinorVersion}','') LIKE '%}%'
   BEGIN
-    INSERT INTO @Errors ([Message])
-    SELECT 'The parameter @FileName contains one or more tokens that are not supported.'
+    SET @ErrorMessage = 'The parameter @FileName contains one or more tokens that are not supported.'
+    RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
+    SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
-  IF REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(@AvailabilityGroupFileName,'{DirectorySeparator}',''),'{ServerName}',''),'{InstanceName}',''),'{ServiceName}',''),'{ClusterName}',''),'{AvailabilityGroupName}',''),'{DatabaseName}',''),'{BackupType}',''),'{Partial}',''),'{CopyOnly}',''),'{Description}',''),'{Year}',''),'{Month}',''),'{Day}',''),'{Hour}',''),'{Minute}',''),'{Second}',''),'{Millisecond}',''),'{Microsecond}',''),'{FileNumber}',''),'{NumberOfFiles}',''),'{FileExtension}',''),'{MajorVersion}',''),'{MinorVersion}','') LIKE '%{%'
-  OR REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(@AvailabilityGroupFileName,'{DirectorySeparator}',''),'{ServerName}',''),'{InstanceName}',''),'{ServiceName}',''),'{ClusterName}',''),'{AvailabilityGroupName}',''),'{DatabaseName}',''),'{BackupType}',''),'{Partial}',''),'{CopyOnly}',''),'{Description}',''),'{Year}',''),'{Month}',''),'{Day}',''),'{Hour}',''),'{Minute}',''),'{Second}',''),'{Millisecond}',''),'{Microsecond}',''),'{FileNumber}',''),'{NumberOfFiles}',''),'{FileExtension}',''),'{MajorVersion}',''),'{MinorVersion}','') LIKE '%}%'
+  IF REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(@AvailabilityGroupFileName,'{DirectorySeparator}',''),'{ServerName}',''),'{InstanceName}',''),'{ServiceName}',''),'{ClusterName}',''),'{AvailabilityGroupName}',''),'{DatabaseName}',''),'{BackupType}',''),'{Partial}',''),'{CopyOnly}',''),'{Description}',''),'{Year}',''),'{Month}',''),'{Day}',''),'{Hour}',''),'{Minute}',''),'{Second}',''),'{Millisecond}',''),'{FileNumber}',''),'{NumberOfFiles}',''),'{FileExtension}',''),'{MajorVersion}',''),'{MinorVersion}','') LIKE '%{%'
+  OR REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(@AvailabilityGroupFileName,'{DirectorySeparator}',''),'{ServerName}',''),'{InstanceName}',''),'{ServiceName}',''),'{ClusterName}',''),'{AvailabilityGroupName}',''),'{DatabaseName}',''),'{BackupType}',''),'{Partial}',''),'{CopyOnly}',''),'{Description}',''),'{Year}',''),'{Month}',''),'{Day}',''),'{Hour}',''),'{Minute}',''),'{Second}',''),'{Millisecond}',''),'{FileNumber}',''),'{NumberOfFiles}',''),'{FileExtension}',''),'{MajorVersion}',''),'{MinorVersion}','') LIKE '%}%'
   BEGIN
-    INSERT INTO @Errors ([Message])
-    SELECT 'The parameter @AvailabilityGroupFileName contains one or more tokens that are not supported.'
+    SET @ErrorMessage = 'The parameter @AvailabilityGroupFileName contains one or more tokens that are not supported.'
+    RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
+    SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
   IF @FileExtensionFull LIKE '%.%'
   BEGIN
-    INSERT INTO @Errors ([Message])
-    SELECT 'The value for the parameter @FileExtensionFull is not supported.'
+    SET @ErrorMessage = 'The value for the parameter @FileExtensionFull is not supported.'
+    RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
+    SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
   IF @FileExtensionDiff LIKE '%.%'
   BEGIN
-    INSERT INTO @Errors ([Message])
-    SELECT 'The value for the parameter @FileExtensionDiff is not supported.'
+    SET @ErrorMessage = 'The value for the parameter @FileExtensionDiff is not supported.'
+    RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
+    SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
   IF @FileExtensionLog LIKE '%.%'
   BEGIN
-    INSERT INTO @Errors ([Message])
-    SELECT 'The value for the parameter @FileExtensionLog is not supported.'
+    SET @ErrorMessage = 'The value for the parameter @FileExtensionLog is not supported.'
+    RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
+    SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
   IF @Init NOT IN('Y','N') OR @Init IS NULL OR (@Init = 'Y' AND @BackupType = 'LOG') OR (@Init = 'Y' AND @BackupSoftware = 'DATA_DOMAIN_BOOST')
   BEGIN
-    INSERT INTO @Errors ([Message])
-    SELECT 'The value for the parameter @Init is not supported.'
-  END
-
-  IF @Format NOT IN('Y','N') OR @Format IS NULL OR (@Format = 'Y' AND @BackupType = 'LOG') OR (@Format = 'Y' AND @BackupSoftware = 'DATA_DOMAIN_BOOST')
-  BEGIN
-    INSERT INTO @Errors ([Message])
-    SELECT 'The value for the parameter @Format is not supported.'
-  END
-
-  IF @ObjectLevelRecoveryMap NOT IN('Y','N') OR @ObjectLevelRecoveryMap IS NULL OR (@ObjectLevelRecoveryMap = 'Y' AND @BackupSoftware IS NULL) OR (@ObjectLevelRecoveryMap = 'Y' AND @BackupSoftware <> 'LITESPEED') OR (@ObjectLevelRecoveryMap = 'Y' AND @BackupType = 'LOG')
-  BEGIN
-    INSERT INTO @Errors ([Message])
-    SELECT 'The value for the parameter @ObjectLevelRecovery is not supported.'
+    SET @ErrorMessage = 'The value for the parameter @Init is not supported.'
+    RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
+    SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
   IF @DatabaseOrder NOT IN('DATABASE_NAME_ASC','DATABASE_NAME_DESC','DATABASE_SIZE_ASC','DATABASE_SIZE_DESC','LOG_SIZE_SINCE_LAST_LOG_BACKUP_ASC','LOG_SIZE_SINCE_LAST_LOG_BACKUP_DESC') OR (@DatabaseOrder IN('LOG_SIZE_SINCE_LAST_LOG_BACKUP_ASC','LOG_SIZE_SINCE_LAST_LOG_BACKUP_DESC') AND NOT ((@Version >= 12.06024 AND @Version < 13) OR @Version >= 13.05026 OR SERVERPROPERTY('EngineEdition') = 8)) OR (@DatabaseOrder IS NOT NULL AND SERVERPROPERTY('EngineEdition') = 5)
   BEGIN
-    INSERT INTO @Errors ([Message])
-    SELECT 'The value for the parameter @DatabaseOrder is not supported.'
+    SET @ErrorMessage = 'The value for the parameter @DatabaseOrder is not supported.'
+    RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
+    SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
   IF @DatabasesInParallel NOT IN('Y','N') OR @DatabasesInParallel IS NULL OR (@DatabasesInParallel = 'Y' AND SERVERPROPERTY('EngineEdition') = 5)
   BEGIN
-    INSERT INTO @Errors ([Message])
-    SELECT 'The value for the parameter @DatabasesInParallel is not supported.'
+    SET @ErrorMessage = 'The value for the parameter @DatabasesInParallel is not supported.'
+    RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
+    SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
   IF @LogToTable NOT IN('Y','N') OR @LogToTable IS NULL
   BEGIN
-    INSERT INTO @Errors ([Message])
-    SELECT 'The value for the parameter @LogToTable is not supported.'
+    SET @ErrorMessage = 'The value for the parameter @LogToTable is not supported.'
+    RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
+    SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
   IF @Execute NOT IN('Y','N') OR @Execute IS NULL
   BEGIN
-    INSERT INTO @Errors ([Message])
-    SELECT 'The value for the parameter @Execute is not supported.'
+    SET @ErrorMessage = 'The value for the parameter @Execute is not supported.'
+    RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
+    SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
-  IF EXISTS(SELECT * FROM @Errors)
+  IF @Error <> 0
   BEGIN
-    INSERT INTO @Errors ([Message])
-    SELECT 'The documentation is available at https://ola.hallengren.com/sql-server-backup.html.'
+    SET @ErrorMessage = 'The documentation is available at https://ola.hallengren.com/sql-server-backup.html.'
+    RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
+    SET @ReturnCode = @Error
+    GOTO Logging
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -1447,8 +1622,10 @@ BEGIN
   AND DatabaseName NOT IN (SELECT DatabaseName FROM @tmpDatabases)
   IF @@ROWCOUNT > 0
   BEGIN
-    INSERT INTO @Errors ([Message])
-    SELECT 'The following databases in the @Databases parameter do not exist: ' + LEFT(@ErrorMessage,LEN(@ErrorMessage)-1) + '.'
+    SET @ErrorMessage = 'The following databases in the @Databases parameter do not exist: ' + LEFT(@ErrorMessage,LEN(@ErrorMessage)-1) + '.'
+    RAISERROR('%s',10,1,@ErrorMessage) WITH NOWAIT
+    SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
   SET @ErrorMessage = ''
@@ -1458,8 +1635,10 @@ BEGIN
   AND AvailabilityGroupName NOT IN (SELECT AvailabilityGroupName FROM @tmpAvailabilityGroups)
   IF @@ROWCOUNT > 0
   BEGIN
-    INSERT INTO @Errors ([Message])
-    SELECT 'The following availability groups do not exist: ' + LEFT(@ErrorMessage,LEN(@ErrorMessage)-1) + '.'
+    SET @ErrorMessage = 'The following availability groups do not exist: ' + LEFT(@ErrorMessage,LEN(@ErrorMessage)-1) + '.'
+    RAISERROR('%s',10,1,@ErrorMessage) WITH NOWAIT
+    SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -1468,36 +1647,10 @@ BEGIN
 
   IF @@SERVERNAME <> CAST(SERVERPROPERTY('ServerName') AS nvarchar(max)) AND SERVERPROPERTY('IsHadrEnabled') = 1
   BEGIN
-    INSERT INTO @Errors ([Message])
-    SELECT 'The @@SERVERNAME does not match SERVERPROPERTY(''ServerName''). See ' + CASE WHEN SERVERPROPERTY('IsClustered') = 0 THEN 'https://docs.microsoft.com/en-us/sql/database-engine/install-windows/rename-a-computer-that-hosts-a-stand-alone-instance-of-sql-server' WHEN SERVERPROPERTY('IsClustered') = 1 THEN 'https://docs.microsoft.com/en-us/sql/sql-server/failover-clusters/install/rename-a-sql-server-failover-cluster-instance' END + '.'
-  END
-
-  ----------------------------------------------------------------------------------------------------
-  --// Raise errors                                                                               //--
-  ----------------------------------------------------------------------------------------------------
-
-  DECLARE ErrorCursor CURSOR FAST_FORWARD FOR SELECT [Message] FROM @Errors ORDER BY [ID] ASC
-
-  OPEN ErrorCursor
-
-  FETCH ErrorCursor INTO @CurrentMessage
-
-  WHILE @@FETCH_STATUS = 0
-  BEGIN
-    RAISERROR('%s', 16, 1, @CurrentMessage) WITH NOWAIT
-    RAISERROR(@EmptyLine, 10, 1) WITH NOWAIT
-
-    FETCH NEXT FROM ErrorCursor INTO @CurrentMessage
-  END
-
-  CLOSE ErrorCursor
-
-  DEALLOCATE ErrorCursor
-
-  IF EXISTS (SELECT * FROM @Errors)
-  BEGIN
-    SET @ReturnCode = 50000
-    GOTO Logging
+    SET @ErrorMessage = 'The @@SERVERNAME does not match SERVERPROPERTY(''ServerName''). See ' + CASE WHEN SERVERPROPERTY('IsClustered') = 0 THEN 'https://docs.microsoft.com/en-us/sql/database-engine/install-windows/rename-a-computer-that-hosts-a-stand-alone-instance-of-sql-server' WHEN SERVERPROPERTY('IsClustered') = 1 THEN 'https://docs.microsoft.com/en-us/sql/sql-server/failover-clusters/install/rename-a-sql-server-failover-cluster-instance' END + '.'
+    RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
+    SET @Error = @@ERROR
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -1517,7 +1670,7 @@ BEGIN
   IF @DatabaseOrder IN('DATABASE_SIZE_ASC','DATABASE_SIZE_DESC')
   BEGIN
     UPDATE tmpDatabases
-    SET DatabaseSize = (SELECT SUM(CAST(size AS bigint)) FROM sys.master_files WHERE [type] = 0 AND database_id = DB_ID(tmpDatabases.DatabaseName))
+    SET DatabaseSize = (SELECT SUM(size) FROM sys.master_files WHERE [type] = 0 AND database_id = DB_ID(tmpDatabases.DatabaseName))
     FROM @tmpDatabases tmpDatabases
   END
 
@@ -1625,7 +1778,7 @@ BEGIN
         BEGIN TRANSACTION
 
         SELECT @QueueID = QueueID
-        FROM dbo.[Queue] WITH (UPDLOCK, HOLDLOCK)
+        FROM dbo.[Queue] WITH (UPDLOCK, TABLOCK)
         WHERE SchemaName = @SchemaName
         AND ObjectName = @ObjectName
         AND [Parameters] = @Parameters
@@ -1644,7 +1797,7 @@ BEGIN
       BEGIN TRANSACTION
 
       UPDATE [Queue]
-      SET QueueStartTime = SYSDATETIME(),
+      SET QueueStartTime = GETDATE(),
           SessionID = @@SPID,
           RequestID = (SELECT request_id FROM sys.dm_exec_requests WHERE session_id = @@SPID),
           RequestStartTime = (SELECT start_time FROM sys.dm_exec_requests WHERE session_id = @@SPID)
@@ -1724,7 +1877,7 @@ BEGIN
       AND NOT EXISTS (SELECT * FROM sys.dm_exec_requests WHERE session_id = QueueDatabase.SessionID AND request_id = QueueDatabase.RequestID AND start_time = QueueDatabase.RequestStartTime)
 
       UPDATE QueueDatabase
-      SET DatabaseStartTime = SYSDATETIME(),
+      SET DatabaseStartTime = GETDATE(),
           DatabaseEndTime = NULL,
           SessionID = @@SPID,
           RequestID = (SELECT request_id FROM sys.dm_exec_requests WHERE session_id = @@SPID),
@@ -1760,26 +1913,25 @@ BEGIN
       BREAK
     END
 
-    SET @CurrentDatabase_sp_executesql = QUOTENAME(@CurrentDatabaseName) + '.sys.sp_executesql'
-
-    SELECT @CurrentUserAccess = user_access_desc,
+    SELECT @CurrentDatabaseID = database_id,
+           @CurrentUserAccess = user_access_desc,
            @CurrentIsReadOnly = is_read_only,
            @CurrentDatabaseState = state_desc,
            @CurrentInStandby = is_in_standby,
-           @CurrentRecoveryModel = recovery_model_desc,
-           @CurrentIsEncrypted = is_encrypted,
-           @CurrentDatabaseSize = (SELECT SUM(CAST(size AS bigint)) FROM sys.master_files WHERE [type] = 0 AND database_id = sys.databases.database_id)
+           @CurrentRecoveryModel = recovery_model_desc
     FROM sys.databases
     WHERE [name] = @CurrentDatabaseName
 
-    SELECT @CurrentMaxTransferSize = CASE
-    WHEN @MaxTransferSize IS NOT NULL THEN @MaxTransferSize
-    WHEN @MaxTransferSize IS NULL AND @Compress = 'Y' AND @CurrentIsEncrypted = 1 AND @BackupSoftware IS NULL AND @Version >= 13.04446 THEN 65537
+    IF @Version >= 10
+    BEGIN
+      SET @CurrentCommand06 = 'SELECT @ParamIsEncrypted = is_encrypted FROM sys.databases WHERE name = @ParamDatabaseName'
+
+      EXECUTE sp_executesql @statement = @CurrentCommand06, @params = N'@ParamDatabaseName nvarchar(max), @ParamIsEncrypted bit OUTPUT', @ParamDatabaseName = @CurrentDatabaseName, @ParamIsEncrypted = @CurrentIsEncrypted OUTPUT
     END
 
     IF @CurrentDatabaseState = 'ONLINE'
     BEGIN
-      IF EXISTS (SELECT * FROM sys.database_recovery_status WHERE database_id = DB_ID(@CurrentDatabaseName) AND database_guid IS NOT NULL)
+      IF EXISTS (SELECT * FROM sys.database_recovery_status WHERE database_id = @CurrentDatabaseID AND database_guid IS NOT NULL)
       BEGIN
         SET @CurrentIsDatabaseAccessible = 1
       END
@@ -1807,22 +1959,29 @@ BEGIN
 
     SELECT @CurrentDifferentialBaseLSN = differential_base_lsn
     FROM sys.master_files
-    WHERE database_id = DB_ID(@CurrentDatabaseName)
+    WHERE database_id = @CurrentDatabaseID
     AND [type] = 0
     AND [file_id] = 1
+
+    -- Workaround for a bug in SQL Server 2005
+    IF @Version >= 9 AND @Version < 10
+    AND EXISTS(SELECT * FROM sys.master_files WHERE database_id = @CurrentDatabaseID AND [type] = 0 AND [file_id] = 1 AND differential_base_lsn IS NOT NULL AND differential_base_guid IS NOT NULL AND differential_base_time IS NULL)
+    BEGIN
+      SET @CurrentDifferentialBaseLSN = NULL
+    END
 
     IF @CurrentDatabaseState = 'ONLINE'
     BEGIN
       SELECT @CurrentLogLSN = last_log_backup_lsn
       FROM sys.database_recovery_status
-      WHERE database_id = DB_ID(@CurrentDatabaseName)
+      WHERE database_id = @CurrentDatabaseID
     END
 
     IF @CurrentDatabaseState = 'ONLINE' AND ((@Version >= 12.06024 AND @Version < 13) OR @Version >= 13.05026) AND (@CurrentAvailabilityGroupRole = 'PRIMARY' OR @CurrentAvailabilityGroupRole IS NULL) AND @ChangeBackupType = 'Y' AND @ModificationLevel IS NOT NULL
     BEGIN
-      SET @CurrentCommand07 = 'SELECT @ParamAllocatedExtentPageCount = SUM(allocated_extent_page_count), @ParamModifiedExtentPageCount = SUM(modified_extent_page_count) FROM sys.dm_db_file_space_usage'
+      SET @CurrentCommand07 = 'SELECT @ParamAllocatedExtentPageCount = SUM(allocated_extent_page_count), @ParamModifiedExtentPageCount = SUM(modified_extent_page_count) FROM ' + QUOTENAME(@CurrentDatabaseName) + '.sys.dm_db_file_space_usage'
 
-      EXECUTE @CurrentDatabase_sp_executesql @stmt = @CurrentCommand07, @params = N'@ParamAllocatedExtentPageCount bigint OUTPUT, @ParamModifiedExtentPageCount bigint OUTPUT', @ParamAllocatedExtentPageCount = @CurrentAllocatedExtentPageCount OUTPUT, @ParamModifiedExtentPageCount = @CurrentModifiedExtentPageCount OUTPUT
+      EXECUTE sp_executesql @statement = @CurrentCommand07, @params = N'@ParamAllocatedExtentPageCount bigint OUTPUT, @ParamModifiedExtentPageCount bigint OUTPUT', @ParamAllocatedExtentPageCount = @CurrentAllocatedExtentPageCount OUTPUT, @ParamModifiedExtentPageCount = @CurrentModifiedExtentPageCount OUTPUT
     END
 
     SET @CurrentBackupType = @BackupType
@@ -1843,7 +2002,7 @@ BEGIN
     BEGIN
       SELECT @CurrentLastLogBackup = log_backup_time,
              @CurrentLogSizeSinceLastLogBackup = log_since_last_log_backup_mb
-      FROM sys.dm_db_log_stats (DB_ID(@CurrentDatabaseName))
+      FROM sys.dm_db_log_stats (@CurrentDatabaseID)
     END
 
     IF @CurrentBackupType = 'DIFF'
@@ -1863,11 +2022,9 @@ BEGIN
       END
     END
 
-    SET @CurrentNumberOfFiles = @NumberOfFiles
-
     SELECT @CurrentDatabaseMirroringRole = UPPER(mirroring_role_desc)
     FROM sys.database_mirroring
-    WHERE database_id = DB_ID(@CurrentDatabaseName)
+    WHERE database_id = @CurrentDatabaseID
 
     IF EXISTS (SELECT * FROM msdb.dbo.log_shipping_primary_databases WHERE primary_database = @CurrentDatabaseName)
     BEGIN
@@ -1879,7 +2036,7 @@ BEGIN
       SET @CurrentLogShippingRole = 'SECONDARY'
     END
 
-    SET @DatabaseMessage = 'Date and time: ' + CONVERT(nvarchar,SYSDATETIME(),120)
+    SET @DatabaseMessage = 'Date and time: ' + CONVERT(nvarchar,GETDATE(),120)
     RAISERROR('%s',10,1,@DatabaseMessage) WITH NOWAIT
 
     SET @DatabaseMessage = 'Database: ' + QUOTENAME(@CurrentDatabaseName)
@@ -1983,7 +2140,7 @@ BEGIN
     AND NOT ((@CurrentLogShippingRole = 'PRIMARY' AND @CurrentLogShippingRole IS NOT NULL) AND @CurrentBackupType = 'LOG')
     AND NOT (@CurrentIsReadOnly = 1 AND @Updateability = 'READ_WRITE')
     AND NOT (@CurrentIsReadOnly = 0 AND @Updateability = 'READ_ONLY')
-    AND NOT (@CurrentBackupType = 'LOG' AND @LogSizeSinceLastLogBackup IS NOT NULL AND @TimeSinceLastLogBackup IS NOT NULL AND NOT(@CurrentLogSizeSinceLastLogBackup >= @LogSizeSinceLastLogBackup OR @CurrentLogSizeSinceLastLogBackup IS NULL OR DATEDIFF(SECOND,@CurrentLastLogBackup,SYSDATETIME()) >= @TimeSinceLastLogBackup OR @CurrentLastLogBackup IS NULL))
+    AND NOT (@CurrentBackupType = 'LOG' AND @LogSizeSinceLastLogBackup IS NOT NULL AND @TimeSinceLastLogBackup IS NOT NULL AND NOT(@CurrentLogSizeSinceLastLogBackup >= @LogSizeSinceLastLogBackup OR @CurrentLogSizeSinceLastLogBackup IS NULL OR DATEDIFF(SECOND,@CurrentLastLogBackup,GETDATE()) >= @TimeSinceLastLogBackup OR @CurrentLastLogBackup IS NULL))
     BEGIN
 
       IF @CurrentBackupType = 'LOG' AND (@CleanupTime IS NOT NULL OR @MirrorCleanupTime IS NOT NULL)
@@ -1996,7 +2153,7 @@ BEGIN
         AND database_name = @CurrentDatabaseName
       END
 
-      SET @CurrentDate = SYSDATETIME()
+      SET @CurrentDate = GETDATE()
 
       INSERT INTO @CurrentCleanupDates (CleanupDate)
       SELECT @CurrentDate
@@ -2186,7 +2343,6 @@ BEGIN
         SET @CurrentDirectoryStructure = REPLACE(@CurrentDirectoryStructure,'{Minute}',RIGHT('0' + CAST(DATEPART(MINUTE,@CurrentDate) AS nvarchar),2))
         SET @CurrentDirectoryStructure = REPLACE(@CurrentDirectoryStructure,'{Second}',RIGHT('0' + CAST(DATEPART(SECOND,@CurrentDate) AS nvarchar),2))
         SET @CurrentDirectoryStructure = REPLACE(@CurrentDirectoryStructure,'{Millisecond}',RIGHT('00' + CAST(DATEPART(MILLISECOND,@CurrentDate) AS nvarchar),3))
-        SET @CurrentDirectoryStructure = REPLACE(@CurrentDirectoryStructure,'{Microsecond}',RIGHT('00000' + CAST(DATEPART(MICROSECOND,@CurrentDate) AS nvarchar),6))
         SET @CurrentDirectoryStructure = REPLACE(@CurrentDirectoryStructure,'{MajorVersion}',ISNULL(CAST(SERVERPROPERTY('ProductMajorVersion') AS nvarchar),PARSENAME(CAST(SERVERPROPERTY('ProductVersion') AS nvarchar),4)))
         SET @CurrentDirectoryStructure = REPLACE(@CurrentDirectoryStructure,'{MinorVersion}',ISNULL(CAST(SERVERPROPERTY('ProductMinorVersion') AS nvarchar),PARSENAME(CAST(SERVERPROPERTY('ProductVersion') AS nvarchar),3)))
       END
@@ -2222,8 +2378,8 @@ BEGIN
       IF SERVERPROPERTY('InstanceName') IS NULL SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'{InstanceName}','')
       IF @@SERVICENAME IS NULL SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'{ServiceName}','')
       IF @Description IS NULL SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'{Description}','')
-      IF @CurrentNumberOfFiles = 1 SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'{FileNumber}','')
-      IF @CurrentNumberOfFiles = 1 SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'{NumberOfFiles}','')
+      IF @NumberOfFiles = 1 SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'{FileNumber}','')
+      IF @NumberOfFiles = 1 SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'{NumberOfFiles}','')
 
       WHILE (@Updated = 1 OR @Updated IS NULL)
       BEGIN
@@ -2334,8 +2490,7 @@ BEGIN
       SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'{Minute}',RIGHT('0' + CAST(DATEPART(MINUTE,@CurrentDate) AS nvarchar),2))
       SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'{Second}',RIGHT('0' + CAST(DATEPART(SECOND,@CurrentDate) AS nvarchar),2))
       SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'{Millisecond}',RIGHT('00' + CAST(DATEPART(MILLISECOND,@CurrentDate) AS nvarchar),3))
-      SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'{Microsecond}',RIGHT('00000' + CAST(DATEPART(MICROSECOND,@CurrentDate) AS nvarchar),6))
-      SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'{NumberOfFiles}',@CurrentNumberOfFiles)
+      SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'{NumberOfFiles}',@NumberOfFiles)
       SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'{FileExtension}',@CurrentFileExtension)
       SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'{MajorVersion}',ISNULL(CAST(SERVERPROPERTY('ProductMajorVersion') AS nvarchar),PARSENAME(CAST(SERVERPROPERTY('ProductVersion') AS nvarchar),4)))
       SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'{MinorVersion}',ISNULL(CAST(SERVERPROPERTY('ProductMinorVersion') AS nvarchar),PARSENAME(CAST(SERVERPROPERTY('ProductVersion') AS nvarchar),3)))
@@ -2344,7 +2499,7 @@ BEGIN
       WHEN EXISTS (SELECT * FROM @CurrentDirectories) THEN (SELECT MAX(LEN(DirectoryPath + @DirectorySeparator)) FROM @CurrentDirectories)
       WHEN EXISTS (SELECT * FROM @CurrentURLs) THEN (SELECT MAX(LEN(DirectoryPath + @DirectorySeparator)) FROM @CurrentURLs)
       END
-      + LEN(REPLACE(REPLACE(@CurrentDatabaseFileName,'{DatabaseName}',@CurrentDatabaseNameFS), '{FileNumber}', CASE WHEN @CurrentNumberOfFiles > 1 AND @CurrentNumberOfFiles <= 9 THEN '1' WHEN @CurrentNumberOfFiles >= 10 THEN '01' ELSE '' END))
+      + LEN(REPLACE(REPLACE(@CurrentDatabaseFileName,'{DatabaseName}',@CurrentDatabaseNameFS), '{FileNumber}', CASE WHEN @NumberOfFiles > 1 AND @NumberOfFiles <= 9 THEN '1' WHEN @NumberOfFiles >= 10 THEN '01' ELSE '' END))
 
       -- The maximum length of a backup device is 259 characters
       IF @CurrentMaxFilePathLength > 259
@@ -2360,17 +2515,17 @@ BEGIN
       BEGIN
         SET @CurrentFileNumber = 0
 
-        WHILE @CurrentFileNumber < @CurrentNumberOfFiles
+        WHILE @CurrentFileNumber < @NumberOfFiles
         BEGIN
           SET @CurrentFileNumber = @CurrentFileNumber + 1
 
           SELECT @CurrentDirectoryPath = DirectoryPath
           FROM @CurrentDirectories
-          WHERE @CurrentFileNumber >= (DirectoryNumber - 1) * (SELECT @CurrentNumberOfFiles / COUNT(*) FROM @CurrentDirectories WHERE Mirror = 0) + 1
-          AND @CurrentFileNumber <= DirectoryNumber * (SELECT @CurrentNumberOfFiles / COUNT(*) FROM @CurrentDirectories WHERE Mirror = 0)
+          WHERE @CurrentFileNumber >= (DirectoryNumber - 1) * (SELECT @NumberOfFiles / COUNT(*) FROM @CurrentDirectories WHERE Mirror = 0) + 1
+          AND @CurrentFileNumber <= DirectoryNumber * (SELECT @NumberOfFiles / COUNT(*) FROM @CurrentDirectories WHERE Mirror = 0)
           AND Mirror = 0
 
-          SET @CurrentFileName = REPLACE(@CurrentDatabaseFileName, '{FileNumber}', CASE WHEN @CurrentNumberOfFiles > 1 AND @CurrentNumberOfFiles <= 9 THEN CAST(@CurrentFileNumber AS nvarchar) WHEN @CurrentNumberOfFiles >= 10 THEN RIGHT('0' + CAST(@CurrentFileNumber AS nvarchar),2) ELSE '' END)
+          SET @CurrentFileName = REPLACE(@CurrentDatabaseFileName, '{FileNumber}', CASE WHEN @NumberOfFiles > 1 AND @NumberOfFiles <= 9 THEN CAST(@CurrentFileNumber AS nvarchar) WHEN @NumberOfFiles >= 10 THEN RIGHT('0' + CAST(@CurrentFileNumber AS nvarchar),2) ELSE '' END)
 
           IF @CurrentDirectoryPath = 'NUL'
           BEGIN
@@ -2397,17 +2552,17 @@ BEGIN
       BEGIN
         SET @CurrentFileNumber = 0
 
-        WHILE @CurrentFileNumber < @CurrentNumberOfFiles
+        WHILE @CurrentFileNumber < @NumberOfFiles
         BEGIN
           SET @CurrentFileNumber = @CurrentFileNumber + 1
 
           SELECT @CurrentDirectoryPath = DirectoryPath
           FROM @CurrentDirectories
-          WHERE @CurrentFileNumber >= (DirectoryNumber - 1) * (SELECT @CurrentNumberOfFiles / COUNT(*) FROM @CurrentDirectories WHERE Mirror = 1) + 1
-          AND @CurrentFileNumber <= DirectoryNumber * (SELECT @CurrentNumberOfFiles / COUNT(*) FROM @CurrentDirectories WHERE Mirror = 1)
+          WHERE @CurrentFileNumber >= (DirectoryNumber - 1) * (SELECT @NumberOfFiles / COUNT(*) FROM @CurrentDirectories WHERE Mirror = 1) + 1
+          AND @CurrentFileNumber <= DirectoryNumber * (SELECT @NumberOfFiles / COUNT(*) FROM @CurrentDirectories WHERE Mirror = 1)
           AND Mirror = 1
 
-          SET @CurrentFileName = REPLACE(@CurrentDatabaseFileName, '{FileNumber}', CASE WHEN @CurrentNumberOfFiles > 1 AND @CurrentNumberOfFiles <= 9 THEN CAST(@CurrentFileNumber AS nvarchar) WHEN @CurrentNumberOfFiles >= 10 THEN RIGHT('0' + CAST(@CurrentFileNumber AS nvarchar),2) ELSE '' END)
+          SET @CurrentFileName = REPLACE(@CurrentDatabaseFileName, '{FileNumber}', CASE WHEN @NumberOfFiles > 1 AND @NumberOfFiles <= 9 THEN CAST(@CurrentFileNumber AS nvarchar) WHEN @NumberOfFiles >= 10 THEN RIGHT('0' + CAST(@CurrentFileNumber AS nvarchar),2) ELSE '' END)
 
           SET @CurrentFilePath = @CurrentDirectoryPath + @DirectorySeparator + @CurrentFileName
 
@@ -2427,17 +2582,17 @@ BEGIN
       BEGIN
         SET @CurrentFileNumber = 0
 
-        WHILE @CurrentFileNumber < @CurrentNumberOfFiles
+        WHILE @CurrentFileNumber < @NumberOfFiles
         BEGIN
           SET @CurrentFileNumber = @CurrentFileNumber + 1
 
           SELECT @CurrentDirectoryPath = DirectoryPath
           FROM @CurrentURLs
-          WHERE @CurrentFileNumber >= (DirectoryNumber - 1) * (SELECT @CurrentNumberOfFiles / COUNT(*) FROM @CurrentURLs WHERE Mirror = 0) + 1
-          AND @CurrentFileNumber <= DirectoryNumber * (SELECT @CurrentNumberOfFiles / COUNT(*) FROM @CurrentURLs WHERE Mirror = 0)
+          WHERE @CurrentFileNumber >= (DirectoryNumber - 1) * (SELECT @NumberOfFiles / COUNT(*) FROM @CurrentURLs WHERE Mirror = 0) + 1
+          AND @CurrentFileNumber <= DirectoryNumber * (SELECT @NumberOfFiles / COUNT(*) FROM @CurrentURLs WHERE Mirror = 0)
           AND Mirror = 0
 
-          SET @CurrentFileName = REPLACE(@CurrentDatabaseFileName, '{FileNumber}', CASE WHEN @CurrentNumberOfFiles > 1 AND @CurrentNumberOfFiles <= 9 THEN CAST(@CurrentFileNumber AS nvarchar) WHEN @CurrentNumberOfFiles >= 10 THEN RIGHT('0' + CAST(@CurrentFileNumber AS nvarchar),2) ELSE '' END)
+          SET @CurrentFileName = REPLACE(@CurrentDatabaseFileName, '{FileNumber}', CASE WHEN @NumberOfFiles > 1 AND @NumberOfFiles <= 9 THEN CAST(@CurrentFileNumber AS nvarchar) WHEN @NumberOfFiles >= 10 THEN RIGHT('0' + CAST(@CurrentFileNumber AS nvarchar),2) ELSE '' END)
 
           SET @CurrentFilePath = @CurrentDirectoryPath + @DirectorySeparator + @CurrentFileName
 
@@ -2457,17 +2612,17 @@ BEGIN
       BEGIN
         SET @CurrentFileNumber = 0
 
-        WHILE @CurrentFileNumber < @CurrentNumberOfFiles
+        WHILE @CurrentFileNumber < @NumberOfFiles
         BEGIN
           SET @CurrentFileNumber = @CurrentFileNumber + 1
 
           SELECT @CurrentDirectoryPath = DirectoryPath
           FROM @CurrentURLs
-          WHERE @CurrentFileNumber >= (DirectoryNumber - 1) * (SELECT @CurrentNumberOfFiles / COUNT(*) FROM @CurrentURLs WHERE Mirror = 0) + 1
-          AND @CurrentFileNumber <= DirectoryNumber * (SELECT @CurrentNumberOfFiles / COUNT(*) FROM @CurrentURLs WHERE Mirror = 0)
+          WHERE @CurrentFileNumber >= (DirectoryNumber - 1) * (SELECT @NumberOfFiles / COUNT(*) FROM @CurrentURLs WHERE Mirror = 0) + 1
+          AND @CurrentFileNumber <= DirectoryNumber * (SELECT @NumberOfFiles / COUNT(*) FROM @CurrentURLs WHERE Mirror = 0)
           AND Mirror = 1
 
-          SET @CurrentFileName = REPLACE(@CurrentDatabaseFileName, '{FileNumber}', CASE WHEN @CurrentNumberOfFiles > 1 AND @CurrentNumberOfFiles <= 9 THEN CAST(@CurrentFileNumber AS nvarchar) WHEN @CurrentNumberOfFiles >= 10 THEN RIGHT('0' + CAST(@CurrentFileNumber AS nvarchar),2) ELSE '' END)
+          SET @CurrentFileName = REPLACE(@CurrentDatabaseFileName, '{FileNumber}', CASE WHEN @NumberOfFiles > 1 AND @NumberOfFiles <= 9 THEN CAST(@CurrentFileNumber AS nvarchar) WHEN @NumberOfFiles >= 10 THEN RIGHT('0' + CAST(@CurrentFileNumber AS nvarchar),2) ELSE '' END)
 
           SET @CurrentFilePath = @CurrentDirectoryPath + @DirectorySeparator + @CurrentFileName
 
@@ -2502,11 +2657,28 @@ BEGIN
           END
 
           SET @CurrentCommandType01 = 'xp_create_subdir'
-          SET @CurrentCommand01 = 'DECLARE @ReturnCode int EXECUTE @ReturnCode = dbo.xp_create_subdir N''' + REPLACE(@CurrentDirectoryPath,'''','''''') + ''' IF @ReturnCode <> 0 RAISERROR(''Error creating directory.'', 16, 1)'
-          EXECUTE @CurrentCommandOutput01 = [dbo].[CommandExecute] @DatabaseContext = 'master', @Command = @CurrentCommand01, @CommandType = @CurrentCommandType01, @Mode = 1, @DatabaseName = @CurrentDatabaseName, @LogToTable = @LogToTable, @Execute = @Execute
-          SET @Error = @@ERROR
-          IF @Error <> 0 SET @CurrentCommandOutput01 = @Error
-          IF @CurrentCommandOutput01 <> 0 SET @ReturnCode = @CurrentCommandOutput01
+          SET @CurrentCommand01 = 'DECLARE @ReturnCode int EXECUTE @ReturnCode = [master].dbo.xp_create_subdir N''' + REPLACE(@CurrentDirectoryPath,'''','''''') + ''' IF @ReturnCode <> 0 RAISERROR(''Error creating directory.'', 16, 1)'
+          BEGIN TRY 
+						EXECUTE @CurrentCommandOutput01 = [dbo].[CommandExecute] @Command = @CurrentCommand01, @CommandType = @CurrentCommandType01, @Mode = 1, @DatabaseName = @CurrentDatabaseName, @LogToTable = @LogToTable, @Execute = @Execute
+
+						SET @Error = @@ERROR
+						IF @Error <> 0 SET @CurrentCommandOutput01 = @Error
+						IF @CurrentCommandOutput01 <> 0 SET @ReturnCode = @CurrentCommandOutput01
+					END TRY 
+					BEGIN CATCH
+							IF XACT_STATE() <> 0
+							BEGIN
+								ROLLBACK TRANSACTION
+							END
+							SET @ErrorMessage = 'ERROR: ' + CAST(ERROR_NUMBER() AS nvarchar) + ', ' + ISNULL(ERROR_MESSAGE(),'')
+							IF @Raiserror = 'Y'
+								RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
+							ELSE 
+								RAISERROR('%s',10,1,@ErrorMessage) WITH NOWAIT
+							RAISERROR(@EmptyLine,10,1) WITH NOWAIT
+							SET @Error = ERROR_NUMBER()
+							SET @ReturnCode = @Error
+						END CATCH
 
           UPDATE @CurrentDirectories
           SET CreateCompleted = 1,
@@ -2527,7 +2699,7 @@ BEGIN
       IF @CleanupMode = 'BEFORE_BACKUP'
       BEGIN
         INSERT INTO @CurrentCleanupDates (CleanupDate, Mirror)
-        SELECT DATEADD(hh,-(@CleanupTime),SYSDATETIME()), 0
+        SELECT DATEADD(hh,-(@CleanupTime),GETDATE()), 0
 
         IF NOT EXISTS(SELECT * FROM @CurrentCleanupDates WHERE (Mirror = 0 OR Mirror IS NULL) AND CleanupDate IS NULL)
         BEGIN
@@ -2543,7 +2715,7 @@ BEGIN
       IF @MirrorCleanupMode = 'BEFORE_BACKUP'
       BEGIN
         INSERT INTO @CurrentCleanupDates (CleanupDate, Mirror)
-        SELECT DATEADD(hh,-(@MirrorCleanupTime),SYSDATETIME()), 1
+        SELECT DATEADD(hh,-(@MirrorCleanupTime),GETDATE()), 1
 
         IF NOT EXISTS(SELECT * FROM @CurrentCleanupDates WHERE (Mirror = 1 OR Mirror IS NULL) AND CleanupDate IS NULL)
         BEGIN
@@ -2582,34 +2754,50 @@ BEGIN
           BEGIN
             SET @CurrentCommandType02 = 'xp_delete_file'
 
-            SET @CurrentCommand02 = 'DECLARE @ReturnCode int EXECUTE @ReturnCode = dbo.xp_delete_file 0, N''' + REPLACE(@CurrentDirectoryPath,'''','''''') + ''', ''' + @CurrentFileExtension + ''', ''' + CONVERT(nvarchar(19),@CurrentCleanupDate,126) + ''' IF @ReturnCode <> 0 RAISERROR(''Error deleting files.'', 16, 1)'
+            SET @CurrentCommand02 = 'DECLARE @ReturnCode int EXECUTE @ReturnCode = [master].dbo.xp_delete_file 0, N''' + REPLACE(@CurrentDirectoryPath,'''','''''') + ''', ''' + @CurrentFileExtension + ''', ''' + CONVERT(nvarchar(19),@CurrentCleanupDate,126) + ''' IF @ReturnCode <> 0 RAISERROR(''Error deleting files.'', 16, 1)'
           END
 
           IF @BackupSoftware = 'LITESPEED'
           BEGIN
             SET @CurrentCommandType02 = 'xp_slssqlmaint'
 
-            SET @CurrentCommand02 = 'DECLARE @ReturnCode int EXECUTE @ReturnCode = dbo.xp_slssqlmaint N''-MAINTDEL -DELFOLDER "' + REPLACE(@CurrentDirectoryPath,'''','''''') + '" -DELEXTENSION "' + @CurrentFileExtension + '" -DELUNIT "' + CAST(DATEDIFF(mi,@CurrentCleanupDate,SYSDATETIME()) + 1 AS nvarchar) + '" -DELUNITTYPE "minutes" -DELUSEAGE'' IF @ReturnCode <> 0 RAISERROR(''Error deleting LiteSpeed backup files.'', 16, 1)'
+            SET @CurrentCommand02 = 'DECLARE @ReturnCode int EXECUTE @ReturnCode = [master].dbo.xp_slssqlmaint N''-MAINTDEL -DELFOLDER "' + REPLACE(@CurrentDirectoryPath,'''','''''') + '" -DELEXTENSION "' + @CurrentFileExtension + '" -DELUNIT "' + CAST(DATEDIFF(mi,@CurrentCleanupDate,GETDATE()) + 1 AS nvarchar) + '" -DELUNITTYPE "minutes" -DELUSEAGE'' IF @ReturnCode <> 0 RAISERROR(''Error deleting LiteSpeed backup files.'', 16, 1)'
           END
 
           IF @BackupSoftware = 'SQLBACKUP'
           BEGIN
             SET @CurrentCommandType02 = 'sqbutility'
 
-            SET @CurrentCommand02 = 'DECLARE @ReturnCode int EXECUTE @ReturnCode = dbo.sqbutility 1032, N''' + REPLACE(@CurrentDatabaseName,'''','''''') + ''', N''' + REPLACE(@CurrentDirectoryPath,'''','''''') + ''', ''' + CASE WHEN @CurrentBackupType = 'FULL' THEN 'D' WHEN @CurrentBackupType = 'DIFF' THEN 'I' WHEN @CurrentBackupType = 'LOG' THEN 'L' END + ''', ''' + CAST(DATEDIFF(hh,@CurrentCleanupDate,SYSDATETIME()) + 1 AS nvarchar) + 'h'', ' + ISNULL('''' + REPLACE(@EncryptionKey,'''','''''') + '''','NULL') + ' IF @ReturnCode <> 0 RAISERROR(''Error deleting SQLBackup backup files.'', 16, 1)'
+            SET @CurrentCommand02 = 'DECLARE @ReturnCode int EXECUTE @ReturnCode = [master].dbo.sqbutility 1032, N''' + REPLACE(@CurrentDatabaseName,'''','''''') + ''', N''' + REPLACE(@CurrentDirectoryPath,'''','''''') + ''', ''' + CASE WHEN @CurrentBackupType = 'FULL' THEN 'D' WHEN @CurrentBackupType = 'DIFF' THEN 'I' WHEN @CurrentBackupType = 'LOG' THEN 'L' END + ''', ''' + CAST(DATEDIFF(hh,@CurrentCleanupDate,GETDATE()) + 1 AS nvarchar) + 'h'', ' + ISNULL('''' + REPLACE(@EncryptionKey,'''','''''') + '''','NULL') + ' IF @ReturnCode <> 0 RAISERROR(''Error deleting SQLBackup backup files.'', 16, 1)'
           END
 
           IF @BackupSoftware = 'SQLSAFE'
           BEGIN
             SET @CurrentCommandType02 = 'xp_ss_delete'
 
-            SET @CurrentCommand02 = 'DECLARE @ReturnCode int EXECUTE @ReturnCode = dbo.xp_ss_delete @filename = N''' + REPLACE(@CurrentDirectoryPath,'''','''''') + '\*.' + @CurrentFileExtension + ''', @age = ''' + CAST(DATEDIFF(mi,@CurrentCleanupDate,SYSDATETIME()) + 1 AS nvarchar) + 'Minutes'' IF @ReturnCode <> 0 RAISERROR(''Error deleting SQLsafe backup files.'', 16, 1)'
+            SET @CurrentCommand02 = 'DECLARE @ReturnCode int EXECUTE @ReturnCode = [master].dbo.xp_ss_delete @filename = N''' + REPLACE(@CurrentDirectoryPath,'''','''''') + '\*.' + @CurrentFileExtension + ''', @age = ''' + CAST(DATEDIFF(mi,@CurrentCleanupDate,GETDATE()) + 1 AS nvarchar) + 'Minutes'' IF @ReturnCode <> 0 RAISERROR(''Error deleting SQLsafe backup files.'', 16, 1)'
           END
 
-          EXECUTE @CurrentCommandOutput02 = [dbo].[CommandExecute] @DatabaseContext = 'master', @Command = @CurrentCommand02, @CommandType = @CurrentCommandType02, @Mode = 1, @DatabaseName = @CurrentDatabaseName, @LogToTable = @LogToTable, @Execute = @Execute
-          SET @Error = @@ERROR
-          IF @Error <> 0 SET @CurrentCommandOutput02 = @Error
-          IF @CurrentCommandOutput02 <> 0 SET @ReturnCode = @CurrentCommandOutput02
+					BEGIN TRY
+						EXECUTE @CurrentCommandOutput02 = [dbo].[CommandExecute] @Command = @CurrentCommand02, @CommandType = @CurrentCommandType02, @Mode = 1, @DatabaseName = @CurrentDatabaseName, @LogToTable = @LogToTable, @Execute = @Execute
+						SET @Error = @@ERROR
+						IF @Error <> 0 SET @CurrentCommandOutput02 = @Error
+						IF @CurrentCommandOutput02 <> 0 SET @ReturnCode = @CurrentCommandOutput02
+					END TRY 
+					BEGIN CATCH
+							IF XACT_STATE() <> 0
+							BEGIN
+								ROLLBACK TRANSACTION
+							END
+							SET @ErrorMessage = 'ERROR: ' + CAST(ERROR_NUMBER() AS nvarchar) + ', ' + ISNULL(ERROR_MESSAGE(),'')
+							IF @Raiserror = 'Y'
+								RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
+							ELSE 
+								RAISERROR('%s',10,1,@ErrorMessage) WITH NOWAIT
+							RAISERROR(@EmptyLine,10,1) WITH NOWAIT
+							SET @Error = ERROR_NUMBER()
+							SET @ReturnCode = @Error
+						END CATCH
 
           UPDATE @CurrentDirectories
           SET CleanupCompleted = 1,
@@ -2643,54 +2831,53 @@ BEGIN
           WHEN @CurrentBackupType = 'LOG' THEN 'BACKUP LOG ' + QUOTENAME(@CurrentDatabaseName)
           END
 
-          IF @ReadWriteFileGroups = 'Y' AND @CurrentDatabaseName <> 'master' SET @CurrentCommand03 += ' READ_WRITE_FILEGROUPS'
+          IF @ReadWriteFileGroups = 'Y' AND @CurrentDatabaseName <> 'master' SET @CurrentCommand03 = @CurrentCommand03 + ' READ_WRITE_FILEGROUPS'
 
-          SET @CurrentCommand03 += ' TO'
+          SET @CurrentCommand03 = @CurrentCommand03 + ' TO'
 
-          SELECT @CurrentCommand03 += ' ' + [Type] + ' = N''' + REPLACE(FilePath,'''','''''') + '''' + CASE WHEN ROW_NUMBER() OVER (ORDER BY FilePath ASC) <> @CurrentNumberOfFiles THEN ',' ELSE '' END
+          SELECT @CurrentCommand03 = @CurrentCommand03 + ' ' + [Type] + ' = N''' + REPLACE(FilePath,'''','''''') + '''' + CASE WHEN ROW_NUMBER() OVER (ORDER BY FilePath ASC) <> @NumberOfFiles THEN ',' ELSE '' END
           FROM @CurrentFiles
           WHERE Mirror = 0
           ORDER BY FilePath ASC
 
           IF EXISTS(SELECT * FROM @CurrentFiles WHERE Mirror = 1)
           BEGIN
-            SET @CurrentCommand03 += ' MIRROR TO'
+            SET @CurrentCommand03 = @CurrentCommand03 + ' MIRROR TO'
 
-            SELECT @CurrentCommand03 += ' ' + [Type] + ' = N''' + REPLACE(FilePath,'''','''''') + '''' + CASE WHEN ROW_NUMBER() OVER (ORDER BY FilePath ASC) <> @CurrentNumberOfFiles THEN ',' ELSE '' END
+            SELECT @CurrentCommand03 = @CurrentCommand03 + ' ' + [Type] + ' = N''' + REPLACE(FilePath,'''','''''') + '''' + CASE WHEN ROW_NUMBER() OVER (ORDER BY FilePath ASC) <> @NumberOfFiles THEN ',' ELSE '' END
             FROM @CurrentFiles
             WHERE Mirror = 1
             ORDER BY FilePath ASC
           END
 
-          SET @CurrentCommand03 += ' WITH '
-          IF @CheckSum = 'Y' SET @CurrentCommand03 += 'CHECKSUM'
-          IF @CheckSum = 'N' SET @CurrentCommand03 += 'NO_CHECKSUM'
+          SET @CurrentCommand03 = @CurrentCommand03 + ' WITH '
+          IF @CheckSum = 'Y' SET @CurrentCommand03 = @CurrentCommand03 + 'CHECKSUM'
+          IF @CheckSum = 'N' SET @CurrentCommand03 = @CurrentCommand03 + 'NO_CHECKSUM'
 
           IF @Version >= 10
           BEGIN
-            SET @CurrentCommand03 += CASE WHEN @Compress = 'Y' AND (@CurrentIsEncrypted = 0 OR (@CurrentIsEncrypted = 1 AND @Version >= 13 AND @CurrentMaxTransferSize > 65536)) THEN ', COMPRESSION' ELSE ', NO_COMPRESSION' END
+            SET @CurrentCommand03 = @CurrentCommand03 + CASE WHEN @Compress = 'Y' AND (@CurrentIsEncrypted = 0 OR (@CurrentIsEncrypted = 1 AND @Version >= 13 AND @MaxTransferSize > 65536)) THEN ', COMPRESSION' ELSE ', NO_COMPRESSION' END
           END
 
-          IF @CurrentBackupType = 'DIFF' SET @CurrentCommand03 += ', DIFFERENTIAL'
+          IF @CurrentBackupType = 'DIFF' SET @CurrentCommand03 = @CurrentCommand03 + ', DIFFERENTIAL'
 
           IF EXISTS(SELECT * FROM @CurrentFiles WHERE Mirror = 1)
           BEGIN
-            SET @CurrentCommand03 += ', FORMAT'
+            SET @CurrentCommand03 = @CurrentCommand03 + ', FORMAT'
           END
 
-          IF @CopyOnly = 'Y' SET @CurrentCommand03 += ', COPY_ONLY'
-          IF @NoRecovery = 'Y' AND @CurrentBackupType = 'LOG' SET @CurrentCommand03 += ', NORECOVERY'
-          IF @Init = 'Y' SET @CurrentCommand03 += ', INIT'
-          IF @Format = 'Y' SET @CurrentCommand03 += ', FORMAT'
-          IF @BlockSize IS NOT NULL SET @CurrentCommand03 += ', BLOCKSIZE = ' + CAST(@BlockSize AS nvarchar)
-          IF @BufferCount IS NOT NULL SET @CurrentCommand03 += ', BUFFERCOUNT = ' + CAST(@BufferCount AS nvarchar)
-          IF @CurrentMaxTransferSize IS NOT NULL SET @CurrentCommand03 += ', MAXTRANSFERSIZE = ' + CAST(@CurrentMaxTransferSize AS nvarchar)
-          IF @Description IS NOT NULL SET @CurrentCommand03 += ', DESCRIPTION = N''' + REPLACE(@Description,'''','''''') + ''''
-          IF @Encrypt = 'Y' SET @CurrentCommand03 += ', ENCRYPTION (ALGORITHM = ' + UPPER(@EncryptionAlgorithm) + ', '
-          IF @Encrypt = 'Y' AND @ServerCertificate IS NOT NULL SET @CurrentCommand03 += 'SERVER CERTIFICATE = ' + QUOTENAME(@ServerCertificate)
-          IF @Encrypt = 'Y' AND @ServerAsymmetricKey IS NOT NULL SET @CurrentCommand03 += 'SERVER ASYMMETRIC KEY = ' + QUOTENAME(@ServerAsymmetricKey)
-          IF @Encrypt = 'Y' SET @CurrentCommand03 += ')'
-          IF @URL IS NOT NULL AND @Credential IS NOT NULL SET @CurrentCommand03 += ', CREDENTIAL = N''' + REPLACE(@Credential,'''','''''') + ''''
+          IF @CopyOnly = 'Y' SET @CurrentCommand03 = @CurrentCommand03 + ', COPY_ONLY'
+          IF @NoRecovery = 'Y' AND @CurrentBackupType = 'LOG' SET @CurrentCommand03 = @CurrentCommand03 + ', NORECOVERY'
+          IF @Init = 'Y' SET @CurrentCommand03 = @CurrentCommand03 + ', INIT'
+          IF @BlockSize IS NOT NULL SET @CurrentCommand03 = @CurrentCommand03 + ', BLOCKSIZE = ' + CAST(@BlockSize AS nvarchar)
+          IF @BufferCount IS NOT NULL SET @CurrentCommand03 = @CurrentCommand03 + ', BUFFERCOUNT = ' + CAST(@BufferCount AS nvarchar)
+          IF @MaxTransferSize IS NOT NULL SET @CurrentCommand03 = @CurrentCommand03 + ', MAXTRANSFERSIZE = ' + CAST(@MaxTransferSize AS nvarchar)
+          IF @Description IS NOT NULL SET @CurrentCommand03 = @CurrentCommand03 + ', DESCRIPTION = N''' + REPLACE(@Description,'''','''''') + ''''
+          IF @Encrypt = 'Y' SET @CurrentCommand03 = @CurrentCommand03 + ', ENCRYPTION (ALGORITHM = ' + UPPER(@EncryptionAlgorithm) + ', '
+          IF @Encrypt = 'Y' AND @ServerCertificate IS NOT NULL SET @CurrentCommand03 = @CurrentCommand03 + 'SERVER CERTIFICATE = ' + QUOTENAME(@ServerCertificate)
+          IF @Encrypt = 'Y' AND @ServerAsymmetricKey IS NOT NULL SET @CurrentCommand03 = @CurrentCommand03 + 'SERVER ASYMMETRIC KEY = ' + QUOTENAME(@ServerAsymmetricKey)
+          IF @Encrypt = 'Y' SET @CurrentCommand03 = @CurrentCommand03 + ')'
+          IF @URL IS NOT NULL AND @Credential IS NOT NULL SET @CurrentCommand03 = @CurrentCommand03 + ', CREDENTIAL = N''' + REPLACE(@Credential,'''','''''') + ''''
         END
 
         IF @BackupSoftware = 'LITESPEED'
@@ -2701,44 +2888,42 @@ BEGIN
           END
 
           SELECT @CurrentCommand03 = CASE
-          WHEN @CurrentBackupType IN('DIFF','FULL') THEN 'DECLARE @ReturnCode int EXECUTE @ReturnCode = dbo.xp_backup_database @database = N''' + REPLACE(@CurrentDatabaseName,'''','''''') + ''''
-          WHEN @CurrentBackupType = 'LOG' THEN 'DECLARE @ReturnCode int EXECUTE @ReturnCode = dbo.xp_backup_log @database = N''' + REPLACE(@CurrentDatabaseName,'''','''''') + ''''
+          WHEN @CurrentBackupType IN('DIFF','FULL') THEN 'DECLARE @ReturnCode int EXECUTE @ReturnCode = [master].dbo.xp_backup_database @database = N''' + REPLACE(@CurrentDatabaseName,'''','''''') + ''''
+          WHEN @CurrentBackupType = 'LOG' THEN 'DECLARE @ReturnCode int EXECUTE @ReturnCode = [master].dbo.xp_backup_log @database = N''' + REPLACE(@CurrentDatabaseName,'''','''''') + ''''
           END
 
-          SELECT @CurrentCommand03 += ', @filename = N''' + REPLACE(FilePath,'''','''''') + ''''
+          SELECT @CurrentCommand03 = @CurrentCommand03 + ', @filename = N''' + REPLACE(FilePath,'''','''''') + ''''
           FROM @CurrentFiles
           WHERE Mirror = 0
           ORDER BY FilePath ASC
 
           IF EXISTS(SELECT * FROM @CurrentFiles WHERE Mirror = 1)
           BEGIN
-            SELECT @CurrentCommand03 += ', @mirror = N''' + REPLACE(FilePath,'''','''''') + ''''
+            SELECT @CurrentCommand03 = @CurrentCommand03 + ', @mirror = N''' + REPLACE(FilePath,'''','''''') + ''''
             FROM @CurrentFiles
             WHERE Mirror = 1
             ORDER BY FilePath ASC
           END
 
-          SET @CurrentCommand03 += ', @with = '''
-          IF @CheckSum = 'Y' SET @CurrentCommand03 += 'CHECKSUM'
-          IF @CheckSum = 'N' SET @CurrentCommand03 += 'NO_CHECKSUM'
-          IF @CurrentBackupType = 'DIFF' SET @CurrentCommand03 += ', DIFFERENTIAL'
-          IF @CopyOnly = 'Y' SET @CurrentCommand03 += ', COPY_ONLY'
-          IF @NoRecovery = 'Y' AND @CurrentBackupType = 'LOG' SET @CurrentCommand03 += ', NORECOVERY'
-          IF @BlockSize IS NOT NULL SET @CurrentCommand03 += ', BLOCKSIZE = ' + CAST(@BlockSize AS nvarchar)
-          SET @CurrentCommand03 += ''''
-          IF @ReadWriteFileGroups = 'Y' AND @CurrentDatabaseName <> 'master' SET @CurrentCommand03 += ', @read_write_filegroups = 1'
-          IF @CompressionLevel IS NOT NULL SET @CurrentCommand03 += ', @compressionlevel = ' + CAST(@CompressionLevel AS nvarchar)
-          IF @AdaptiveCompression IS NOT NULL SET @CurrentCommand03 += ', @adaptivecompression = ''' + CASE WHEN @AdaptiveCompression = 'SIZE' THEN 'Size' WHEN @AdaptiveCompression = 'SPEED' THEN 'Speed' END + ''''
-          IF @BufferCount IS NOT NULL SET @CurrentCommand03 += ', @buffercount = ' + CAST(@BufferCount AS nvarchar)
-          IF @CurrentMaxTransferSize IS NOT NULL SET @CurrentCommand03 += ', @maxtransfersize = ' + CAST(@CurrentMaxTransferSize AS nvarchar)
-          IF @Threads IS NOT NULL SET @CurrentCommand03 += ', @threads = ' + CAST(@Threads AS nvarchar)
-          IF @Init = 'Y' SET @CurrentCommand03 += ', @init = 1'
-          IF @Format = 'Y' SET @CurrentCommand03 += ', @format = 1'
-          IF @Throttle IS NOT NULL SET @CurrentCommand03 += ', @throttle = ' + CAST(@Throttle AS nvarchar)
-          IF @Description IS NOT NULL SET @CurrentCommand03 += ', @desc = N''' + REPLACE(@Description,'''','''''') + ''''
-          IF @ObjectLevelRecoveryMap = 'Y' SET @CurrentCommand03 += ', @olrmap = 1'
+          SET @CurrentCommand03 = @CurrentCommand03 + ', @with = '''
+          IF @CheckSum = 'Y' SET @CurrentCommand03 = @CurrentCommand03 + 'CHECKSUM'
+          IF @CheckSum = 'N' SET @CurrentCommand03 = @CurrentCommand03 + 'NO_CHECKSUM'
+          IF @CurrentBackupType = 'DIFF' SET @CurrentCommand03 = @CurrentCommand03 + ', DIFFERENTIAL'
+          IF @CopyOnly = 'Y' SET @CurrentCommand03 = @CurrentCommand03 + ', COPY_ONLY'
+          IF @NoRecovery = 'Y' AND @CurrentBackupType = 'LOG' SET @CurrentCommand03 = @CurrentCommand03 + ', NORECOVERY'
+          IF @BlockSize IS NOT NULL SET @CurrentCommand03 = @CurrentCommand03 + ', BLOCKSIZE = ' + CAST(@BlockSize AS nvarchar)
+          SET @CurrentCommand03 = @CurrentCommand03 + ''''
+          IF @ReadWriteFileGroups = 'Y' AND @CurrentDatabaseName <> 'master' SET @CurrentCommand03 = @CurrentCommand03 + ', @read_write_filegroups = 1'
+          IF @CompressionLevel IS NOT NULL SET @CurrentCommand03 = @CurrentCommand03 + ', @compressionlevel = ' + CAST(@CompressionLevel AS nvarchar)
+          IF @AdaptiveCompression IS NOT NULL SET @CurrentCommand03 = @CurrentCommand03 + ', @adaptivecompression = ''' + CASE WHEN @AdaptiveCompression = 'SIZE' THEN 'Size' WHEN @AdaptiveCompression = 'SPEED' THEN 'Speed' END + ''''
+          IF @BufferCount IS NOT NULL SET @CurrentCommand03 = @CurrentCommand03 + ', @buffercount = ' + CAST(@BufferCount AS nvarchar)
+          IF @MaxTransferSize IS NOT NULL SET @CurrentCommand03 = @CurrentCommand03 + ', @maxtransfersize = ' + CAST(@MaxTransferSize AS nvarchar)
+          IF @Threads IS NOT NULL SET @CurrentCommand03 = @CurrentCommand03 + ', @threads = ' + CAST(@Threads AS nvarchar)
+          IF @Init = 'Y' SET @CurrentCommand03 = @CurrentCommand03 + ', @init = 1'
+          IF @Throttle IS NOT NULL SET @CurrentCommand03 = @CurrentCommand03 + ', @throttle = ' + CAST(@Throttle AS nvarchar)
+          IF @Description IS NOT NULL SET @CurrentCommand03 = @CurrentCommand03 + ', @desc = N''' + REPLACE(@Description,'''','''''') + ''''
 
-          IF @EncryptionAlgorithm IS NOT NULL SET @CurrentCommand03 += ', @cryptlevel = ' + CASE
+          IF @EncryptionAlgorithm IS NOT NULL SET @CurrentCommand03 = @CurrentCommand03 + ', @cryptlevel = ' + CASE
           WHEN @EncryptionAlgorithm = 'RC2_40' THEN '0'
           WHEN @EncryptionAlgorithm = 'RC2_56' THEN '1'
           WHEN @EncryptionAlgorithm = 'RC2_112' THEN '2'
@@ -2750,8 +2935,8 @@ BEGIN
           WHEN @EncryptionAlgorithm = 'AES_256' THEN '8'
           END
 
-          IF @EncryptionKey IS NOT NULL SET @CurrentCommand03 += ', @encryptionkey = N''' + REPLACE(@EncryptionKey,'''','''''') + ''''
-          SET @CurrentCommand03 += ' IF @ReturnCode <> 0 RAISERROR(''Error performing LiteSpeed backup.'', 16, 1)'
+          IF @EncryptionKey IS NOT NULL SET @CurrentCommand03 = @CurrentCommand03 + ', @encryptionkey = N''' + REPLACE(@EncryptionKey,'''','''''') + ''''
+          SET @CurrentCommand03 = @CurrentCommand03 + ' IF @ReturnCode <> 0 RAISERROR(''Error performing LiteSpeed backup.'', 16, 1)'
         END
 
         IF @BackupSoftware = 'SQLBACKUP'
@@ -2763,124 +2948,139 @@ BEGIN
           WHEN @CurrentBackupType = 'LOG' THEN 'BACKUP LOG ' + QUOTENAME(@CurrentDatabaseName)
           END
 
-          IF @ReadWriteFileGroups = 'Y' AND @CurrentDatabaseName <> 'master' SET @CurrentCommand03 += ' READ_WRITE_FILEGROUPS'
+          IF @ReadWriteFileGroups = 'Y' AND @CurrentDatabaseName <> 'master' SET @CurrentCommand03 = @CurrentCommand03 + ' READ_WRITE_FILEGROUPS'
 
-          SET @CurrentCommand03 += ' TO'
+          SET @CurrentCommand03 = @CurrentCommand03 + ' TO'
 
-          SELECT @CurrentCommand03 += ' DISK = N''' + REPLACE(FilePath,'''','''''') + '''' + CASE WHEN ROW_NUMBER() OVER (ORDER BY FilePath ASC) <> @CurrentNumberOfFiles THEN ',' ELSE '' END
+          SELECT @CurrentCommand03 = @CurrentCommand03 + ' DISK = N''' + REPLACE(FilePath,'''','''''') + '''' + CASE WHEN ROW_NUMBER() OVER (ORDER BY FilePath ASC) <> @NumberOfFiles THEN ',' ELSE '' END
           FROM @CurrentFiles
           WHERE Mirror = 0
           ORDER BY FilePath ASC
 
-          SET @CurrentCommand03 += ' WITH '
+          SET @CurrentCommand03 = @CurrentCommand03 + ' WITH '
 
           IF EXISTS(SELECT * FROM @CurrentFiles WHERE Mirror = 1)
           BEGIN
-            SET @CurrentCommand03 += ' MIRRORFILE' + ' = N''' + REPLACE((SELECT FilePath FROM @CurrentFiles WHERE Mirror = 1),'''','''''') + ''', '
+            SET @CurrentCommand03 = @CurrentCommand03 + ' MIRRORFILE' + ' = N''' + REPLACE((SELECT FilePath FROM @CurrentFiles WHERE Mirror = 1),'''','''''') + ''', '
           END
 
-          IF @CheckSum = 'Y' SET @CurrentCommand03 += 'CHECKSUM'
-          IF @CheckSum = 'N' SET @CurrentCommand03 += 'NO_CHECKSUM'
-          IF @CurrentBackupType = 'DIFF' SET @CurrentCommand03 += ', DIFFERENTIAL'
-          IF @CopyOnly = 'Y' SET @CurrentCommand03 += ', COPY_ONLY'
-          IF @NoRecovery = 'Y' AND @CurrentBackupType = 'LOG' SET @CurrentCommand03 += ', NORECOVERY'
-          IF @Init = 'Y' SET @CurrentCommand03 += ', INIT'
-          IF @Format = 'Y' SET @CurrentCommand03 += ', FORMAT'
-          IF @CompressionLevel IS NOT NULL SET @CurrentCommand03 += ', COMPRESSION = ' + CAST(@CompressionLevel AS nvarchar)
-          IF @Threads IS NOT NULL SET @CurrentCommand03 += ', THREADCOUNT = ' + CAST(@Threads AS nvarchar)
-          IF @CurrentMaxTransferSize IS NOT NULL SET @CurrentCommand03 += ', MAXTRANSFERSIZE = ' + CAST(@CurrentMaxTransferSize AS nvarchar)
-          IF @Description IS NOT NULL SET @CurrentCommand03 += ', DESCRIPTION = N''' + REPLACE(@Description,'''','''''') + ''''
+          IF @CheckSum = 'Y' SET @CurrentCommand03 = @CurrentCommand03 + 'CHECKSUM'
+          IF @CheckSum = 'N' SET @CurrentCommand03 = @CurrentCommand03 + 'NO_CHECKSUM'
+          IF @CurrentBackupType = 'DIFF' SET @CurrentCommand03 = @CurrentCommand03 + ', DIFFERENTIAL'
+          IF @CopyOnly = 'Y' SET @CurrentCommand03 = @CurrentCommand03 + ', COPY_ONLY'
+          IF @NoRecovery = 'Y' AND @CurrentBackupType = 'LOG' SET @CurrentCommand03 = @CurrentCommand03 + ', NORECOVERY'
+          IF @Init = 'Y' SET @CurrentCommand03 = @CurrentCommand03 + ', INIT'
+          IF @CompressionLevel IS NOT NULL SET @CurrentCommand03 = @CurrentCommand03 + ', COMPRESSION = ' + CAST(@CompressionLevel AS nvarchar)
+          IF @Threads IS NOT NULL SET @CurrentCommand03 = @CurrentCommand03 + ', THREADCOUNT = ' + CAST(@Threads AS nvarchar)
+          IF @MaxTransferSize IS NOT NULL SET @CurrentCommand03 = @CurrentCommand03 + ', MAXTRANSFERSIZE = ' + CAST(@MaxTransferSize AS nvarchar)
+          IF @Description IS NOT NULL SET @CurrentCommand03 = @CurrentCommand03 + ', DESCRIPTION = N''' + REPLACE(@Description,'''','''''') + ''''
 
-          IF @EncryptionAlgorithm IS NOT NULL SET @CurrentCommand03 += ', KEYSIZE = ' + CASE
+          IF @EncryptionAlgorithm IS NOT NULL SET @CurrentCommand03 = @CurrentCommand03 + ', KEYSIZE = ' + CASE
           WHEN @EncryptionAlgorithm = 'AES_128' THEN '128'
           WHEN @EncryptionAlgorithm = 'AES_256' THEN '256'
           END
 
-          IF @EncryptionKey IS NOT NULL SET @CurrentCommand03 += ', PASSWORD = N''' + REPLACE(@EncryptionKey,'''','''''') + ''''
-          SET @CurrentCommand03 = 'DECLARE @ReturnCode int EXECUTE @ReturnCode = dbo.sqlbackup N''-SQL "' + REPLACE(@CurrentCommand03,'''','''''') + '"''' + ' IF @ReturnCode <> 0 RAISERROR(''Error performing SQLBackup backup.'', 16, 1)'
+          IF @EncryptionKey IS NOT NULL SET @CurrentCommand03 = @CurrentCommand03 + ', PASSWORD = N''' + REPLACE(@EncryptionKey,'''','''''') + ''''
+          SET @CurrentCommand03 = 'DECLARE @ReturnCode int EXECUTE @ReturnCode = [master].dbo.sqlbackup N''-SQL "' + REPLACE(@CurrentCommand03,'''','''''') + '"''' + ' IF @ReturnCode <> 0 RAISERROR(''Error performing SQLBackup backup.'', 16, 1)'
         END
 
         IF @BackupSoftware = 'SQLSAFE'
         BEGIN
           SET @CurrentCommandType03 = 'xp_ss_backup'
 
-          SET @CurrentCommand03 = 'DECLARE @ReturnCode int EXECUTE @ReturnCode = dbo.xp_ss_backup @database = N''' + REPLACE(@CurrentDatabaseName,'''','''''') + ''''
+          SET @CurrentCommand03 = 'DECLARE @ReturnCode int EXECUTE @ReturnCode = [master].dbo.xp_ss_backup @database = N''' + REPLACE(@CurrentDatabaseName,'''','''''') + ''''
 
-          SELECT @CurrentCommand03 += ', ' + CASE WHEN ROW_NUMBER() OVER (ORDER BY FilePath ASC) = 1 THEN '@filename' ELSE '@backupfile' END + ' = N''' + REPLACE(FilePath,'''','''''') + ''''
+          SELECT @CurrentCommand03 = @CurrentCommand03 + ', ' + CASE WHEN ROW_NUMBER() OVER (ORDER BY FilePath ASC) = 1 THEN '@filename' ELSE '@backupfile' END + ' = N''' + REPLACE(FilePath,'''','''''') + ''''
           FROM @CurrentFiles
           WHERE Mirror = 0
           ORDER BY FilePath ASC
 
-          SELECT @CurrentCommand03 += ', @mirrorfile = N''' + REPLACE(FilePath,'''','''''') + ''''
+          SELECT @CurrentCommand03 = @CurrentCommand03 + ', @mirrorfile = N''' + REPLACE(FilePath,'''','''''') + ''''
           FROM @CurrentFiles
           WHERE Mirror = 1
           ORDER BY FilePath ASC
 
-          SET @CurrentCommand03 += ', @backuptype = ' + CASE WHEN @CurrentBackupType = 'FULL' THEN '''Full''' WHEN @CurrentBackupType = 'DIFF' THEN '''Differential''' WHEN @CurrentBackupType = 'LOG' THEN '''Log''' END
-          IF @ReadWriteFileGroups = 'Y' AND @CurrentDatabaseName <> 'master' SET @CurrentCommand03 += ', @readwritefilegroups = 1'
-          SET @CurrentCommand03 += ', @checksum = ' + CASE WHEN @CheckSum = 'Y' THEN '1' WHEN @CheckSum = 'N' THEN '0' END
-          SET @CurrentCommand03 += ', @copyonly = ' + CASE WHEN @CopyOnly = 'Y' THEN '1' WHEN @CopyOnly = 'N' THEN '0' END
-          IF @CompressionLevel IS NOT NULL SET @CurrentCommand03 += ', @compressionlevel = ' + CAST(@CompressionLevel AS nvarchar)
-          IF @Threads IS NOT NULL SET @CurrentCommand03 += ', @threads = ' + CAST(@Threads AS nvarchar)
-          IF @Init = 'Y' SET @CurrentCommand03 += ', @overwrite = 1'
-          IF @Description IS NOT NULL SET @CurrentCommand03 += ', @desc = N''' + REPLACE(@Description,'''','''''') + ''''
+          SET @CurrentCommand03 = @CurrentCommand03 + ', @backuptype = ' + CASE WHEN @CurrentBackupType = 'FULL' THEN '''Full''' WHEN @CurrentBackupType = 'DIFF' THEN '''Differential''' WHEN @CurrentBackupType = 'LOG' THEN '''Log''' END
+          IF @ReadWriteFileGroups = 'Y' AND @CurrentDatabaseName <> 'master' SET @CurrentCommand03 = @CurrentCommand03 + ', @readwritefilegroups = 1'
+          SET @CurrentCommand03 = @CurrentCommand03 + ', @checksum = ' + CASE WHEN @CheckSum = 'Y' THEN '1' WHEN @CheckSum = 'N' THEN '0' END
+          SET @CurrentCommand03 = @CurrentCommand03 + ', @copyonly = ' + CASE WHEN @CopyOnly = 'Y' THEN '1' WHEN @CopyOnly = 'N' THEN '0' END
+          IF @CompressionLevel IS NOT NULL SET @CurrentCommand03 = @CurrentCommand03 + ', @compressionlevel = ' + CAST(@CompressionLevel AS nvarchar)
+          IF @Threads IS NOT NULL SET @CurrentCommand03 = @CurrentCommand03 + ', @threads = ' + CAST(@Threads AS nvarchar)
+          IF @Init = 'Y' SET @CurrentCommand03 = @CurrentCommand03 + ', @overwrite = 1'
+          IF @Description IS NOT NULL SET @CurrentCommand03 = @CurrentCommand03 + ', @desc = N''' + REPLACE(@Description,'''','''''') + ''''
 
-          IF @EncryptionAlgorithm IS NOT NULL SET @CurrentCommand03 += ', @encryptiontype = N''' + CASE
+          IF @EncryptionAlgorithm IS NOT NULL SET @CurrentCommand03 = @CurrentCommand03 + ', @encryptiontype = N''' + CASE
           WHEN @EncryptionAlgorithm = 'AES_128' THEN 'AES128'
           WHEN @EncryptionAlgorithm = 'AES_256' THEN 'AES256'
           END + ''''
 
-          IF @EncryptionKey IS NOT NULL SET @CurrentCommand03 += ', @encryptedbackuppassword = N''' + REPLACE(@EncryptionKey,'''','''''') + ''''
-          SET @CurrentCommand03 += ' IF @ReturnCode <> 0 RAISERROR(''Error performing SQLsafe backup.'', 16, 1)'
+          IF @EncryptionKey IS NOT NULL SET @CurrentCommand03 = @CurrentCommand03 + ', @encryptedbackuppassword = N''' + REPLACE(@EncryptionKey,'''','''''') + ''''
+          SET @CurrentCommand03 = @CurrentCommand03 + ' IF @ReturnCode <> 0 RAISERROR(''Error performing SQLsafe backup.'', 16, 1)'
         END
 
         IF @BackupSoftware = 'DATA_DOMAIN_BOOST'
         BEGIN
           SET @CurrentCommandType03 = 'emc_run_backup'
 
-          SET @CurrentCommand03 = 'DECLARE @ReturnCode int EXECUTE @ReturnCode = dbo.emc_run_backup '''
+          SET @CurrentCommand03 = 'DECLARE @ReturnCode int EXECUTE @ReturnCode = [master].dbo.emc_run_backup '''
 
-          SET @CurrentCommand03 += ' -c ' + CASE WHEN @CurrentAvailabilityGroup IS NOT NULL THEN @Cluster ELSE CAST(SERVERPROPERTY('MachineName') AS nvarchar) END
+          SET @CurrentCommand03 = @CurrentCommand03 + ' -c ' + CASE WHEN @CurrentAvailabilityGroup IS NOT NULL THEN @Cluster ELSE CAST(SERVERPROPERTY('MachineName') AS nvarchar) END
 
-          SET @CurrentCommand03 += ' -l ' + CASE
+          SET @CurrentCommand03 = @CurrentCommand03 + ' -l ' + CASE
           WHEN @CurrentBackupType = 'FULL' THEN 'full'
           WHEN @CurrentBackupType = 'DIFF' THEN 'diff'
           WHEN @CurrentBackupType = 'LOG' THEN 'incr'
           END
 
-          IF @NoRecovery = 'Y' SET @CurrentCommand03 += ' -H'
+          IF @NoRecovery = 'Y' SET @CurrentCommand03 = @CurrentCommand03 + ' -H'
 
-          IF @CleanupTime IS NOT NULL SET @CurrentCommand03 += ' -y +' + CAST(@CleanupTime/24 + CASE WHEN @CleanupTime%24 > 0 THEN 1 ELSE 0 END AS nvarchar) + 'd'
+          IF @CleanupTime IS NOT NULL SET @CurrentCommand03 = @CurrentCommand03 + ' -y +' + CAST(@CleanupTime/24 + CASE WHEN @CleanupTime%24 > 0 THEN 1 ELSE 0 END AS nvarchar) + 'd'
 
-          IF @CheckSum = 'Y' SET @CurrentCommand03 += ' -k'
+          IF @CheckSum = 'Y' SET @CurrentCommand03 = @CurrentCommand03 + ' -k'
 
-          SET @CurrentCommand03 += ' -S ' + CAST(@CurrentNumberOfFiles AS nvarchar)
+          SET @CurrentCommand03 = @CurrentCommand03 + ' -S ' + CAST(@NumberOfFiles AS nvarchar)
 
-          IF @Description IS NOT NULL SET @CurrentCommand03 += ' -b "' + REPLACE(@Description,'''','''''') + '"'
+          IF @Description IS NOT NULL SET @CurrentCommand03 = @CurrentCommand03 + ' -b "' + REPLACE(@Description,'''','''''') + '"'
 
-          IF @BufferCount IS NOT NULL SET @CurrentCommand03 += ' -O "BUFFERCOUNT=' + CAST(@BufferCount AS nvarchar) + '"'
+          IF @BufferCount IS NOT NULL SET @CurrentCommand03 = @CurrentCommand03 + ' -O "BUFFERCOUNT=' + CAST(@BufferCount AS nvarchar) + '"'
 
-          IF @ReadWriteFileGroups = 'Y' AND @CurrentDatabaseName <> 'master' SET @CurrentCommand03 += ' -O "READ_WRITE_FILEGROUPS"'
+          IF @ReadWriteFileGroups = 'Y' AND @CurrentDatabaseName <> 'master' SET @CurrentCommand03 = @CurrentCommand03 + ' -O "READ_WRITE_FILEGROUPS"'
 
-          IF @DataDomainBoostHost IS NOT NULL SET @CurrentCommand03 += ' -a "NSR_DFA_SI_DD_HOST=' + REPLACE(@DataDomainBoostHost,'''','''''') + '"'
-          IF @DataDomainBoostUser IS NOT NULL SET @CurrentCommand03 += ' -a "NSR_DFA_SI_DD_USER=' + REPLACE(@DataDomainBoostUser,'''','''''') + '"'
-          IF @DataDomainBoostDevicePath IS NOT NULL SET @CurrentCommand03 += ' -a "NSR_DFA_SI_DEVICE_PATH=' + REPLACE(@DataDomainBoostDevicePath,'''','''''') + '"'
-          IF @DataDomainBoostLockboxPath IS NOT NULL SET @CurrentCommand03 += ' -a "NSR_DFA_SI_DD_LOCKBOX_PATH=' + REPLACE(@DataDomainBoostLockboxPath,'''','''''') + '"'
-          SET @CurrentCommand03 += ' -a "NSR_SKIP_NON_BACKUPABLE_STATE_DB=TRUE"'
-          IF @CopyOnly = 'Y' SET @CurrentCommand03 += ' -a "NSR_COPY_ONLY=TRUE"'
+          IF @DataDomainBoostHost IS NOT NULL SET @CurrentCommand03 = @CurrentCommand03 + ' -a "NSR_DFA_SI_DD_HOST=' + REPLACE(@DataDomainBoostHost,'''','''''') + '"'
+          IF @DataDomainBoostUser IS NOT NULL SET @CurrentCommand03 = @CurrentCommand03 + ' -a "NSR_DFA_SI_DD_USER=' + REPLACE(@DataDomainBoostUser,'''','''''') + '"'
+          IF @DataDomainBoostDevicePath IS NOT NULL SET @CurrentCommand03 = @CurrentCommand03 + ' -a "NSR_DFA_SI_DEVICE_PATH=' + REPLACE(@DataDomainBoostDevicePath,'''','''''') + '"'
+          IF @DataDomainBoostLockboxPath IS NOT NULL SET @CurrentCommand03 = @CurrentCommand03 + ' -a "NSR_DFA_SI_DD_LOCKBOX_PATH=' + REPLACE(@DataDomainBoostLockboxPath,'''','''''') + '"'
+          SET @CurrentCommand03 = @CurrentCommand03 + ' -a "NSR_SKIP_NON_BACKUPABLE_STATE_DB=TRUE"'
+          IF @CopyOnly = 'Y' SET @CurrentCommand03 = @CurrentCommand03 + ' -a "NSR_COPY_ONLY=TRUE"'
 
-          IF SERVERPROPERTY('InstanceName') IS NULL SET @CurrentCommand03 += ' "MSSQL' + ':' + REPLACE(REPLACE(@CurrentDatabaseName,'''',''''''),'.','\.') + '"'
-          IF SERVERPROPERTY('InstanceName') IS NOT NULL SET @CurrentCommand03 += ' "MSSQL$' + CAST(SERVERPROPERTY('InstanceName') AS nvarchar) + ':' + REPLACE(REPLACE(@CurrentDatabaseName,'''',''''''),'.','\.') + '"'
+          IF SERVERPROPERTY('InstanceName') IS NULL SET @CurrentCommand03 = @CurrentCommand03 + ' "MSSQL' + ':' + REPLACE(REPLACE(@CurrentDatabaseName,'''',''''''),'.','\.') + '"'
+          IF SERVERPROPERTY('InstanceName') IS NOT NULL SET @CurrentCommand03 = @CurrentCommand03 + ' "MSSQL$' + CAST(SERVERPROPERTY('InstanceName') AS nvarchar) + ':' + REPLACE(REPLACE(@CurrentDatabaseName,'''',''''''),'.','\.') + '"'
 
-          SET @CurrentCommand03 += ''''
+          SET @CurrentCommand03 = @CurrentCommand03 + ''''
 
-          SET @CurrentCommand03 += ' IF @ReturnCode <> 0 RAISERROR(''Error performing Data Domain Boost backup.'', 16, 1)'
+          SET @CurrentCommand03 = @CurrentCommand03 + ' IF @ReturnCode <> 0 RAISERROR(''Error performing Data Domain Boost backup.'', 16, 1)'
         END
-
-        EXECUTE @CurrentCommandOutput03 = [dbo].[CommandExecute] @DatabaseContext = 'master', @Command = @CurrentCommand03, @CommandType = @CurrentCommandType03, @Mode = 1, @DatabaseName = @CurrentDatabaseName, @LogToTable = @LogToTable, @Execute = @Execute
-        SET @Error = @@ERROR
-        IF @Error <> 0 SET @CurrentCommandOutput03 = @Error
-        IF @CurrentCommandOutput03 <> 0 SET @ReturnCode = @CurrentCommandOutput03
+				
+				BEGIN TRY
+					EXECUTE @CurrentCommandOutput03 = [dbo].[CommandExecute] @Command = @CurrentCommand03, @CommandType = @CurrentCommandType03, @Mode = 1, @DatabaseName = @CurrentDatabaseName, @LogToTable = @LogToTable, @Execute = @Execute
+					SET @Error = @@ERROR
+					IF @Error <> 0 SET @CurrentCommandOutput03 = @Error
+					IF @CurrentCommandOutput03 <> 0 SET @ReturnCode = @CurrentCommandOutput03
+				END TRY 
+				BEGIN CATCH
+						IF XACT_STATE() <> 0
+						BEGIN
+							ROLLBACK TRANSACTION
+						END
+						SET @ErrorMessage = 'ERROR: ' + CAST(ERROR_NUMBER() AS nvarchar) + ', ' + ISNULL(ERROR_MESSAGE(),'')
+						IF @Raiserror = 'Y'
+							RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
+						ELSE 
+							RAISERROR('%s',10,1,@ErrorMessage) WITH NOWAIT
+						RAISERROR(@EmptyLine,10,1) WITH NOWAIT
+						SET @Error = ERROR_NUMBER()
+						SET @ReturnCode = @Error
+					END CATCH
       END
 
       -- Verify the backup
@@ -2905,35 +3105,35 @@ BEGIN
 
             SET @CurrentCommand04 = 'RESTORE VERIFYONLY FROM'
 
-            SELECT @CurrentCommand04 += ' ' + [Type] + ' = N''' + REPLACE(FilePath,'''','''''') + '''' + CASE WHEN ROW_NUMBER() OVER (ORDER BY FilePath ASC) <> @CurrentNumberOfFiles THEN ',' ELSE '' END
+            SELECT @CurrentCommand04 = @CurrentCommand04 + ' ' + [Type] + ' = N''' + REPLACE(FilePath,'''','''''') + '''' + CASE WHEN ROW_NUMBER() OVER (ORDER BY FilePath ASC) <> @NumberOfFiles THEN ',' ELSE '' END
             FROM @CurrentFiles
             WHERE Mirror = @CurrentIsMirror
             ORDER BY FilePath ASC
 
-            SET @CurrentCommand04 += ' WITH '
-            IF @CheckSum = 'Y' SET @CurrentCommand04 += 'CHECKSUM'
-            IF @CheckSum = 'N' SET @CurrentCommand04 += 'NO_CHECKSUM'
-            IF @URL IS NOT NULL AND @Credential IS NOT NULL SET @CurrentCommand04 += ', CREDENTIAL = N''' + REPLACE(@Credential,'''','''''') + ''''
+            SET @CurrentCommand04 = @CurrentCommand04 + ' WITH '
+            IF @CheckSum = 'Y' SET @CurrentCommand04 = @CurrentCommand04 + 'CHECKSUM'
+            IF @CheckSum = 'N' SET @CurrentCommand04 = @CurrentCommand04 + 'NO_CHECKSUM'
+            IF @URL IS NOT NULL AND @Credential IS NOT NULL SET @CurrentCommand04 = @CurrentCommand04 + ', CREDENTIAL = N''' + REPLACE(@Credential,'''','''''') + ''''
           END
 
           IF @BackupSoftware = 'LITESPEED'
           BEGIN
             SET @CurrentCommandType04 = 'xp_restore_verifyonly'
 
-            SET @CurrentCommand04 = 'DECLARE @ReturnCode int EXECUTE @ReturnCode = dbo.xp_restore_verifyonly'
+            SET @CurrentCommand04 = 'DECLARE @ReturnCode int EXECUTE @ReturnCode = [master].dbo.xp_restore_verifyonly'
 
-            SELECT @CurrentCommand04 += ' @filename = N''' + REPLACE(FilePath,'''','''''') + '''' + CASE WHEN ROW_NUMBER() OVER (ORDER BY FilePath ASC) <> @CurrentNumberOfFiles THEN ',' ELSE '' END
+            SELECT @CurrentCommand04 = @CurrentCommand04 + ' @filename = N''' + REPLACE(FilePath,'''','''''') + '''' + CASE WHEN ROW_NUMBER() OVER (ORDER BY FilePath ASC) <> @NumberOfFiles THEN ',' ELSE '' END
             FROM @CurrentFiles
             WHERE Mirror = @CurrentIsMirror
             ORDER BY FilePath ASC
 
-            SET @CurrentCommand04 += ', @with = '''
-            IF @CheckSum = 'Y' SET @CurrentCommand04 += 'CHECKSUM'
-            IF @CheckSum = 'N' SET @CurrentCommand04 += 'NO_CHECKSUM'
-            SET @CurrentCommand04 += ''''
-            IF @EncryptionKey IS NOT NULL SET @CurrentCommand04 += ', @encryptionkey = N''' + REPLACE(@EncryptionKey,'''','''''') + ''''
+            SET @CurrentCommand04 = @CurrentCommand04 + ', @with = '''
+            IF @CheckSum = 'Y' SET @CurrentCommand04 = @CurrentCommand04 + 'CHECKSUM'
+            IF @CheckSum = 'N' SET @CurrentCommand04 = @CurrentCommand04 + 'NO_CHECKSUM'
+            SET @CurrentCommand04 = @CurrentCommand04 + ''''
+            IF @EncryptionKey IS NOT NULL SET @CurrentCommand04 = @CurrentCommand04 + ', @encryptionkey = N''' + REPLACE(@EncryptionKey,'''','''''') + ''''
 
-            SET @CurrentCommand04 += ' IF @ReturnCode <> 0 RAISERROR(''Error verifying LiteSpeed backup.'', 16, 1)'
+            SET @CurrentCommand04 = @CurrentCommand04 + ' IF @ReturnCode <> 0 RAISERROR(''Error verifying LiteSpeed backup.'', 16, 1)'
           END
 
           IF @BackupSoftware = 'SQLBACKUP'
@@ -2942,37 +3142,53 @@ BEGIN
 
             SET @CurrentCommand04 = 'RESTORE VERIFYONLY FROM'
 
-            SELECT @CurrentCommand04 += ' DISK = N''' + REPLACE(FilePath,'''','''''') + '''' + CASE WHEN ROW_NUMBER() OVER (ORDER BY FilePath ASC) <> @CurrentNumberOfFiles THEN ',' ELSE '' END
+            SELECT @CurrentCommand04 = @CurrentCommand04 + ' DISK = N''' + REPLACE(FilePath,'''','''''') + '''' + CASE WHEN ROW_NUMBER() OVER (ORDER BY FilePath ASC) <> @NumberOfFiles THEN ',' ELSE '' END
             FROM @CurrentFiles
             WHERE Mirror = @CurrentIsMirror
             ORDER BY FilePath ASC
 
-            SET @CurrentCommand04 += ' WITH '
-            IF @CheckSum = 'Y' SET @CurrentCommand04 += 'CHECKSUM'
-            IF @CheckSum = 'N' SET @CurrentCommand04 += 'NO_CHECKSUM'
-            IF @EncryptionKey IS NOT NULL SET @CurrentCommand04 += ', PASSWORD = N''' + REPLACE(@EncryptionKey,'''','''''') + ''''
+            SET @CurrentCommand04 = @CurrentCommand04 + ' WITH '
+            IF @CheckSum = 'Y' SET @CurrentCommand04 = @CurrentCommand04 + 'CHECKSUM'
+            IF @CheckSum = 'N' SET @CurrentCommand04 = @CurrentCommand04 + 'NO_CHECKSUM'
+            IF @EncryptionKey IS NOT NULL SET @CurrentCommand04 = @CurrentCommand04 + ', PASSWORD = N''' + REPLACE(@EncryptionKey,'''','''''') + ''''
 
-            SET @CurrentCommand04 = 'DECLARE @ReturnCode int EXECUTE @ReturnCode = dbo.sqlbackup N''-SQL "' + REPLACE(@CurrentCommand04,'''','''''') + '"''' + ' IF @ReturnCode <> 0 RAISERROR(''Error verifying SQLBackup backup.'', 16, 1)'
+            SET @CurrentCommand04 = 'DECLARE @ReturnCode int EXECUTE @ReturnCode = [master].dbo.sqlbackup N''-SQL "' + REPLACE(@CurrentCommand04,'''','''''') + '"''' + ' IF @ReturnCode <> 0 RAISERROR(''Error verifying SQLBackup backup.'', 16, 1)'
           END
 
           IF @BackupSoftware = 'SQLSAFE'
           BEGIN
             SET @CurrentCommandType04 = 'xp_ss_verify'
 
-            SET @CurrentCommand04 = 'DECLARE @ReturnCode int EXECUTE @ReturnCode = dbo.xp_ss_verify @database = N''' + REPLACE(@CurrentDatabaseName,'''','''''') + ''''
+            SET @CurrentCommand04 = 'DECLARE @ReturnCode int EXECUTE @ReturnCode = [master].dbo.xp_ss_verify @database = N''' + REPLACE(@CurrentDatabaseName,'''','''''') + ''''
 
-            SELECT @CurrentCommand04 += ', ' + CASE WHEN ROW_NUMBER() OVER (ORDER BY FilePath ASC) = 1 THEN '@filename' ELSE '@backupfile' END + ' = N''' + REPLACE(FilePath,'''','''''') + ''''
+            SELECT @CurrentCommand04 = @CurrentCommand04 + ', ' + CASE WHEN ROW_NUMBER() OVER (ORDER BY FilePath ASC) = 1 THEN '@filename' ELSE '@backupfile' END + ' = N''' + REPLACE(FilePath,'''','''''') + ''''
             FROM @CurrentFiles
             WHERE Mirror = @CurrentIsMirror
             ORDER BY FilePath ASC
 
-            SET @CurrentCommand04 += ' IF @ReturnCode <> 0 RAISERROR(''Error verifying SQLsafe backup.'', 16, 1)'
+            SET @CurrentCommand04 = @CurrentCommand04 + ' IF @ReturnCode <> 0 RAISERROR(''Error verifying SQLsafe backup.'', 16, 1)'
           END
 
-          EXECUTE @CurrentCommandOutput04 = [dbo].[CommandExecute] @DatabaseContext = 'master', @Command = @CurrentCommand04, @CommandType = @CurrentCommandType04, @Mode = 1, @DatabaseName = @CurrentDatabaseName, @LogToTable = @LogToTable, @Execute = @Execute
-          SET @Error = @@ERROR
-          IF @Error <> 0 SET @CurrentCommandOutput04 = @Error
-          IF @CurrentCommandOutput04 <> 0 SET @ReturnCode = @CurrentCommandOutput04
+					BEGIN TRY
+						EXECUTE @CurrentCommandOutput04 = [dbo].[CommandExecute] @Command = @CurrentCommand04, @CommandType = @CurrentCommandType04, @Mode = 1, @DatabaseName = @CurrentDatabaseName, @LogToTable = @LogToTable, @Execute = @Execute
+						SET @Error = @@ERROR
+						IF @Error <> 0 SET @CurrentCommandOutput04 = @Error
+						IF @CurrentCommandOutput04 <> 0 SET @ReturnCode = @CurrentCommandOutput04
+					END TRY 
+					BEGIN CATCH
+							IF XACT_STATE() <> 0
+							BEGIN
+								ROLLBACK TRANSACTION
+							END
+							SET @ErrorMessage = 'ERROR: ' + CAST(ERROR_NUMBER() AS nvarchar) + ', ' + ISNULL(ERROR_MESSAGE(),'')
+							IF @Raiserror = 'Y'
+								RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
+							ELSE 
+								RAISERROR('%s',10,1,@ErrorMessage) WITH NOWAIT
+							RAISERROR(@EmptyLine,10,1) WITH NOWAIT
+							SET @Error = ERROR_NUMBER()
+							SET @ReturnCode = @Error
+					END CATCH
 
           UPDATE @CurrentBackupSet
           SET VerifyCompleted = 1,
@@ -2993,7 +3209,7 @@ BEGIN
       IF @CleanupMode = 'AFTER_BACKUP'
       BEGIN
         INSERT INTO @CurrentCleanupDates (CleanupDate, Mirror)
-        SELECT DATEADD(hh,-(@CleanupTime),SYSDATETIME()), 0
+        SELECT DATEADD(hh,-(@CleanupTime),GETDATE()), 0
 
         IF NOT EXISTS(SELECT * FROM @CurrentCleanupDates WHERE (Mirror = 0 OR Mirror IS NULL) AND CleanupDate IS NULL)
         BEGIN
@@ -3009,7 +3225,7 @@ BEGIN
       IF @MirrorCleanupMode = 'AFTER_BACKUP'
       BEGIN
         INSERT INTO @CurrentCleanupDates (CleanupDate, Mirror)
-        SELECT DATEADD(hh,-(@MirrorCleanupTime),SYSDATETIME()), 1
+        SELECT DATEADD(hh,-(@MirrorCleanupTime),GETDATE()), 1
 
         IF NOT EXISTS(SELECT * FROM @CurrentCleanupDates WHERE (Mirror = 1 OR Mirror IS NULL) AND CleanupDate IS NULL)
         BEGIN
@@ -3049,34 +3265,50 @@ BEGIN
           BEGIN
             SET @CurrentCommandType05 = 'xp_delete_file'
 
-            SET @CurrentCommand05 = 'DECLARE @ReturnCode int EXECUTE @ReturnCode = dbo.xp_delete_file 0, N''' + REPLACE(@CurrentDirectoryPath,'''','''''') + ''', ''' + @CurrentFileExtension + ''', ''' + CONVERT(nvarchar(19),@CurrentCleanupDate,126) + ''' IF @ReturnCode <> 0 RAISERROR(''Error deleting files.'', 16, 1)'
+            SET @CurrentCommand05 = 'DECLARE @ReturnCode int EXECUTE @ReturnCode = [master].dbo.xp_delete_file 0, N''' + REPLACE(@CurrentDirectoryPath,'''','''''') + ''', ''' + @CurrentFileExtension + ''', ''' + CONVERT(nvarchar(19),@CurrentCleanupDate,126) + ''' IF @ReturnCode <> 0 RAISERROR(''Error deleting files.'', 16, 1)'
           END
 
           IF @BackupSoftware = 'LITESPEED'
           BEGIN
             SET @CurrentCommandType05 = 'xp_slssqlmaint'
 
-            SET @CurrentCommand05 = 'DECLARE @ReturnCode int EXECUTE @ReturnCode = dbo.xp_slssqlmaint N''-MAINTDEL -DELFOLDER "' + REPLACE(@CurrentDirectoryPath,'''','''''') + '" -DELEXTENSION "' + @CurrentFileExtension + '" -DELUNIT "' + CAST(DATEDIFF(mi,@CurrentCleanupDate,SYSDATETIME()) + 1 AS nvarchar) + '" -DELUNITTYPE "minutes" -DELUSEAGE'' IF @ReturnCode <> 0 RAISERROR(''Error deleting LiteSpeed backup files.'', 16, 1)'
+            SET @CurrentCommand05 = 'DECLARE @ReturnCode int EXECUTE @ReturnCode = [master].dbo.xp_slssqlmaint N''-MAINTDEL -DELFOLDER "' + REPLACE(@CurrentDirectoryPath,'''','''''') + '" -DELEXTENSION "' + @CurrentFileExtension + '" -DELUNIT "' + CAST(DATEDIFF(mi,@CurrentCleanupDate,GETDATE()) + 1 AS nvarchar) + '" -DELUNITTYPE "minutes" -DELUSEAGE'' IF @ReturnCode <> 0 RAISERROR(''Error deleting LiteSpeed backup files.'', 16, 1)'
           END
 
           IF @BackupSoftware = 'SQLBACKUP'
           BEGIN
             SET @CurrentCommandType05 = 'sqbutility'
 
-            SET @CurrentCommand05 = 'DECLARE @ReturnCode int EXECUTE @ReturnCode = dbo.sqbutility 1032, N''' + REPLACE(@CurrentDatabaseName,'''','''''') + ''', N''' + REPLACE(@CurrentDirectoryPath,'''','''''') + ''', ''' + CASE WHEN @CurrentBackupType = 'FULL' THEN 'D' WHEN @CurrentBackupType = 'DIFF' THEN 'I' WHEN @CurrentBackupType = 'LOG' THEN 'L' END + ''', ''' + CAST(DATEDIFF(hh,@CurrentCleanupDate,SYSDATETIME()) + 1 AS nvarchar) + 'h'', ' + ISNULL('''' + REPLACE(@EncryptionKey,'''','''''') + '''','NULL') + ' IF @ReturnCode <> 0 RAISERROR(''Error deleting SQLBackup backup files.'', 16, 1)'
+            SET @CurrentCommand05 = 'DECLARE @ReturnCode int EXECUTE @ReturnCode = [master].dbo.sqbutility 1032, N''' + REPLACE(@CurrentDatabaseName,'''','''''') + ''', N''' + REPLACE(@CurrentDirectoryPath,'''','''''') + ''', ''' + CASE WHEN @CurrentBackupType = 'FULL' THEN 'D' WHEN @CurrentBackupType = 'DIFF' THEN 'I' WHEN @CurrentBackupType = 'LOG' THEN 'L' END + ''', ''' + CAST(DATEDIFF(hh,@CurrentCleanupDate,GETDATE()) + 1 AS nvarchar) + 'h'', ' + ISNULL('''' + REPLACE(@EncryptionKey,'''','''''') + '''','NULL') + ' IF @ReturnCode <> 0 RAISERROR(''Error deleting SQLBackup backup files.'', 16, 1)'
           END
 
           IF @BackupSoftware = 'SQLSAFE'
           BEGIN
             SET @CurrentCommandType05 = 'xp_ss_delete'
 
-            SET @CurrentCommand05 = 'DECLARE @ReturnCode int EXECUTE @ReturnCode = dbo.xp_ss_delete @filename = N''' + REPLACE(@CurrentDirectoryPath,'''','''''') + '\*.' + @CurrentFileExtension + ''', @age = ''' + CAST(DATEDIFF(mi,@CurrentCleanupDate,SYSDATETIME()) + 1 AS nvarchar) + 'Minutes'' IF @ReturnCode <> 0 RAISERROR(''Error deleting SQLsafe backup files.'', 16, 1)'
+            SET @CurrentCommand05 = 'DECLARE @ReturnCode int EXECUTE @ReturnCode = [master].dbo.xp_ss_delete @filename = N''' + REPLACE(@CurrentDirectoryPath,'''','''''') + '\*.' + @CurrentFileExtension + ''', @age = ''' + CAST(DATEDIFF(mi,@CurrentCleanupDate,GETDATE()) + 1 AS nvarchar) + 'Minutes'' IF @ReturnCode <> 0 RAISERROR(''Error deleting SQLsafe backup files.'', 16, 1)'
           END
-
-          EXECUTE @CurrentCommandOutput05 = [dbo].[CommandExecute] @DatabaseContext = 'master', @Command = @CurrentCommand05, @CommandType = @CurrentCommandType05, @Mode = 1, @DatabaseName = @CurrentDatabaseName, @LogToTable = @LogToTable, @Execute = @Execute
-          SET @Error = @@ERROR
-          IF @Error <> 0 SET @CurrentCommandOutput05 = @Error
-          IF @CurrentCommandOutput05 <> 0 SET @ReturnCode = @CurrentCommandOutput05
+					
+					BEGIN TRY
+						EXECUTE @CurrentCommandOutput05 = [dbo].[CommandExecute] @Command = @CurrentCommand05, @CommandType = @CurrentCommandType05, @Mode = 1, @DatabaseName = @CurrentDatabaseName, @LogToTable = @LogToTable, @Execute = @Execute
+						SET @Error = @@ERROR
+						IF @Error <> 0 SET @CurrentCommandOutput05 = @Error
+						IF @CurrentCommandOutput05 <> 0 SET @ReturnCode = @CurrentCommandOutput05
+					END TRY 
+					BEGIN CATCH
+							IF XACT_STATE() <> 0
+							BEGIN
+								ROLLBACK TRANSACTION
+							END
+							SET @ErrorMessage = 'ERROR: ' + CAST(ERROR_NUMBER() AS nvarchar) + ', ' + ISNULL(ERROR_MESSAGE(),'')
+							IF @Raiserror = 'Y'
+								RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
+							ELSE 
+								RAISERROR('%s',10,1,@ErrorMessage) WITH NOWAIT
+							RAISERROR(@EmptyLine,10,1) WITH NOWAIT
+							SET @Error = ERROR_NUMBER()
+							SET @ReturnCode = @Error
+					END CATCH
 
           UPDATE @CurrentDirectories
           SET CleanupCompleted = 1,
@@ -3108,7 +3340,7 @@ BEGIN
     IF @DatabasesInParallel = 'Y'
     BEGIN
       UPDATE dbo.QueueDatabase
-      SET DatabaseEndTime = SYSDATETIME()
+      SET DatabaseEndTime = GETDATE()
       WHERE QueueID = @QueueID
       AND DatabaseName = @CurrentDatabaseName
     END
@@ -3125,19 +3357,15 @@ BEGIN
     SET @CurrentDBID = NULL
     SET @CurrentDatabaseName = NULL
 
-    SET @CurrentDatabase_sp_executesql = NULL
-
+    SET @CurrentDatabaseID = NULL
     SET @CurrentUserAccess = NULL
     SET @CurrentIsReadOnly = NULL
     SET @CurrentDatabaseState = NULL
     SET @CurrentInStandby = NULL
     SET @CurrentRecoveryModel = NULL
     SET @CurrentIsEncrypted = NULL
-    SET @CurrentDatabaseSize = NULL
 
     SET @CurrentBackupType = NULL
-    SET @CurrentMaxTransferSize = NULL
-    SET @CurrentNumberOfFiles = NULL
     SET @CurrentFileExtension = NULL
     SET @CurrentFileNumber = NULL
     SET @CurrentDifferentialBaseLSN = NULL
@@ -3163,6 +3391,7 @@ BEGIN
     SET @CurrentModifiedExtentPageCount = NULL
 
     SET @CurrentCommand03 = NULL
+    SET @CurrentCommand06 = NULL
     SET @CurrentCommand07 = NULL
 
     SET @CurrentCommandOutput03 = NULL
@@ -3182,9 +3411,8 @@ BEGIN
   ----------------------------------------------------------------------------------------------------
 
   Logging:
-  SET @EndMessage = 'Date and time: ' + CONVERT(nvarchar,SYSDATETIME(),120)
+  SET @EndMessage = 'Date and time: ' + CONVERT(nvarchar,GETDATE(),120)
   RAISERROR('%s',10,1,@EndMessage) WITH NOWAIT
-
   RAISERROR(@EmptyLine,10,1) WITH NOWAIT
 
   IF @ReturnCode <> 0
@@ -3196,4 +3424,3 @@ BEGIN
 
 END
 GO
-
