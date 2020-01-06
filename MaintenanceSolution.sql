@@ -10,7 +10,7 @@ License: https://ola.hallengren.com/license.html
 
 GitHub: https://github.com/olahallengren/sql-server-maintenance-solution
 
-Version: 2020-01-05 15:00:38
+Version: 2020-01-06 16:38:06
 
 You can contact me by e-mail at ola@hallengren.com.
 
@@ -23,18 +23,13 @@ USE [master] -- Specify the database in which the objects will be created.
 
 SET NOCOUNT ON
 
-DECLARE @CreateJobs nvarchar(max)
-DECLARE @BackupDirectory nvarchar(max)
-DECLARE @CleanupTime int
-DECLARE @OutputFileDirectory nvarchar(max)
-DECLARE @LogToTable nvarchar(max)
-DECLARE @ErrorMessage nvarchar(max)
+DECLARE @CreateJobs nvarchar(max)          = 'Y'         -- Specify whether jobs should be created.
+DECLARE @BackupDirectory nvarchar(max)     = NULL        -- Specify the backup root directory. If no directory is specified, the default backup directory is used.
+DECLARE @CleanupTime int                   = NULL        -- Time in hours, after which backup files are deleted. If no time is specified, then no backup files are deleted.
+DECLARE @OutputFileDirectory nvarchar(max) = NULL        -- Specify the output file directory. If no directory is specified, then the SQL Server error log directory is used.
+DECLARE @LogToTable nvarchar(max)          = 'Y'         -- Log commands to a table.
 
-SET @CreateJobs          = 'Y'          -- Specify whether jobs should be created.
-SET @BackupDirectory     = NULL         -- Specify the backup root directory. If no directory is specified, the default backup directory is used.
-SET @CleanupTime         = NULL         -- Time in hours, after which backup files are deleted. If no time is specified, then no backup files are deleted.
-SET @OutputFileDirectory = NULL         -- Specify the output file directory. If no directory is specified, then the SQL Server error log directory is used.
-SET @LogToTable          = 'Y'          -- Log commands to a table.
+DECLARE @ErrorMessage nvarchar(max)
 
 IF IS_SRVROLEMEMBER('sysadmin') = 0 AND NOT (DB_ID('rdsadmin') IS NOT NULL AND SUSER_SNAME(0x01) = 'rdsa')
 BEGIN
@@ -127,7 +122,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2020-01-05 15:00:38                                                               //--
+  --// Version: 2020-01-06 16:38:06                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -430,7 +425,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2020-01-05 15:00:38                                                               //--
+  --// Version: 2020-01-06 16:38:06                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -3590,7 +3585,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2020-01-05 15:00:38                                                               //--
+  --// Version: 2020-01-06 16:38:06                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -5327,7 +5322,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2020-01-05 15:00:38                                                               //--
+  --// Version: 2020-01-06 16:38:06                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
