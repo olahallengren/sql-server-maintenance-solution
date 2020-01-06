@@ -37,7 +37,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2020-01-06 16:38:06                                                               //--
+  --// Version: 2020-01-06 19:43:36                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -1304,7 +1304,7 @@ BEGIN
         IF @TabLock = 'Y' SET @CurrentCommand01 += ', TABLOCK'
         IF @MaxDOP IS NOT NULL SET @CurrentCommand01 += ', MAXDOP = ' + CAST(@MaxDOP AS nvarchar)
 
-        EXECUTE @CurrentCommandOutput01 = [dbo].[CommandExecute] @DatabaseContext = @CurrentDatabaseName, @Command = @CurrentCommand01, @CommandType = @CurrentCommandType01, @Mode = 1, @DatabaseName = @CurrentDatabaseName, @LogToTable = @LogToTable, @Execute = @Execute
+        EXECUTE @CurrentCommandOutput01 = [dbo].[CommandExecute] @DatabaseContext = 'master', @Command = @CurrentCommand01, @CommandType = @CurrentCommandType01, @Mode = 1, @DatabaseName = @CurrentDatabaseName, @LogToTable = @LogToTable, @Execute = @Execute
         SET @Error = @@ERROR
         IF @Error <> 0 SET @CurrentCommandOutput01 = @Error
         IF @CurrentCommandOutput01 <> 0 SET @ReturnCode = @CurrentCommandOutput01
@@ -1463,7 +1463,7 @@ BEGIN
         SET @CurrentCommand05 += ') WITH NO_INFOMSGS, ALL_ERRORMSGS'
         IF @TabLock = 'Y' SET @CurrentCommand05 += ', TABLOCK'
 
-        EXECUTE @CurrentCommandOutput05 = [dbo].[CommandExecute] @DatabaseContext = @CurrentDatabaseName, @Command = @CurrentCommand05, @CommandType = @CurrentCommandType05, @Mode = 1, @DatabaseName = @CurrentDatabaseName, @LogToTable = @LogToTable, @Execute = @Execute
+        EXECUTE @CurrentCommandOutput05 = [dbo].[CommandExecute] @DatabaseContext = 'master', @Command = @CurrentCommand05, @CommandType = @CurrentCommandType05, @Mode = 1, @DatabaseName = @CurrentDatabaseName, @LogToTable = @LogToTable, @Execute = @Execute
         SET @Error = @@ERROR
         IF @Error <> 0 SET @CurrentCommandOutput05 = @Error
         IF @CurrentCommandOutput05 <> 0 SET @ReturnCode = @CurrentCommandOutput05
@@ -1630,7 +1630,7 @@ BEGIN
         SET @CurrentCommand09 += 'DBCC CHECKCATALOG (' + QUOTENAME(@CurrentDatabaseName)
         SET @CurrentCommand09 += ') WITH NO_INFOMSGS'
 
-        EXECUTE @CurrentCommandOutput09 = [dbo].[CommandExecute] @DatabaseContext = @CurrentDatabaseName, @Command = @CurrentCommand09, @CommandType = @CurrentCommandType09, @Mode = 1, @DatabaseName = @CurrentDatabaseName, @LogToTable = @LogToTable, @Execute = @Execute
+        EXECUTE @CurrentCommandOutput09 = [dbo].[CommandExecute] @DatabaseContext = 'master', @Command = @CurrentCommand09, @CommandType = @CurrentCommandType09, @Mode = 1, @DatabaseName = @CurrentDatabaseName, @LogToTable = @LogToTable, @Execute = @Execute
         SET @Error = @@ERROR
         IF @Error <> 0 SET @CurrentCommandOutput09 = @Error
         IF @CurrentCommandOutput09 <> 0 SET @ReturnCode = @CurrentCommandOutput09
