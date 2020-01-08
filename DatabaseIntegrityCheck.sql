@@ -27,7 +27,8 @@ ALTER PROCEDURE [dbo].[DatabaseIntegrityCheck]
 @DatabaseOrder nvarchar(max) = NULL,
 @DatabasesInParallel nvarchar(max) = 'N',
 @LogToTable nvarchar(max) = 'N',
-@Execute nvarchar(max) = 'Y'
+@Execute nvarchar(max) = 'Y',
+@Resumable nvarchar(max) = 'N'
 
 AS
 
@@ -49,6 +50,7 @@ BEGIN
   DECLARE @Severity int
 
   DECLARE @StartTime datetime2 = SYSDATETIME()
+  DECLARE @EndTime datetime2 = DATEADD(SECOND,@TimeLimit,@StartTime)
   DECLARE @SchemaName nvarchar(max) = OBJECT_SCHEMA_NAME(@@PROCID)
   DECLARE @ObjectName nvarchar(max) = OBJECT_NAME(@@PROCID)
   DECLARE @VersionTimestamp nvarchar(max) = SUBSTRING(OBJECT_DEFINITION(@@PROCID),CHARINDEX('--// Version: ',OBJECT_DEFINITION(@@PROCID)) + LEN('--// Version: ') + 1, 19)
@@ -181,6 +183,32 @@ BEGIN
                                   StartPosition int,
                                   Selected bit)
 
+  --Additions-------------------
+  DECLARE @sqlcmd nvarchar(max)
+  DECLARE @dbtype nvarchar(max)
+  DECLARE @avgRun int
+  DECLARE @previousRunDate datetime
+  DECLARE @prevousRunDuration_MS int
+  DECLARE @origExecutionCount int
+  DECLARE @cmdStartTime datetime
+  DECLARE @cmdEndTime datetime
+  DECLARE @lastCheckDate date
+  DECLARE @newRunDuration int
+  DECLARE @newExecutionCount int
+  DECLARE @InitialRunCheck bit
+  DECLARE @OrderBySmallest bit
+  DECLARE @tblObj TABLE ([database_name] nvarchar(128),
+                         [dbid] int,
+                         [dbtype] nvarchar(max),
+                         [object_id] int,
+                         [object_name] sysname,
+                         [schema_id] int,
+                         [schema] sysname,
+                         [type] CHAR(2),
+                         [type_desc] NVARCHAR(60),
+                         [used_page_count] bigint)
+  -------------------------------
+
   DECLARE @SelectedCheckCommands TABLE (CheckCommand nvarchar(max))
 
   DECLARE @Error int = 0
@@ -225,6 +253,7 @@ BEGIN
   SET @Parameters += ', @DatabasesInParallel = ' + ISNULL('''' + REPLACE(@DatabasesInParallel,'''','''''') + '''','NULL')
   SET @Parameters += ', @LogToTable = ' + ISNULL('''' + REPLACE(@LogToTable,'''','''''') + '''','NULL')
   SET @Parameters += ', @Execute = ' + ISNULL('''' + REPLACE(@Execute,'''','''''') + '''','NULL')
+  SET @Parameters += ', @Resumable = ' + ISNULL('''' + REPLACE(@Resumable,'''','''''') + '''','NULL')
 
   SET @StartMessage = 'Date and time: ' + CONVERT(nvarchar,@StartTime,120)
   RAISERROR('%s',10,1,@StartMessage) WITH NOWAIT
@@ -305,6 +334,12 @@ BEGIN
   BEGIN
     INSERT INTO @Errors ([Message])
     SELECT 'The table QueueDatabase is missing. Download https://ola.hallengren.com/scripts/QueueDatabase.sql.'
+  END
+
+  IF @Resumable = 'Y' AND NOT EXISTS (SELECT * FROM sys.objects objects INNER JOIN sys.schemas schemas ON objects.[schema_id] = schemas.[schema_id] WHERE objects.[type] = 'U' AND schemas.[name] = 'dbo' AND objects.[name] = 'CheckTableObjects')
+  BEGIN
+    INSERT INTO @Errors ([Message])
+    SELECT 'The table CheckTableObjects is missing. Create this table using the CheckTableObjects.sql script in this repository.'
   END
 
   IF @@TRANCOUNT <> 0
@@ -654,6 +689,80 @@ BEGIN
   OPTION (MAXRECURSION 0)
 
   ----------------------------------------------------------------------------------------------------
+  --// Update Persistent Table if we need to resume operations                                    //--
+  ----------------------------------------------------------------------------------------------------
+
+  IF @Resumable = 'Y'
+  BEGIN
+    --Populate dbo.CheckTableObjects here?
+    WHILE 1=1
+    BEGIN
+      SELECT TOP 1 @CurrentDatabaseName = DatabaseName, @dbtype = DatabaseType FROM @tmpDatabases WHERE Selected = 1 AND Completed = 0
+      IF @@ROWCOUNT = 0
+      BEGIN
+        BREAK
+      END
+
+      SET @sqlcmd = 'USE ' + QUOTENAME(@CurrentDatabaseName) + ' SELECT DB_ID() as dbid, DB_NAME() as database_name, ''' + @dbtype + ''' as dbtype, 
+      ss.[schema_id], ss.[name] as [schema], so.[object_id], so.[name] as object_name, so.[type], so.type_desc, SUM(sps.used_page_count) AS used_page_count
+      FROM sys.objects so
+      INNER JOIN sys.dm_db_partition_stats sps ON so.[object_id] = sps.[object_id]
+      INNER JOIN sys.indexes si ON so.[object_id] = si.[object_id]
+      INNER JOIN sys.schemas ss ON so.[schema_id] = ss.[schema_id]
+      LEFT JOIN sys.tables st ON so.[object_id] = st.[object_id]
+      WHERE so.[type] IN (''U'', ''V'')'
+      + CASE WHEN @Version >= 12 THEN ' AND (st.is_memory_optimized = 0 OR st.is_memory_optimized IS NULL)' ELSE '' END
+      + 'GROUP BY so.[object_id], so.[name], ss.name, ss.[schema_id], so.[type], so.type_desc'
+
+      INSERT INTO @tblObj (dbid, database_name, dbtype, schema_id, [schema], object_id, object_name, type, type_desc, used_page_count)
+      EXEC sp_executesql @sqlcmd
+
+      --Update Loop Counter
+      UPDATE @tmpDatabases
+      SET Completed = 1
+      WHERE DatabaseName = @CurrentDatabaseName
+    END
+    
+    --Merge into persistent table
+    MERGE master.dbo.CheckTableObjects as [Target]
+    USING (SELECT * FROM @tblObj) as [Source]
+    ON (Target.database_name = Source.database_name AND Target.[schema] = Source.[schema] AND Target.object_name = Source.object_name)
+    WHEN MATCHED /*AND Target.used_page_count <> source.used_page_count */ THEN
+        UPDATE SET Target.used_page_count = source.used_page_count, Target.Active = 1
+    WHEN NOT MATCHED BY TARGET THEN
+        INSERT ([database_name]
+          ,[dbid]
+          ,[dbtype]
+          ,[object_id]
+          ,[object_name]
+          ,[schema_id]
+          ,[schema]
+          ,[type]
+          ,[type_desc]
+          ,[used_page_count]
+          ,[Active])
+        VALUES (Source.[database_name]
+          ,Source.[dbid]
+          ,Source.[dbtype]
+          ,Source.[object_id]
+          ,Source.[object_name]
+          ,Source.[schema_id]
+          ,Source.[schema]
+          ,Source.[type]
+          ,Source.[type_desc]
+          ,Source.[used_page_count]
+          ,1)
+    WHEN NOT MATCHED BY SOURCE THEN
+        UPDATE SET Active = 0
+    ;
+
+    --Reset completed status
+    UPDATE @tmpDatabases
+    SET Completed = 0
+
+  END
+
+  ----------------------------------------------------------------------------------------------------
   --// Select check commands                                                                      //--
   ----------------------------------------------------------------------------------------------------
 
@@ -782,6 +891,24 @@ BEGIN
     INSERT INTO @Errors ([Message])
     SELECT 'The value for the parameter @Execute is not supported.'
   END
+
+  --Additions---------------------------
+  IF @Resumable NOT IN('Y','N') OR @Resumable IS NULL
+  BEGIN
+    INSERT INTO @Errors ([Message])
+    SELECT 'The value for the parameter @Resumable must be Y or N.'
+  END
+  IF @Resumable = 'Y' and @TimeLimit IS NULL
+  BEGIN
+    INSERT INTO @Errors ([Message])
+    SELECT 'The value for the parameter @Resumable cannot be Y if @TimeLimit is not set.'
+  END
+  IF @Resumable = 'Y' AND EXISTS (SELECT CheckCommand FROM @SelectedCheckCommands WHERE CheckCommand NOT IN('CHECKTABLE'))
+  BEGIN
+    INSERT INTO @Errors ([Message])
+    SELECT 'The @Resumable parameter currently only supports the CHECKTABLE command.'
+  END
+  --------------------------------------
 
   IF EXISTS(SELECT * FROM @Errors)
   BEGIN
@@ -1027,6 +1154,23 @@ BEGIN
     )
     UPDATE tmpDatabases
     SET [Order] = RowNumber
+  END
+  ELSE
+  IF @DatabaseOrder IS NULL AND @Resumable = 'Y'
+  BEGIN
+    WITH cte1 AS (
+      SELECT [database_name], MIN(LastCheckDate) as MinLastCheckDate
+      FROM dbo.CheckTableObjects
+      GROUP BY [database_name]
+    ), cte2 AS (
+      SELECT [database_name], MinLastCheckDate, ROW_NUMBER() OVER (ORDER BY MinLastCheckDate ASC, [database_name] ASC) as RowNumber
+      FROM cte1
+      JOIN @tmpDatabases tmpDatabases on tmpDatabases.DatabaseName = cte1.[database_name] AND tmpDatabases.Selected = 1
+    )
+    UPDATE @tmpDatabases
+    SET [Order] = cte2.RowNumber
+    FROM @tmpDatabases tmpDatabases
+    JOIN cte2 on cte2.database_name = tmpDatabases.DatabaseName
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -1289,7 +1433,7 @@ BEGIN
     BEGIN
 
       -- Check database
-      IF EXISTS(SELECT * FROM @SelectedCheckCommands WHERE CheckCommand = 'CHECKDB') AND (SYSDATETIME() < DATEADD(SECOND,@TimeLimit,@StartTime) OR @TimeLimit IS NULL)
+      IF EXISTS(SELECT * FROM @SelectedCheckCommands WHERE CheckCommand = 'CHECKDB') AND (SYSDATETIME() < @EndTime OR @TimeLimit IS NULL)
       BEGIN
         SET @CurrentCommandType01 = 'DBCC_CHECKDB'
 
@@ -1311,7 +1455,7 @@ BEGIN
       END
 
       -- Check filegroups
-      IF EXISTS(SELECT * FROM @SelectedCheckCommands WHERE CheckCommand = 'CHECKFILEGROUP') AND (SYSDATETIME() < DATEADD(SECOND,@TimeLimit,@StartTime) OR @TimeLimit IS NULL)
+      IF EXISTS(SELECT * FROM @SelectedCheckCommands WHERE CheckCommand = 'CHECKFILEGROUP') AND (SYSDATETIME() < @EndTime OR @TimeLimit IS NULL)
       BEGIN
         SET @CurrentCommand02 = 'SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED; SELECT data_space_id AS FileGroupID, name AS FileGroupName, 0 AS [Order], 0 AS Selected, 0 AS Completed FROM sys.filegroups filegroups WHERE [type] <> ''FX'' ORDER BY CASE WHEN filegroups.name = ''PRIMARY'' THEN 1 ELSE 0 END DESC, filegroups.name ASC'
 
@@ -1376,7 +1520,7 @@ BEGIN
           RAISERROR(@EmptyLine,10,1) WITH NOWAIT
         END
 
-        WHILE (SYSDATETIME() < DATEADD(SECOND,@TimeLimit,@StartTime) OR @TimeLimit IS NULL)
+        WHILE (SYSDATETIME() < @EndTime OR @TimeLimit IS NULL)
         BEGIN
           SELECT TOP 1 @CurrentFGID = ID,
                        @CurrentFileGroupID = FileGroupID,
@@ -1453,7 +1597,7 @@ BEGIN
       END
 
       -- Check disk space allocation structures
-      IF EXISTS(SELECT * FROM @SelectedCheckCommands WHERE CheckCommand = 'CHECKALLOC') AND (SYSDATETIME() < DATEADD(SECOND,@TimeLimit,@StartTime) OR @TimeLimit IS NULL)
+      IF EXISTS(SELECT * FROM @SelectedCheckCommands WHERE CheckCommand = 'CHECKALLOC') AND (SYSDATETIME() < @EndTime OR @TimeLimit IS NULL)
       BEGIN
         SET @CurrentCommandType05 = 'DBCC_CHECKALLOC'
 
@@ -1469,8 +1613,24 @@ BEGIN
         IF @CurrentCommandOutput05 <> 0 SET @ReturnCode = @CurrentCommandOutput05
       END
 
+      -- Check catalog
+      IF EXISTS(SELECT * FROM @SelectedCheckCommands WHERE CheckCommand = 'CHECKCATALOG') AND (SYSDATETIME() < @EndTime OR @TimeLimit IS NULL)
+      BEGIN
+        SET @CurrentCommandType09 = 'DBCC_CHECKCATALOG'
+
+        SET @CurrentCommand09 = ''
+        IF @LockTimeout IS NOT NULL SET @CurrentCommand09 = 'SET LOCK_TIMEOUT ' + CAST(@LockTimeout * 1000 AS nvarchar) + '; '
+        SET @CurrentCommand09 += 'DBCC CHECKCATALOG (' + QUOTENAME(@CurrentDatabaseName)
+        SET @CurrentCommand09 += ') WITH NO_INFOMSGS'
+
+        EXECUTE @CurrentCommandOutput09 = [dbo].[CommandExecute] @DatabaseContext = 'master', @Command = @CurrentCommand09, @CommandType = @CurrentCommandType09, @Mode = 1, @DatabaseName = @CurrentDatabaseName, @LogToTable = @LogToTable, @Execute = @Execute
+        SET @Error = @@ERROR
+        IF @Error <> 0 SET @CurrentCommandOutput09 = @Error
+        IF @CurrentCommandOutput09 <> 0 SET @ReturnCode = @CurrentCommandOutput09
+      END
+
       -- Check objects
-      IF EXISTS(SELECT * FROM @SelectedCheckCommands WHERE CheckCommand = 'CHECKTABLE') AND (SYSDATETIME() < DATEADD(SECOND,@TimeLimit,@StartTime) OR @TimeLimit IS NULL)
+      IF EXISTS(SELECT * FROM @SelectedCheckCommands WHERE CheckCommand = 'CHECKTABLE') AND (SYSDATETIME() < @EndTime OR @TimeLimit IS NULL)
       BEGIN
         SET @CurrentCommand06 = 'SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED; SELECT schemas.[schema_id] AS SchemaID, schemas.[name] AS SchemaName, objects.[object_id] AS ObjectID, objects.[name] AS ObjectName, RTRIM(objects.[type]) AS ObjectType, 0 AS [Order], 0 AS Selected, 0 AS Completed FROM sys.objects objects INNER JOIN sys.schemas schemas ON objects.schema_id = schemas.schema_id LEFT OUTER JOIN sys.tables tables ON objects.object_id = tables.object_id WHERE objects.[type] IN(''U'',''V'') AND EXISTS(SELECT * FROM sys.indexes indexes WHERE indexes.object_id = objects.object_id)' + CASE WHEN @Version >= 12 THEN ' AND (tables.is_memory_optimized = 0 OR is_memory_optimized IS NULL)' ELSE '' END + ' ORDER BY schemas.name ASC, objects.name ASC'
 
@@ -1521,6 +1681,14 @@ BEGIN
         UPDATE tmpObjects
         SET [Order] = RowNumber
 
+        IF @Resumable = 'Y'
+        BEGIN
+          UPDATE dbo.CheckTableObjects
+          SET CheckTableObjects.Active = tmpObjects.Selected
+          FROM dbo.CheckTableObjects
+          JOIN @tmpObjects tmpObjects on CheckTableObjects.[schema] = tmpObjects.SchemaName AND CheckTableObjects.object_name = tmpObjects.ObjectName AND CheckTableObjects.database_name = @CurrentDatabaseName
+        END
+
         SET @ErrorMessage = ''
         SELECT @ErrorMessage = @ErrorMessage + QUOTENAME(DatabaseName) + '.' + QUOTENAME(SchemaName) + '.' + QUOTENAME(ObjectName) + ', '
         FROM @SelectedObjects SelectedObjects
@@ -1536,18 +1704,63 @@ BEGIN
           RAISERROR(@EmptyLine,10,1) WITH NOWAIT
         END
 
-        WHILE (SYSDATETIME() < DATEADD(SECOND,@TimeLimit,@StartTime) OR @TimeLimit IS NULL)
+        SET @InitialRunCheck = 0
+        SET @OrderBySmallest = 0
+        IF @Resumable = 'Y'
         BEGIN
-          SELECT TOP 1 @CurrentOID = ID,
-                       @CurrentSchemaID = SchemaID,
-                       @CurrentSchemaName = SchemaName,
-                       @CurrentObjectID = ObjectID,
-                       @CurrentObjectName = ObjectName,
-                       @CurrentObjectType = ObjectType
-          FROM @tmpObjects
-          WHERE Selected = 1
-          AND Completed = 0
-          ORDER BY [Order] ASC
+          --if the number of new tables (execution count = 0) is greater than existing (execution count > 0), assume it's the first time this has run
+          IF (SELECT count([database_name]) from CheckTableObjects WHERE @CurrentDatabaseName = [database_name] and NumberOfExecutions = 0) > (SELECT count([database_name]) from CheckTableObjects WHERE @CurrentDatabaseName = [database_name] and NumberOfExecutions > 0)
+          BEGIN
+            SET @InitialRunCheck = 1
+          END
+        END
+
+        WHILE (SYSDATETIME() < @EndTime OR @TimeLimit IS NULL)
+        BEGIN
+          IF @Resumable = 'Y'
+          BEGIN
+            --If GetDate is Greater than the Halfway point, make sure to get smallest tables first on first checks
+            --Otherwise, later, we'll make sure the avg run time is within our window
+            IF @InitialRunCheck = 1 AND GETDATE() > DATEADD(MS, DATEDIFF(MS, @StartTime, @EndTime)/2, @StartTime)
+            BEGIN
+              SET @OrderBySmallest = 1
+            END
+
+            SELECT TOP 1 @CurrentOID = [ID],
+                        @CurrentSchemaID = [schema_id],
+                        @CurrentSchemaName = [schema],
+                        @CurrentObjectID = [object_id],
+                        @CurrentObjectName = [object_name],
+                        @CurrentObjectType = [type],
+                        @avgRun = [AvgRunDuration_MS],
+                        @previousRunDate = [StartTime],
+                        @prevousRunDuration_MS = [RunDuration_MS],
+                        @origExecutionCount = [NumberOfExecutions],
+                        @cmdStartTime = [StartTime],
+                        @cmdEndTime = [EndTime],
+                        @lastCheckDate = [LastCheckDate]
+            FROM dbo.CheckTableObjects
+            WHERE @CurrentDatabaseName = [database_name]
+            AND Active = 1
+            AND LastCheckDate = (SELECT MIN(LastCheckDate) FROM dbo.CheckTableObjects WHERE [database_name] = @CurrentDatabaseName) --Makes sure it's the oldest entry for that database
+            AND LastCheckDate <> CAST(@StartTime as date) --makes sure it's not the same day, as we don't need to run it again
+            ORDER BY
+            CASE WHEN @OrderBySmallest = 1 THEN used_page_count END ASC,
+            CASE WHEN @OrderBySmallest = 0 THEN database_name END ASC
+          END
+          ELSE
+          BEGIN
+            SELECT TOP 1 @CurrentOID = ID,
+                        @CurrentSchemaID = SchemaID,
+                        @CurrentSchemaName = SchemaName,
+                        @CurrentObjectID = ObjectID,
+                        @CurrentObjectName = ObjectName,
+                        @CurrentObjectType = ObjectType
+            FROM @tmpObjects
+            WHERE Selected = 1
+            AND Completed = 0
+            ORDER BY [Order] ASC
+          END
 
           IF @@ROWCOUNT = 0
           BEGIN
@@ -1591,17 +1804,58 @@ BEGIN
             IF @TabLock = 'Y' SET @CurrentCommand08 += ', TABLOCK'
             IF @MaxDOP IS NOT NULL SET @CurrentCommand08 += ', MAXDOP = ' + CAST(@MaxDOP AS nvarchar)
 
-            EXECUTE @CurrentCommandOutput08 = [dbo].[CommandExecute] @DatabaseContext = @CurrentDatabaseName, @Command = @CurrentCommand08, @CommandType = @CurrentCommandType08, @Mode = 1, @DatabaseName = @CurrentDatabaseName, @SchemaName = @CurrentSchemaName, @ObjectName = @CurrentObjectName, @ObjectType = @CurrentObjectType, @LogToTable = @LogToTable, @Execute = @Execute
+            --If average run time is longer than remaining time + one minute to give a little overhead, skip
+            IF @Resumable = 'Y' AND DATEADD(MS, @avgRun, GETDATE()) > DATEADD(MI, 1, @EndTime)
+            BEGIN
+              SET @CurrentCommand08 = 'Skipped due to TimeLimit Constraint: ' + CONVERT(nvarchar, DATEADD(MS, @avgRun, GETDATE()), 121) + ' is greater than ' + CONVERT(nvarchar, DATEADD(MI, 1, @EndTime), 121)
+            END
+            ELSE
+            BEGIN
+              IF @Resumable = 'Y'
+              BEGIN
+                SET @cmdStartTime = GETDATE()
+              END            
+              EXECUTE @CurrentCommandOutput08 = [dbo].[CommandExecute] @DatabaseContext = @CurrentDatabaseName, @Command = @CurrentCommand08, @CommandType = @CurrentCommandType08, @Mode = 1, @DatabaseName = @CurrentDatabaseName, @SchemaName = @CurrentSchemaName, @ObjectName = @CurrentObjectName, @ObjectType = @CurrentObjectType, @LogToTable = @LogToTable, @Execute = @Execute
+              IF @Resumable = 'Y'
+              BEGIN
+                --Set End Time and last check date
+                SET @cmdEndTime = GETDATE()
+                SET @lastCheckDate = @StartTime
+                --Set run duration of this run and the new execution count
+                SET @newRunDuration = DATEDIFF(ms, @cmdStartTime, @cmdEndTime)
+                SET @newExecutionCount = @originalExecutionCount + 1
+                --Calculate the new average run time
+                --This formula works since the number of executions is being updated in the previous step
+                SET @avgRun = @avgRun + ((@newRunDuration - @avgRun) / @newExecutionCount)
+              END
+            END
             SET @Error = @@ERROR
             IF @Error <> 0 SET @CurrentCommandOutput08 = @Error
             IF @CurrentCommandOutput08 <> 0 SET @ReturnCode = @CurrentCommandOutput08
           END
 
-          UPDATE @tmpObjects
-          SET Completed = 1
-          WHERE Selected = 1
-          AND Completed = 0
-          AND ID = @CurrentOID
+          IF @Resumable = 'Y'
+          BEGIN
+            UPDATE dbo.CheckTableObjects
+            SET [LastCheckDate] = @lastCheckDate
+            , [Command] = @CurrentCommand08
+            , [AvgRunDuration_MS] = @avgRun
+            , PreviousRunDate = @previousRunDate
+            , PreviousRunDuration_MS = @prevousRunDuration_MS
+            , StartTime = @cmdStartTime
+            , EndTime = @cmdEndTime
+            , [RunDuration_MS] = @newRunDuration
+            , [NumberOfExecutions] = @newExecutionCount
+            WHERE ID = @CurrentOID
+          END
+          ELSE
+          BEGIN
+            UPDATE @tmpObjects
+            SET Completed = 1
+            WHERE Selected = 1
+            AND Completed = 0
+            AND ID = @CurrentOID
+          END
 
           SET @CurrentOID = NULL
           SET @CurrentSchemaID = NULL
@@ -1617,23 +1871,15 @@ BEGIN
           SET @CurrentCommandOutput08 = NULL
 
           SET @CurrentCommandType08 = NULL
+
+          SET @avgRun = NULL
+          SET @previousRunDate = NULL
+          SET @prevousRunDuration_MS = NULL
+          SET @origExecutionCount = NULL
+          SET @cmdStartTime = NULL
+          SET @cmdEndTime = NULL
+          SET @lastCheckDate = NULL
         END
-      END
-
-      -- Check catalog
-      IF EXISTS(SELECT * FROM @SelectedCheckCommands WHERE CheckCommand = 'CHECKCATALOG') AND (SYSDATETIME() < DATEADD(SECOND,@TimeLimit,@StartTime) OR @TimeLimit IS NULL)
-      BEGIN
-        SET @CurrentCommandType09 = 'DBCC_CHECKCATALOG'
-
-        SET @CurrentCommand09 = ''
-        IF @LockTimeout IS NOT NULL SET @CurrentCommand09 = 'SET LOCK_TIMEOUT ' + CAST(@LockTimeout * 1000 AS nvarchar) + '; '
-        SET @CurrentCommand09 += 'DBCC CHECKCATALOG (' + QUOTENAME(@CurrentDatabaseName)
-        SET @CurrentCommand09 += ') WITH NO_INFOMSGS'
-
-        EXECUTE @CurrentCommandOutput09 = [dbo].[CommandExecute] @DatabaseContext = 'master', @Command = @CurrentCommand09, @CommandType = @CurrentCommandType09, @Mode = 1, @DatabaseName = @CurrentDatabaseName, @LogToTable = @LogToTable, @Execute = @Execute
-        SET @Error = @@ERROR
-        IF @Error <> 0 SET @CurrentCommandOutput09 = @Error
-        IF @CurrentCommandOutput09 <> 0 SET @ReturnCode = @CurrentCommandOutput09
       END
 
     END
