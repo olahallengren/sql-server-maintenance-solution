@@ -52,7 +52,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2020-01-11 12:40:32                                                               //--
+  --// Version: 2020-01-11 14:01:25                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -776,13 +776,17 @@ BEGIN
     SELECT 'The value for the parameter @FragmentationHigh is not supported.', 16
   END
 
-  IF @FragmentationLevel1 <= 0 OR @FragmentationLevel1 >= 100 OR @FragmentationLevel1 >= @FragmentationLevel2 OR @FragmentationLevel1 IS NULL
+  IF @FragmentationLevel1 <= 0 OR @FragmentationLevel1 >= 100
+  OR @FragmentationLevel1 >= @FragmentationLevel2
+  OR @FragmentationLevel1 IS NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity)
     SELECT 'The value for the parameter @FragmentationLevel1 is not supported.', 16
   END
 
-  IF @FragmentationLevel2 <= 0 OR @FragmentationLevel2 >= 100 OR @FragmentationLevel2 <= @FragmentationLevel1 OR @FragmentationLevel2 IS NULL
+  IF @FragmentationLevel2 <= 0 OR @FragmentationLevel2 >= 100
+  OR @FragmentationLevel2 <= @FragmentationLevel1
+  OR @FragmentationLevel2 IS NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity)
     SELECT 'The value for the parameter @FragmentationLevel2 is not supported.', 16
@@ -860,7 +864,8 @@ BEGIN
     SELECT 'The value for the parameter @StatisticsSample is not supported.', 16
   END
 
-  IF @StatisticsResample NOT IN('Y','N') OR @StatisticsResample IS NULL OR (@StatisticsResample = 'Y' AND @StatisticsSample IS NOT NULL)
+  IF @StatisticsResample NOT IN('Y','N') OR @StatisticsResample IS NULL
+  OR (@StatisticsResample = 'Y' AND @StatisticsSample IS NOT NULL)
   BEGIN
     INSERT INTO @Errors ([Message], Severity)
     SELECT 'The value for the parameter @StatisticsResample is not supported.', 16
@@ -878,7 +883,8 @@ BEGIN
     SELECT 'The value for the parameter @MSShippedObjects is not supported.', 16
   END
 
-  IF EXISTS(SELECT * FROM @SelectedIndexes WHERE DatabaseName IS NULL OR SchemaName IS NULL OR ObjectName IS NULL OR IndexName IS NULL) OR (@Indexes IS NOT NULL AND NOT EXISTS(SELECT * FROM @SelectedIndexes))
+  IF EXISTS(SELECT * FROM @SelectedIndexes WHERE DatabaseName IS NULL OR SchemaName IS NULL OR ObjectName IS NULL OR IndexName IS NULL)
+  OR (@Indexes IS NOT NULL AND NOT EXISTS(SELECT * FROM @SelectedIndexes))
   BEGIN
     INSERT INTO @Errors ([Message], Severity)
     SELECT 'The value for the parameter @Indexes is not supported.', 16
@@ -896,13 +902,18 @@ BEGIN
     SELECT 'The value for the parameter @Delay is not supported.', 16
   END
 
-  IF @WaitAtLowPriorityMaxDuration < 0 OR (@WaitAtLowPriorityMaxDuration IS NOT NULL AND @Version < 12) OR (@WaitAtLowPriorityMaxDuration IS NOT NULL AND @WaitAtLowPriorityAbortAfterWait IS NULL) OR (@WaitAtLowPriorityMaxDuration IS NULL AND @WaitAtLowPriorityAbortAfterWait IS NOT NULL)
+  IF @WaitAtLowPriorityMaxDuration < 0 OR (@WaitAtLowPriorityMaxDuration IS NOT NULL AND @Version < 12)
+  OR (@WaitAtLowPriorityMaxDuration IS NOT NULL AND @WaitAtLowPriorityAbortAfterWait IS NULL)
+  OR (@WaitAtLowPriorityMaxDuration IS NULL AND @WaitAtLowPriorityAbortAfterWait IS NOT NULL)
   BEGIN
     INSERT INTO @Errors ([Message], Severity)
     SELECT 'The value for the parameter @WaitAtLowPriorityMaxDuration is not supported.', 16
   END
 
-  IF @WaitAtLowPriorityAbortAfterWait NOT IN('NONE','SELF','BLOCKERS') OR (@WaitAtLowPriorityAbortAfterWait IS NOT NULL AND @Version < 12) OR (@WaitAtLowPriorityAbortAfterWait IS NOT NULL AND @WaitAtLowPriorityMaxDuration IS NULL) OR (@WaitAtLowPriorityAbortAfterWait IS NULL AND @WaitAtLowPriorityMaxDuration IS NOT NULL)
+  IF @WaitAtLowPriorityAbortAfterWait NOT IN('NONE','SELF','BLOCKERS')
+  OR (@WaitAtLowPriorityAbortAfterWait IS NOT NULL AND @Version < 12)
+  OR (@WaitAtLowPriorityAbortAfterWait IS NOT NULL AND @WaitAtLowPriorityMaxDuration IS NULL)
+  OR (@WaitAtLowPriorityAbortAfterWait IS NULL AND @WaitAtLowPriorityMaxDuration IS NOT NULL)
   BEGIN
     INSERT INTO @Errors ([Message], Severity)
     SELECT 'The value for the parameter @WaitAtLowPriorityAbortAfterWait is not supported.', 16
@@ -938,13 +949,15 @@ BEGIN
     SELECT 'The value for the parameter @StringDelimiter is not supported.', 16
   END
 
-  IF @DatabaseOrder NOT IN('DATABASE_NAME_ASC','DATABASE_NAME_DESC','DATABASE_SIZE_ASC','DATABASE_SIZE_DESC') OR (@DatabaseOrder IS NOT NULL AND SERVERPROPERTY('EngineEdition') = 5)
+  IF @DatabaseOrder NOT IN('DATABASE_NAME_ASC','DATABASE_NAME_DESC','DATABASE_SIZE_ASC','DATABASE_SIZE_DESC')
+  OR (@DatabaseOrder IS NOT NULL AND SERVERPROPERTY('EngineEdition') = 5)
   BEGIN
     INSERT INTO @Errors ([Message], Severity)
     SELECT 'The value for the parameter @DatabaseOrder is not supported.', 16
   END
 
-  IF @DatabasesInParallel NOT IN('Y','N') OR @DatabasesInParallel IS NULL OR (@DatabasesInParallel = 'Y' AND SERVERPROPERTY('EngineEdition') = 5)
+  IF @DatabasesInParallel NOT IN('Y','N') OR @DatabasesInParallel IS NULL
+  OR (@DatabasesInParallel = 'Y' AND SERVERPROPERTY('EngineEdition') = 5)
   BEGIN
     INSERT INTO @Errors ([Message], Severity)
     SELECT 'The value for the parameter @DatabasesInParallel is not supported.', 16
