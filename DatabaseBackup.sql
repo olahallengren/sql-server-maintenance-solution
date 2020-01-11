@@ -78,7 +78,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2020-01-11 14:01:25                                                               //--
+  --// Version: 2020-01-11 19:44:01                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -2150,9 +2150,9 @@ BEGIN
         SELECT @CurrentLatestBackup = MAX(backup_start_date)
         FROM msdb.dbo.backupset
         WHERE ([type] IN('D','I')
-        OR database_backup_lsn < @CurrentDifferentialBaseLSN)
+        OR ([type] = 'L' AND last_lsn < @CurrentDifferentialBaseLSN))
         AND is_damaged = 0
-        AND database_name = @CurrentDatabaseName
+        AND [database_name] = @CurrentDatabaseName
       END
 
       SET @CurrentDate = SYSDATETIME()
