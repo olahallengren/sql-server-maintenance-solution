@@ -52,7 +52,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2020-01-11 19:44:01                                                               //--
+  --// Version: 2020-01-12 16:01:32                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -105,10 +105,12 @@ BEGIN
 
   DECLARE @Errors TABLE (ID int IDENTITY PRIMARY KEY,
                          [Message] nvarchar(max) NOT NULL,
-                         Severity int NOT NULL)
+                         Severity int NOT NULL,
+                         [State] int)
 
   DECLARE @CurrentMessage nvarchar(max)
   DECLARE @CurrentSeverity int
+  DECLARE @CurrentState int
 
   DECLARE @CurrentIxID int
   DECLARE @CurrentIxOrder int
@@ -341,56 +343,56 @@ BEGIN
 
   IF NOT (SELECT [compatibility_level] FROM sys.databases WHERE database_id = DB_ID()) >= 90
   BEGIN
-    INSERT INTO @Errors ([Message], Severity)
-    SELECT 'The database ' + QUOTENAME(DB_NAME(DB_ID())) + ' has to be in compatibility level 90 or higher.', 16
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'The database ' + QUOTENAME(DB_NAME(DB_ID())) + ' has to be in compatibility level 90 or higher.', 16, 1
   END
 
   IF NOT (SELECT uses_ansi_nulls FROM sys.sql_modules WHERE [object_id] = @@PROCID) = 1
   BEGIN
-    INSERT INTO @Errors ([Message], Severity)
-    SELECT 'ANSI_NULLS has to be set to ON for the stored procedure.', 16
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'ANSI_NULLS has to be set to ON for the stored procedure.', 16, 1
   END
 
   IF NOT (SELECT uses_quoted_identifier FROM sys.sql_modules WHERE [object_id] = @@PROCID) = 1
   BEGIN
-    INSERT INTO @Errors ([Message], Severity)
-    SELECT 'QUOTED_IDENTIFIER has to be set to ON for the stored procedure.', 16
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'QUOTED_IDENTIFIER has to be set to ON for the stored procedure.', 16, 1
   END
 
   IF NOT EXISTS (SELECT * FROM sys.objects objects INNER JOIN sys.schemas schemas ON objects.[schema_id] = schemas.[schema_id] WHERE objects.[type] = 'P' AND schemas.[name] = 'dbo' AND objects.[name] = 'CommandExecute')
   BEGIN
-    INSERT INTO @Errors ([Message], Severity)
-    SELECT 'The stored procedure CommandExecute is missing. Download https://ola.hallengren.com/scripts/CommandExecute.sql.', 16
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'The stored procedure CommandExecute is missing. Download https://ola.hallengren.com/scripts/CommandExecute.sql.', 16, 1
   END
 
   IF EXISTS (SELECT * FROM sys.objects objects INNER JOIN sys.schemas schemas ON objects.[schema_id] = schemas.[schema_id] WHERE objects.[type] = 'P' AND schemas.[name] = 'dbo' AND objects.[name] = 'CommandExecute' AND OBJECT_DEFINITION(objects.[object_id]) NOT LIKE '%@DatabaseContext%')
   BEGIN
-    INSERT INTO @Errors ([Message], Severity)
-    SELECT 'The stored procedure CommandExecute needs to be updated. Download https://ola.hallengren.com/scripts/CommandExecute.sql.', 16
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'The stored procedure CommandExecute needs to be updated. Download https://ola.hallengren.com/scripts/CommandExecute.sql.', 16, 1
   END
 
   IF @LogToTable = 'Y' AND NOT EXISTS (SELECT * FROM sys.objects objects INNER JOIN sys.schemas schemas ON objects.[schema_id] = schemas.[schema_id] WHERE objects.[type] = 'U' AND schemas.[name] = 'dbo' AND objects.[name] = 'CommandLog')
   BEGIN
-    INSERT INTO @Errors ([Message], Severity)
-    SELECT 'The table CommandLog is missing. Download https://ola.hallengren.com/scripts/CommandLog.sql.', 16
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'The table CommandLog is missing. Download https://ola.hallengren.com/scripts/CommandLog.sql.', 16, 1
   END
 
   IF @DatabasesInParallel = 'Y' AND NOT EXISTS (SELECT * FROM sys.objects objects INNER JOIN sys.schemas schemas ON objects.[schema_id] = schemas.[schema_id] WHERE objects.[type] = 'U' AND schemas.[name] = 'dbo' AND objects.[name] = 'Queue')
   BEGIN
-    INSERT INTO @Errors ([Message], Severity)
-    SELECT 'The table Queue is missing. Download https://ola.hallengren.com/scripts/Queue.sql.', 16
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'The table Queue is missing. Download https://ola.hallengren.com/scripts/Queue.sql.', 16, 1
   END
 
   IF @DatabasesInParallel = 'Y' AND NOT EXISTS (SELECT * FROM sys.objects objects INNER JOIN sys.schemas schemas ON objects.[schema_id] = schemas.[schema_id] WHERE objects.[type] = 'U' AND schemas.[name] = 'dbo' AND objects.[name] = 'QueueDatabase')
   BEGIN
-    INSERT INTO @Errors ([Message], Severity)
-    SELECT 'The table QueueDatabase is missing. Download https://ola.hallengren.com/scripts/QueueDatabase.sql.', 16
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'The table QueueDatabase is missing. Download https://ola.hallengren.com/scripts/QueueDatabase.sql.', 16, 1
   END
 
   IF @@TRANCOUNT <> 0
   BEGIN
-    INSERT INTO @Errors ([Message], Severity)
-    SELECT 'The transaction count is not 0.', 16
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'The transaction count is not 0.', 16, 1
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -516,8 +518,8 @@ BEGIN
 
   IF @Databases IS NOT NULL AND (NOT EXISTS(SELECT * FROM @SelectedDatabases) OR EXISTS(SELECT * FROM @SelectedDatabases WHERE DatabaseName IS NULL OR DatabaseName = ''))
   BEGIN
-    INSERT INTO @Errors ([Message], Severity)
-    SELECT 'The value for the parameter @Databases is not supported.', 16
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'The value for the parameter @Databases is not supported.', 16, 1
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -611,20 +613,20 @@ BEGIN
 
   IF @AvailabilityGroups IS NOT NULL AND (NOT EXISTS(SELECT * FROM @SelectedAvailabilityGroups) OR EXISTS(SELECT * FROM @SelectedAvailabilityGroups WHERE AvailabilityGroupName IS NULL OR AvailabilityGroupName = '') OR @Version < 11 OR SERVERPROPERTY('IsHadrEnabled') = 0)
   BEGIN
-    INSERT INTO @Errors ([Message], Severity)
-    SELECT 'The value for the parameter @AvailabilityGroups is not supported.', 16
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'The value for the parameter @AvailabilityGroups is not supported.', 16, 1
   END
 
   IF (@Databases IS NULL AND @AvailabilityGroups IS NULL)
   BEGIN
-    INSERT INTO @Errors ([Message], Severity)
-    SELECT 'You need to specify one of the parameters @Databases and @AvailabilityGroups.', 16
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'You need to specify one of the parameters @Databases and @AvailabilityGroups.', 16, 2
   END
 
   IF (@Databases IS NOT NULL AND @AvailabilityGroups IS NOT NULL)
   BEGIN
-    INSERT INTO @Errors ([Message], Severity)
-    SELECT 'You can only specify one of the parameters @Databases and @AvailabilityGroups.', 16
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'You can only specify one of the parameters @Databases and @AvailabilityGroups.', 16, 3
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -756,229 +758,359 @@ BEGIN
   ----------------------------------------------------------------------------------------------------
 
   IF EXISTS (SELECT [Action] FROM @ActionsPreferred WHERE FragmentationGroup = 'Low' AND [Action] NOT IN(SELECT * FROM @Actions))
-  OR EXISTS(SELECT * FROM @ActionsPreferred WHERE FragmentationGroup = 'Low' GROUP BY [Action] HAVING COUNT(*) > 1)
   BEGIN
-    INSERT INTO @Errors ([Message], Severity)
-    SELECT 'The value for the parameter @FragmentationLow is not supported.', 16
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'The value for the parameter @FragmentationLow is not supported.', 16, 1
   END
+
+  IF EXISTS (SELECT * FROM @ActionsPreferred WHERE FragmentationGroup = 'Low' GROUP BY [Action] HAVING COUNT(*) > 1)
+  BEGIN
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'The value for the parameter @FragmentationLow is not supported.', 16, 2
+  END
+
+  ----------------------------------------------------------------------------------------------------
 
   IF EXISTS (SELECT [Action] FROM @ActionsPreferred WHERE FragmentationGroup = 'Medium' AND [Action] NOT IN(SELECT * FROM @Actions))
-  OR EXISTS(SELECT * FROM @ActionsPreferred WHERE FragmentationGroup = 'Medium' GROUP BY [Action] HAVING COUNT(*) > 1)
   BEGIN
-    INSERT INTO @Errors ([Message], Severity)
-    SELECT 'The value for the parameter @FragmentationMedium is not supported.', 16
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'The value for the parameter @FragmentationMedium is not supported.', 16, 1
   END
+
+  IF EXISTS (SELECT * FROM @ActionsPreferred WHERE FragmentationGroup = 'Medium' GROUP BY [Action] HAVING COUNT(*) > 1)
+  BEGIN
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'The value for the parameter @FragmentationMedium is not supported.', 16, 2
+  END
+
+  ----------------------------------------------------------------------------------------------------
 
   IF EXISTS (SELECT [Action] FROM @ActionsPreferred WHERE FragmentationGroup = 'High' AND [Action] NOT IN(SELECT * FROM @Actions))
-  OR EXISTS(SELECT * FROM @ActionsPreferred WHERE FragmentationGroup = 'High' GROUP BY [Action] HAVING COUNT(*) > 1)
   BEGIN
-    INSERT INTO @Errors ([Message], Severity)
-    SELECT 'The value for the parameter @FragmentationHigh is not supported.', 16
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'The value for the parameter @FragmentationHigh is not supported.', 16, 1
   END
 
-  IF @FragmentationLevel1 <= 0 OR @FragmentationLevel1 >= 100
-  OR @FragmentationLevel1 >= @FragmentationLevel2
-  OR @FragmentationLevel1 IS NULL
+  IF EXISTS (SELECT * FROM @ActionsPreferred WHERE FragmentationGroup = 'High' GROUP BY [Action] HAVING COUNT(*) > 1)
   BEGIN
-    INSERT INTO @Errors ([Message], Severity)
-    SELECT 'The value for the parameter @FragmentationLevel1 is not supported.', 16
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'The value for the parameter @FragmentationHigh is not supported.', 16, 2
   END
 
-  IF @FragmentationLevel2 <= 0 OR @FragmentationLevel2 >= 100
-  OR @FragmentationLevel2 <= @FragmentationLevel1
-  OR @FragmentationLevel2 IS NULL
+  ----------------------------------------------------------------------------------------------------
+
+  IF @FragmentationLevel1 <= 0 OR @FragmentationLevel1 >= 100 OR @FragmentationLevel1 IS NULL
   BEGIN
-    INSERT INTO @Errors ([Message], Severity)
-    SELECT 'The value for the parameter @FragmentationLevel2 is not supported.', 16
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'The value for the parameter @FragmentationLevel1 is not supported.', 16, 1
   END
+
+  IF @FragmentationLevel1 >= @FragmentationLevel2
+  BEGIN
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'The value for the parameter @FragmentationLevel1 is not supported.', 16, 2
+  END
+
+  ----------------------------------------------------------------------------------------------------
+
+  IF @FragmentationLevel2 <= 0 OR @FragmentationLevel2 >= 100 OR @FragmentationLevel2 IS NULL
+  BEGIN
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'The value for the parameter @FragmentationLevel2 is not supported.', 16, 1
+  END
+
+  IF @FragmentationLevel2 <= @FragmentationLevel1
+  BEGIN
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'The value for the parameter @FragmentationLevel2 is not supported.', 16, 2
+  END
+
+  ----------------------------------------------------------------------------------------------------
 
   IF @MinNumberOfPages < 0 OR @MinNumberOfPages IS NULL
   BEGIN
-    INSERT INTO @Errors ([Message], Severity)
-    SELECT 'The value for the parameter @MinNumberOfPages is not supported.', 16
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'The value for the parameter @MinNumberOfPages is not supported.', 16, 1
   END
+
+  ----------------------------------------------------------------------------------------------------
 
   IF @MaxNumberOfPages < 0
   BEGIN
-    INSERT INTO @Errors ([Message], Severity)
-    SELECT 'The value for the parameter @MaxNumberOfPages is not supported.', 16
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'The value for the parameter @MaxNumberOfPages is not supported.', 16, 1
   END
+
+  ----------------------------------------------------------------------------------------------------
 
   IF @SortInTempdb NOT IN('Y','N') OR @SortInTempdb IS NULL
   BEGIN
-    INSERT INTO @Errors ([Message], Severity)
-    SELECT 'The value for the parameter @SortInTempdb is not supported.', 16
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'The value for the parameter @SortInTempdb is not supported.', 16, 1
   END
+
+  ----------------------------------------------------------------------------------------------------
 
   IF @MaxDOP < 0 OR @MaxDOP > 64
   BEGIN
-    INSERT INTO @Errors ([Message], Severity)
-    SELECT 'The value for the parameter @MaxDOP is not supported.', 16
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'The value for the parameter @MaxDOP is not supported.', 16, 1
   END
+
+  ----------------------------------------------------------------------------------------------------
 
   IF @FillFactor <= 0 OR @FillFactor > 100
   BEGIN
-    INSERT INTO @Errors ([Message], Severity)
-    SELECT 'The value for the parameter @FillFactor is not supported.', 16
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'The value for the parameter @FillFactor is not supported.', 16, 1
   END
+
+  ----------------------------------------------------------------------------------------------------
 
   IF @PadIndex NOT IN('Y','N')
   BEGIN
-    INSERT INTO @Errors ([Message], Severity)
-    SELECT 'The value for the parameter @PadIndex is not supported.', 16
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'The value for the parameter @PadIndex is not supported.', 16, 1
   END
+
+  ----------------------------------------------------------------------------------------------------
 
   IF @LOBCompaction NOT IN('Y','N') OR @LOBCompaction IS NULL
   BEGIN
-    INSERT INTO @Errors ([Message], Severity)
-    SELECT 'The value for the parameter @LOBCompaction is not supported.', 16
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'The value for the parameter @LOBCompaction is not supported.', 16, 1
   END
+
+  ----------------------------------------------------------------------------------------------------
 
   IF @UpdateStatistics NOT IN('ALL','COLUMNS','INDEX')
   BEGIN
-    INSERT INTO @Errors ([Message], Severity)
-    SELECT 'The value for the parameter @UpdateStatistics is not supported.', 16
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'The value for the parameter @UpdateStatistics is not supported.', 16, 1
   END
+
+  ----------------------------------------------------------------------------------------------------
 
   IF @OnlyModifiedStatistics NOT IN('Y','N') OR @OnlyModifiedStatistics IS NULL
   BEGIN
-    INSERT INTO @Errors ([Message], Severity)
-    SELECT 'The value for the parameter @OnlyModifiedStatistics is not supported.', 16
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'The value for the parameter @OnlyModifiedStatistics is not supported.', 16, 1
   END
+
+  ----------------------------------------------------------------------------------------------------
 
   IF @StatisticsModificationLevel <= 0 OR @StatisticsModificationLevel > 100
   BEGIN
-    INSERT INTO @Errors ([Message], Severity)
-    SELECT 'The value for the parameter @StatisticsModificationLevel is not supported.', 16
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'The value for the parameter @StatisticsModificationLevel is not supported.', 16, 1
   END
+
+  ----------------------------------------------------------------------------------------------------
 
   IF @OnlyModifiedStatistics = 'Y' AND @StatisticsModificationLevel IS NOT NULL
   BEGIN
-    INSERT INTO @Errors ([Message], Severity)
-    SELECT 'You can only specify one of the parameters @OnlyModifiedStatistics and @StatisticsModificationLevel.', 16
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'You can only specify one of the parameters @OnlyModifiedStatistics and @StatisticsModificationLevel.', 16, 1
   END
+
+  ----------------------------------------------------------------------------------------------------
 
   IF @StatisticsSample <= 0 OR @StatisticsSample  > 100
   BEGIN
-    INSERT INTO @Errors ([Message], Severity)
-    SELECT 'The value for the parameter @StatisticsSample is not supported.', 16
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'The value for the parameter @StatisticsSample is not supported.', 16, 1
   END
 
+  ----------------------------------------------------------------------------------------------------
+
   IF @StatisticsResample NOT IN('Y','N') OR @StatisticsResample IS NULL
-  OR (@StatisticsResample = 'Y' AND @StatisticsSample IS NOT NULL)
   BEGIN
-    INSERT INTO @Errors ([Message], Severity)
-    SELECT 'The value for the parameter @StatisticsResample is not supported.', 16
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'The value for the parameter @StatisticsResample is not supported.', 16, 1
   END
+
+  IF @StatisticsResample = 'Y' AND @StatisticsSample IS NOT NULL
+  BEGIN
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'The value for the parameter @StatisticsResample is not supported.', 16, 2
+  END
+
+  ----------------------------------------------------------------------------------------------------
 
   IF @PartitionLevel NOT IN('Y','N') OR @PartitionLevel IS NULL
   BEGIN
-    INSERT INTO @Errors ([Message], Severity)
-    SELECT 'The value for the parameter @PartitionLevel is not supported.', 16
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'The value for the parameter @PartitionLevel is not supported.', 16, 1
   END
+
+  ----------------------------------------------------------------------------------------------------
 
   IF @MSShippedObjects NOT IN('Y','N') OR @MSShippedObjects IS NULL
   BEGIN
-    INSERT INTO @Errors ([Message], Severity)
-    SELECT 'The value for the parameter @MSShippedObjects is not supported.', 16
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'The value for the parameter @MSShippedObjects is not supported.', 16, 1
   END
 
+  ----------------------------------------------------------------------------------------------------
+
   IF EXISTS(SELECT * FROM @SelectedIndexes WHERE DatabaseName IS NULL OR SchemaName IS NULL OR ObjectName IS NULL OR IndexName IS NULL)
-  OR (@Indexes IS NOT NULL AND NOT EXISTS(SELECT * FROM @SelectedIndexes))
   BEGIN
-    INSERT INTO @Errors ([Message], Severity)
-    SELECT 'The value for the parameter @Indexes is not supported.', 16
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'The value for the parameter @Indexes is not supported.', 16, 1
   END
+
+  IF @Indexes IS NOT NULL AND NOT EXISTS(SELECT * FROM @SelectedIndexes)
+  BEGIN
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'The value for the parameter @Indexes is not supported.', 16, 2
+  END
+
+  ----------------------------------------------------------------------------------------------------
 
   IF @TimeLimit < 0
   BEGIN
-    INSERT INTO @Errors ([Message], Severity)
-    SELECT 'The value for the parameter @TimeLimit is not supported.', 16
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'The value for the parameter @TimeLimit is not supported.', 16, 1
   END
+
+  ----------------------------------------------------------------------------------------------------
 
   IF @Delay < 0
   BEGIN
-    INSERT INTO @Errors ([Message], Severity)
-    SELECT 'The value for the parameter @Delay is not supported.', 16
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'The value for the parameter @Delay is not supported.', 16, 1
   END
 
-  IF @WaitAtLowPriorityMaxDuration < 0 OR (@WaitAtLowPriorityMaxDuration IS NOT NULL AND @Version < 12)
-  OR (@WaitAtLowPriorityMaxDuration IS NOT NULL AND @WaitAtLowPriorityAbortAfterWait IS NULL)
-  OR (@WaitAtLowPriorityMaxDuration IS NULL AND @WaitAtLowPriorityAbortAfterWait IS NOT NULL)
+  ----------------------------------------------------------------------------------------------------
+
+  IF @WaitAtLowPriorityMaxDuration < 0
   BEGIN
-    INSERT INTO @Errors ([Message], Severity)
-    SELECT 'The value for the parameter @WaitAtLowPriorityMaxDuration is not supported.', 16
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'The value for the parameter @WaitAtLowPriorityMaxDuration is not supported.', 16, 1
   END
+
+  IF @WaitAtLowPriorityMaxDuration IS NOT NULL AND @Version < 12
+  BEGIN
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'The value for the parameter @WaitAtLowPriorityMaxDuration is not supported.', 16, 2
+  END
+
+  ----------------------------------------------------------------------------------------------------
 
   IF @WaitAtLowPriorityAbortAfterWait NOT IN('NONE','SELF','BLOCKERS')
-  OR (@WaitAtLowPriorityAbortAfterWait IS NOT NULL AND @Version < 12)
-  OR (@WaitAtLowPriorityAbortAfterWait IS NOT NULL AND @WaitAtLowPriorityMaxDuration IS NULL)
-  OR (@WaitAtLowPriorityAbortAfterWait IS NULL AND @WaitAtLowPriorityMaxDuration IS NOT NULL)
   BEGIN
-    INSERT INTO @Errors ([Message], Severity)
-    SELECT 'The value for the parameter @WaitAtLowPriorityAbortAfterWait is not supported.', 16
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'The value for the parameter @WaitAtLowPriorityAbortAfterWait is not supported.', 16, 1
   END
 
-  IF @Resumable NOT IN('Y','N') OR @Resumable IS NULL OR (@Resumable = 'Y' AND NOT (@Version >= 14 OR SERVERPROPERTY('EngineEdition') IN (5,8)))
+  IF @WaitAtLowPriorityAbortAfterWait IS NOT NULL AND @Version < 12
   BEGIN
-    INSERT INTO @Errors ([Message], Severity)
-    SELECT 'The value for the parameter @Resumable is not supported.', 16
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'The value for the parameter @WaitAtLowPriorityAbortAfterWait is not supported.', 16, 2
+  END
+
+  ----------------------------------------------------------------------------------------------------
+
+  IF (@WaitAtLowPriorityAbortAfterWait IS NOT NULL AND @WaitAtLowPriorityMaxDuration IS NULL) OR (@WaitAtLowPriorityAbortAfterWait IS NULL AND @WaitAtLowPriorityMaxDuration IS NOT NULL)
+  BEGIN
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'The parameters @WaitAtLowPriorityMaxDuration and @WaitAtLowPriorityAbortAfterWait can only be used together.', 16, 1
+  END
+
+  ----------------------------------------------------------------------------------------------------
+
+  IF @Resumable NOT IN('Y','N') OR @Resumable IS NULL
+  BEGIN
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'The value for the parameter @Resumable is not supported.', 16, 1
+  END
+
+  IF @Resumable = 'Y' AND NOT (@Version >= 14 OR SERVERPROPERTY('EngineEdition') IN (5, 8))
+  BEGIN
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'The value for the parameter @Resumable is not supported.', 16, 2
   END
 
   IF @Resumable = 'Y' AND @SortInTempdb = 'Y'
   BEGIN
-    INSERT INTO @Errors ([Message], Severity)
-    SELECT 'You can only specify one of the parameters @Resumable and @SortInTempdb.', 16
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'You can only specify one of the parameters @Resumable and @SortInTempdb.', 16, 3
   END
+
+  ----------------------------------------------------------------------------------------------------
 
   IF @LockTimeout < 0
   BEGIN
-    INSERT INTO @Errors ([Message], Severity)
-    SELECT 'The value for the parameter @LockTimeout is not supported.', 16
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'The value for the parameter @LockTimeout is not supported.', 16, 1
   END
 
-  IF @LockMessageSeverity NOT IN(10,16)
+  ----------------------------------------------------------------------------------------------------
+
+  IF @LockMessageSeverity NOT IN(10, 16)
   BEGIN
-    INSERT INTO @Errors ([Message], Severity)
-    SELECT 'The value for the parameter @LockMessageSeverity is not supported.', 16
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'The value for the parameter @LockMessageSeverity is not supported.', 16, 1
   END
+
+  ----------------------------------------------------------------------------------------------------
 
   IF @StringDelimiter IS NULL OR LEN(@StringDelimiter) > 1
   BEGIN
-    INSERT INTO @Errors ([Message], Severity)
-    SELECT 'The value for the parameter @StringDelimiter is not supported.', 16
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'The value for the parameter @StringDelimiter is not supported.', 16, 1
   END
+
+  ----------------------------------------------------------------------------------------------------
 
   IF @DatabaseOrder NOT IN('DATABASE_NAME_ASC','DATABASE_NAME_DESC','DATABASE_SIZE_ASC','DATABASE_SIZE_DESC')
-  OR (@DatabaseOrder IS NOT NULL AND SERVERPROPERTY('EngineEdition') = 5)
   BEGIN
-    INSERT INTO @Errors ([Message], Severity)
-    SELECT 'The value for the parameter @DatabaseOrder is not supported.', 16
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'The value for the parameter @DatabaseOrder is not supported.', 16, 1
   END
 
-  IF @DatabasesInParallel NOT IN('Y','N') OR @DatabasesInParallel IS NULL
-  OR (@DatabasesInParallel = 'Y' AND SERVERPROPERTY('EngineEdition') = 5)
+  IF @DatabaseOrder IS NOT NULL AND SERVERPROPERTY('EngineEdition') = 5
   BEGIN
-    INSERT INTO @Errors ([Message], Severity)
-    SELECT 'The value for the parameter @DatabasesInParallel is not supported.', 16
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'The value for the parameter @DatabaseOrder is not supported.', 16, 2
   END
+
+  ----------------------------------------------------------------------------------------------------
+
+  IF @DatabasesInParallel NOT IN('Y','N') OR @DatabasesInParallel IS NULL
+  BEGIN
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'The value for the parameter @DatabasesInParallel is not supported.', 16, 1
+  END
+
+  IF @DatabasesInParallel = 'Y' AND SERVERPROPERTY('EngineEdition') = 5
+  BEGIN
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'The value for the parameter @DatabasesInParallel is not supported.', 16, 2
+  END
+
+  ----------------------------------------------------------------------------------------------------
 
   IF @LogToTable NOT IN('Y','N') OR @LogToTable IS NULL
   BEGIN
-    INSERT INTO @Errors ([Message], Severity)
-    SELECT 'The value for the parameter @LogToTable is not supported.', 16
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'The value for the parameter @LogToTable is not supported.', 16, 1
   END
+
+  ----------------------------------------------------------------------------------------------------
 
   IF @Execute NOT IN('Y','N') OR @Execute IS NULL
   BEGIN
-    INSERT INTO @Errors ([Message], Severity)
-    SELECT 'The value for the parameter @Execute is not supported.', 16
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'The value for the parameter @Execute is not supported.', 16, 1
   END
+
+  ----------------------------------------------------------------------------------------------------
 
   IF EXISTS(SELECT * FROM @Errors)
   BEGIN
-    INSERT INTO @Errors ([Message], Severity)
-    SELECT 'The documentation is available at https://ola.hallengren.com/sql-server-index-and-statistics-maintenance.html.', 16
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'The documentation is available at https://ola.hallengren.com/sql-server-index-and-statistics-maintenance.html.', 16, 1
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -992,8 +1124,8 @@ BEGIN
   AND DatabaseName NOT IN (SELECT DatabaseName FROM @tmpDatabases)
   IF @@ROWCOUNT > 0
   BEGIN
-    INSERT INTO @Errors ([Message], Severity)
-    SELECT 'The following databases in the @Databases parameter do not exist: ' + LEFT(@ErrorMessage,LEN(@ErrorMessage)-1) + '.', 10
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'The following databases in the @Databases parameter do not exist: ' + LEFT(@ErrorMessage,LEN(@ErrorMessage)-1) + '.', 10, 1
   END
 
   SET @ErrorMessage = ''
@@ -1003,8 +1135,8 @@ BEGIN
   AND DatabaseName NOT IN (SELECT DatabaseName FROM @tmpDatabases)
   IF @@ROWCOUNT > 0
   BEGIN
-    INSERT INTO @Errors ([Message], Severity)
-    SELECT 'The following databases in the @Indexes parameter do not exist: ' + LEFT(@ErrorMessage,LEN(@ErrorMessage)-1) + '.', 10
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'The following databases in the @Indexes parameter do not exist: ' + LEFT(@ErrorMessage,LEN(@ErrorMessage)-1) + '.', 10, 1
   END
 
   SET @ErrorMessage = ''
@@ -1014,8 +1146,8 @@ BEGIN
   AND AvailabilityGroupName NOT IN (SELECT AvailabilityGroupName FROM @tmpAvailabilityGroups)
   IF @@ROWCOUNT > 0
   BEGIN
-    INSERT INTO @Errors ([Message], Severity)
-    SELECT 'The following availability groups do not exist: ' + LEFT(@ErrorMessage,LEN(@ErrorMessage)-1) + '.', 10
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'The following availability groups do not exist: ' + LEFT(@ErrorMessage,LEN(@ErrorMessage)-1) + '.', 10, 1
   END
 
   SET @ErrorMessage = ''
@@ -1026,26 +1158,26 @@ BEGIN
   AND DatabaseName NOT IN (SELECT DatabaseName FROM @tmpDatabases WHERE Selected = 1)
   IF @@ROWCOUNT > 0
   BEGIN
-    INSERT INTO @Errors ([Message], Severity)
-    SELECT 'The following databases have been selected in the @Indexes parameter, but not in the @Databases or @AvailabilityGroups parameters: ' + LEFT(@ErrorMessage,LEN(@ErrorMessage)-1) + '.', 10
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'The following databases have been selected in the @Indexes parameter, but not in the @Databases or @AvailabilityGroups parameters: ' + LEFT(@ErrorMessage,LEN(@ErrorMessage)-1) + '.', 10, 1
   END
 
   ----------------------------------------------------------------------------------------------------
   --// Raise errors                                                                               //--
   ----------------------------------------------------------------------------------------------------
 
-  DECLARE ErrorCursor CURSOR FAST_FORWARD FOR SELECT [Message], Severity FROM @Errors ORDER BY [ID] ASC
+  DECLARE ErrorCursor CURSOR FAST_FORWARD FOR SELECT [Message], Severity, [State] FROM @Errors ORDER BY [ID] ASC
 
   OPEN ErrorCursor
 
-  FETCH ErrorCursor INTO @CurrentMessage, @CurrentSeverity
+  FETCH ErrorCursor INTO @CurrentMessage, @CurrentSeverity, @CurrentState
 
   WHILE @@FETCH_STATUS = 0
   BEGIN
-    RAISERROR('%s', @CurrentSeverity, 1, @CurrentMessage) WITH NOWAIT
+    RAISERROR('%s', @CurrentSeverity, @CurrentState, @CurrentMessage) WITH NOWAIT
     RAISERROR(@EmptyLine, 10, 1) WITH NOWAIT
 
-    FETCH NEXT FROM ErrorCursor INTO @CurrentMessage, @CurrentSeverity
+    FETCH NEXT FROM ErrorCursor INTO @CurrentMessage, @CurrentSeverity, @CurrentState
   END
 
   CLOSE ErrorCursor
