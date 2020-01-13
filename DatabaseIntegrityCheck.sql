@@ -707,7 +707,7 @@ BEGIN
       ss.[schema_id], ss.[name] as [schema], so.[object_id], so.[name] as object_name, so.[type], so.type_desc, SUM(sps.used_page_count) AS used_page_count
       FROM sys.objects so
       INNER JOIN sys.dm_db_partition_stats sps ON so.[object_id] = sps.[object_id]
-      INNER JOIN sys.indexes si ON so.[object_id] = si.[object_id]
+      INNER JOIN sys.indexes si ON sps.[object_id] = si.[object_id] AND sps.[index_id] = si.[index_id]
       INNER JOIN sys.schemas ss ON so.[schema_id] = ss.[schema_id]
       LEFT JOIN sys.tables st ON so.[object_id] = st.[object_id]
       WHERE so.[type] IN (''U'', ''V'')'
