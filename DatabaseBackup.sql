@@ -78,7 +78,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2020-01-13 20:08:15                                                               //--
+  --// Version: 2020-01-14 21:48:14                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -2552,6 +2552,14 @@ BEGIN
 
     SET @CurrentDatabase_sp_executesql = QUOTENAME(@CurrentDatabaseName) + '.sys.sp_executesql'
 
+    BEGIN
+      SET @DatabaseMessage = 'Date and time: ' + CONVERT(nvarchar,SYSDATETIME(),120)
+      RAISERROR('%s',10,1,@DatabaseMessage) WITH NOWAIT
+
+      SET @DatabaseMessage = 'Database: ' + QUOTENAME(@CurrentDatabaseName)
+      RAISERROR('%s',10,1,@DatabaseMessage) WITH NOWAIT
+    END
+
     SELECT @CurrentUserAccess = user_access_desc,
            @CurrentIsReadOnly = is_read_only,
            @CurrentDatabaseState = state_desc,
@@ -2561,6 +2569,26 @@ BEGIN
            @CurrentDatabaseSize = (SELECT SUM(CAST(size AS bigint)) FROM sys.master_files WHERE [type] = 0 AND database_id = sys.databases.database_id)
     FROM sys.databases
     WHERE [name] = @CurrentDatabaseName
+
+    BEGIN
+      SET @DatabaseMessage = 'State: ' + @CurrentDatabaseState
+      RAISERROR('%s',10,1,@DatabaseMessage) WITH NOWAIT
+
+      SET @DatabaseMessage = 'Standby: ' + CASE WHEN @CurrentInStandby = 1 THEN 'Yes' ELSE 'No' END
+      RAISERROR('%s',10,1,@DatabaseMessage) WITH NOWAIT
+
+      SET @DatabaseMessage =  'Updateability: ' + CASE WHEN @CurrentIsReadOnly = 1 THEN 'READ_ONLY' WHEN  @CurrentIsReadOnly = 0 THEN 'READ_WRITE' END
+      RAISERROR('%s',10,1,@DatabaseMessage) WITH NOWAIT
+
+      SET @DatabaseMessage =  'User access: ' + @CurrentUserAccess
+      RAISERROR('%s',10,1,@DatabaseMessage) WITH NOWAIT
+
+      SET @DatabaseMessage = 'Recovery model: ' + @CurrentRecoveryModel
+      RAISERROR('%s',10,1,@DatabaseMessage) WITH NOWAIT
+
+      SET @DatabaseMessage = 'Encrypted: ' + CASE WHEN @CurrentIsEncrypted = 1 THEN 'Yes' WHEN @CurrentIsEncrypted = 0 THEN 'No' ELSE 'N/A' END
+      RAISERROR('%s',10,1,@DatabaseMessage) WITH NOWAIT
+    END
 
     SELECT @CurrentMaxTransferSize = CASE
     WHEN @MaxTransferSize IS NOT NULL THEN @MaxTransferSize
@@ -2692,35 +2720,11 @@ BEGIN
       SET @CurrentLogShippingRole = 'SECONDARY'
     END
 
-    SET @DatabaseMessage = 'Date and time: ' + CONVERT(nvarchar,SYSDATETIME(),120)
-    RAISERROR('%s',10,1,@DatabaseMessage) WITH NOWAIT
-
-    SET @DatabaseMessage = 'Database: ' + QUOTENAME(@CurrentDatabaseName)
-    RAISERROR('%s',10,1,@DatabaseMessage) WITH NOWAIT
-
-    SET @DatabaseMessage = 'State: ' + @CurrentDatabaseState
-    RAISERROR('%s',10,1,@DatabaseMessage) WITH NOWAIT
-
-    SET @DatabaseMessage = 'Standby: ' + CASE WHEN @CurrentInStandby = 1 THEN 'Yes' ELSE 'No' END
-    RAISERROR('%s',10,1,@DatabaseMessage) WITH NOWAIT
-
-    SET @DatabaseMessage =  'Updateability: ' + CASE WHEN @CurrentIsReadOnly = 1 THEN 'READ_ONLY' WHEN  @CurrentIsReadOnly = 0 THEN 'READ_WRITE' END
-    RAISERROR('%s',10,1,@DatabaseMessage) WITH NOWAIT
-
-    SET @DatabaseMessage =  'User access: ' + @CurrentUserAccess
-    RAISERROR('%s',10,1,@DatabaseMessage) WITH NOWAIT
-
     IF @CurrentIsDatabaseAccessible IS NOT NULL
     BEGIN
       SET @DatabaseMessage = 'Is accessible: ' + CASE WHEN @CurrentIsDatabaseAccessible = 1 THEN 'Yes' ELSE 'No' END
       RAISERROR('%s',10,1,@DatabaseMessage) WITH NOWAIT
     END
-
-    SET @DatabaseMessage = 'Recovery model: ' + @CurrentRecoveryModel
-    RAISERROR('%s',10,1,@DatabaseMessage) WITH NOWAIT
-
-    SET @DatabaseMessage = 'Encrypted: ' + CASE WHEN @CurrentIsEncrypted = 1 THEN 'Yes' WHEN @CurrentIsEncrypted = 0 THEN 'No' ELSE 'N/A' END
-    RAISERROR('%s',10,1,@DatabaseMessage) WITH NOWAIT
 
     IF @CurrentAvailabilityGroup IS NOT NULL
     BEGIN
