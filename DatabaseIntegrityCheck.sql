@@ -12,6 +12,7 @@ ALTER PROCEDURE [dbo].[DatabaseIntegrityCheck]
 @Databases nvarchar(max) = NULL,
 @CheckCommands nvarchar(max) = 'CHECKDB',
 @PhysicalOnly nvarchar(max) = 'N',
+@Data_purity nvarchar(max) = 'N',
 @NoIndex nvarchar(max) = 'N',
 @ExtendedLogicalChecks nvarchar(max) = 'N',
 @TabLock nvarchar(max) = 'N',
@@ -1425,7 +1426,7 @@ BEGIN
         SET @CurrentCommand += 'DBCC CHECKDB (' + QUOTENAME(@CurrentDatabaseName)
         IF @NoIndex = 'Y' SET @CurrentCommand += ', NOINDEX'
         SET @CurrentCommand += ') WITH NO_INFOMSGS, ALL_ERRORMSGS'
-        IF @PhysicalOnly = 'N' SET @CurrentCommand += ', DATA_PURITY'
+        IF @PhysicalOnly = 'N' SET @CurrentCommand += case when @Data_purity='Y' then ', DATA_PURITY' else '' end
         IF @PhysicalOnly = 'Y' SET @CurrentCommand += ', PHYSICAL_ONLY'
         IF @ExtendedLogicalChecks = 'Y' SET @CurrentCommand += ', EXTENDED_LOGICAL_CHECKS'
         IF @TabLock = 'Y' SET @CurrentCommand += ', TABLOCK'
@@ -1716,7 +1717,7 @@ BEGIN
             SET @CurrentCommand += 'DBCC CHECKTABLE (''' + QUOTENAME(@CurrentSchemaName) + '.' + QUOTENAME(@CurrentObjectName) + ''''
             IF @NoIndex = 'Y' SET @CurrentCommand += ', NOINDEX'
             SET @CurrentCommand += ') WITH NO_INFOMSGS, ALL_ERRORMSGS'
-            IF @PhysicalOnly = 'N' SET @CurrentCommand += ', DATA_PURITY'
+            IF @PhysicalOnly = 'N' SET @CurrentCommand += case when @Data_purity='Y' then ', DATA_PURITY' else '' end 
             IF @PhysicalOnly = 'Y' SET @CurrentCommand += ', PHYSICAL_ONLY'
             IF @ExtendedLogicalChecks = 'Y' SET @CurrentCommand += ', EXTENDED_LOGICAL_CHECKS'
             IF @TabLock = 'Y' SET @CurrentCommand += ', TABLOCK'
