@@ -10,7 +10,7 @@ License: https://ola.hallengren.com/license.html
 
 GitHub: https://github.com/olahallengren/sql-server-maintenance-solution
 
-Version: 2020-01-26 12:29:21
+Version: 2020-01-26 12:52:50
 
 You can contact me by e-mail at ola@hallengren.com.
 
@@ -122,7 +122,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2020-01-26 12:29:21                                                               //--
+  --// Version: 2020-01-26 12:52:50                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -432,7 +432,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2020-01-26 12:29:21                                                               //--
+  --// Version: 2020-01-26 12:52:50                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -4422,6 +4422,7 @@ ALTER PROCEDURE [dbo].[DatabaseIntegrityCheck]
 @Databases nvarchar(max) = NULL,
 @CheckCommands nvarchar(max) = 'CHECKDB',
 @PhysicalOnly nvarchar(max) = 'N',
+@DataPurity nvarchar(max) = 'N',
 @NoIndex nvarchar(max) = 'N',
 @ExtendedLogicalChecks nvarchar(max) = 'N',
 @TabLock nvarchar(max) = 'N',
@@ -4448,7 +4449,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2020-01-26 12:29:21                                                               //--
+  --// Version: 2020-01-26 12:52:50                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -4607,6 +4608,7 @@ BEGIN
   SET @Parameters = '@Databases = ' + ISNULL('''' + REPLACE(@Databases,'''','''''') + '''','NULL')
   SET @Parameters += ', @CheckCommands = ' + ISNULL('''' + REPLACE(@CheckCommands,'''','''''') + '''','NULL')
   SET @Parameters += ', @PhysicalOnly = ' + ISNULL('''' + REPLACE(@PhysicalOnly,'''','''''') + '''','NULL')
+  SET @Parameters += ', @DataPurity = ' + ISNULL('''' + REPLACE(@DataPurity,'''','''''') + '''','NULL')
   SET @Parameters += ', @NoIndex = ' + ISNULL('''' + REPLACE(@NoIndex,'''','''''') + '''','NULL')
   SET @Parameters += ', @ExtendedLogicalChecks = ' + ISNULL('''' + REPLACE(@ExtendedLogicalChecks,'''','''''') + '''','NULL')
   SET @Parameters += ', @TabLock = ' + ISNULL('''' + REPLACE(@TabLock,'''','''''') + '''','NULL')
@@ -5116,6 +5118,20 @@ BEGIN
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
     SELECT 'The value for the parameter @PhysicalOnly is not supported.', 16, 1
+  END
+
+  ----------------------------------------------------------------------------------------------------
+
+  IF @DataPurity NOT IN ('Y','N') OR @DataPurity IS NULL
+  BEGIN
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'The value for the parameter @DataPurity is not supported.', 16, 1
+  END
+
+  IF @PhysicalOnly = 'Y' AND @DataPurity = 'Y'
+  BEGIN
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'The parameters @PhysicalOnly and @DataPurity cannot be used together.', 16, 2
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -5835,7 +5851,7 @@ BEGIN
         SET @CurrentCommand += 'DBCC CHECKDB (' + QUOTENAME(@CurrentDatabaseName)
         IF @NoIndex = 'Y' SET @CurrentCommand += ', NOINDEX'
         SET @CurrentCommand += ') WITH NO_INFOMSGS, ALL_ERRORMSGS'
-        IF @PhysicalOnly = 'N' SET @CurrentCommand += ', DATA_PURITY'
+        IF @DataPurity = 'Y' SET @CurrentCommand += ', DATA_PURITY'
         IF @PhysicalOnly = 'Y' SET @CurrentCommand += ', PHYSICAL_ONLY'
         IF @ExtendedLogicalChecks = 'Y' SET @CurrentCommand += ', EXTENDED_LOGICAL_CHECKS'
         IF @TabLock = 'Y' SET @CurrentCommand += ', TABLOCK'
@@ -6126,7 +6142,7 @@ BEGIN
             SET @CurrentCommand += 'DBCC CHECKTABLE (''' + QUOTENAME(@CurrentSchemaName) + '.' + QUOTENAME(@CurrentObjectName) + ''''
             IF @NoIndex = 'Y' SET @CurrentCommand += ', NOINDEX'
             SET @CurrentCommand += ') WITH NO_INFOMSGS, ALL_ERRORMSGS'
-            IF @PhysicalOnly = 'N' SET @CurrentCommand += ', DATA_PURITY'
+            IF @DataPurity = 'Y' SET @CurrentCommand += ', DATA_PURITY'
             IF @PhysicalOnly = 'Y' SET @CurrentCommand += ', PHYSICAL_ONLY'
             IF @ExtendedLogicalChecks = 'Y' SET @CurrentCommand += ', EXTENDED_LOGICAL_CHECKS'
             IF @TabLock = 'Y' SET @CurrentCommand += ', TABLOCK'
@@ -6307,7 +6323,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2020-01-26 12:29:21                                                               //--
+  --// Version: 2020-01-26 12:52:50                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
