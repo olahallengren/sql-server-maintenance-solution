@@ -12,6 +12,7 @@ ALTER PROCEDURE [dbo].[DatabaseIntegrityCheck]
 @Databases nvarchar(max) = NULL,
 @CheckCommands nvarchar(max) = 'CHECKDB',
 @PhysicalOnly nvarchar(max) = 'N',
+@DataPurity nvarchar(max) = 'N',
 @NoIndex nvarchar(max) = 'N',
 @ExtendedLogicalChecks nvarchar(max) = 'N',
 @TabLock nvarchar(max) = 'N',
@@ -24,6 +25,7 @@ ALTER PROCEDURE [dbo].[DatabaseIntegrityCheck]
 @TimeLimit int = NULL,
 @LockTimeout int = NULL,
 @LockMessageSeverity int = 16,
+@StringDelimiter nvarchar(max) = ',',
 @DatabaseOrder nvarchar(max) = NULL,
 @DatabasesInParallel nvarchar(max) = 'N',
 @LogToTable nvarchar(max) = 'N',
@@ -38,7 +40,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2020-01-06 19:43:36                                                               //--
+  --// Version: 2020-01-26 14:06:53                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -92,32 +94,19 @@ BEGIN
   DECLARE @CurrentObjectType nvarchar(max)
   DECLARE @CurrentObjectExists bit
 
-  DECLARE @CurrentCommand01 nvarchar(max)
-  DECLARE @CurrentCommand02 nvarchar(max)
-  DECLARE @CurrentCommand03 nvarchar(max)
-  DECLARE @CurrentCommand04 nvarchar(max)
-  DECLARE @CurrentCommand05 nvarchar(max)
-  DECLARE @CurrentCommand06 nvarchar(max)
-  DECLARE @CurrentCommand07 nvarchar(max)
-  DECLARE @CurrentCommand08 nvarchar(max)
-  DECLARE @CurrentCommand09 nvarchar(max)
-
-  DECLARE @CurrentCommandOutput01 int
-  DECLARE @CurrentCommandOutput04 int
-  DECLARE @CurrentCommandOutput05 int
-  DECLARE @CurrentCommandOutput08 int
-  DECLARE @CurrentCommandOutput09 int
-
-  DECLARE @CurrentCommandType01 nvarchar(max)
-  DECLARE @CurrentCommandType04 nvarchar(max)
-  DECLARE @CurrentCommandType05 nvarchar(max)
-  DECLARE @CurrentCommandType08 nvarchar(max)
-  DECLARE @CurrentCommandType09 nvarchar(max)
+  DECLARE @CurrentDatabaseContext nvarchar(max)
+  DECLARE @CurrentCommand nvarchar(max)
+  DECLARE @CurrentCommandOutput int
+  DECLARE @CurrentCommandType nvarchar(max)
 
   DECLARE @Errors TABLE (ID int IDENTITY PRIMARY KEY,
-                         [Message] nvarchar(max))
+                         [Message] nvarchar(max) NOT NULL,
+                         Severity int NOT NULL,
+                         [State] int)
 
   DECLARE @CurrentMessage nvarchar(max)
+  DECLARE @CurrentSeverity int
+  DECLARE @CurrentState int
 
   DECLARE @tmpDatabases TABLE (ID int IDENTITY,
                                DatabaseName nvarchar(max),
@@ -237,6 +226,7 @@ BEGIN
   SET @Parameters = '@Databases = ' + ISNULL('''' + REPLACE(@Databases,'''','''''') + '''','NULL')
   SET @Parameters += ', @CheckCommands = ' + ISNULL('''' + REPLACE(@CheckCommands,'''','''''') + '''','NULL')
   SET @Parameters += ', @PhysicalOnly = ' + ISNULL('''' + REPLACE(@PhysicalOnly,'''','''''') + '''','NULL')
+  SET @Parameters += ', @DataPurity = ' + ISNULL('''' + REPLACE(@DataPurity,'''','''''') + '''','NULL')
   SET @Parameters += ', @NoIndex = ' + ISNULL('''' + REPLACE(@NoIndex,'''','''''') + '''','NULL')
   SET @Parameters += ', @ExtendedLogicalChecks = ' + ISNULL('''' + REPLACE(@ExtendedLogicalChecks,'''','''''') + '''','NULL')
   SET @Parameters += ', @TabLock = ' + ISNULL('''' + REPLACE(@TabLock,'''','''''') + '''','NULL')
@@ -249,6 +239,7 @@ BEGIN
   SET @Parameters += ', @TimeLimit = ' + ISNULL(CAST(@TimeLimit AS nvarchar),'NULL')
   SET @Parameters += ', @LockTimeout = ' + ISNULL(CAST(@LockTimeout AS nvarchar),'NULL')
   SET @Parameters += ', @LockMessageSeverity = ' + ISNULL(CAST(@LockMessageSeverity AS nvarchar),'NULL')
+  SET @Parameters += ', @StringDelimiter = ' + ISNULL('''' + REPLACE(@StringDelimiter,'''','''''') + '''','NULL')
   SET @Parameters += ', @DatabaseOrder = ' + ISNULL('''' + REPLACE(@DatabaseOrder,'''','''''') + '''','NULL')
   SET @Parameters += ', @DatabasesInParallel = ' + ISNULL('''' + REPLACE(@DatabasesInParallel,'''','''''') + '''','NULL')
   SET @Parameters += ', @LogToTable = ' + ISNULL('''' + REPLACE(@LogToTable,'''','''''') + '''','NULL')
@@ -290,50 +281,50 @@ BEGIN
 
   IF NOT (SELECT [compatibility_level] FROM sys.databases WHERE database_id = DB_ID()) >= 90
   BEGIN
-    INSERT INTO @Errors ([Message])
-    SELECT  'The database ' + QUOTENAME(DB_NAME(DB_ID())) + ' has to be in compatibility level 90 or higher.'
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT  'The database ' + QUOTENAME(DB_NAME(DB_ID())) + ' has to be in compatibility level 90 or higher.', 16, 1
   END
 
   IF NOT (SELECT uses_ansi_nulls FROM sys.sql_modules WHERE [object_id] = @@PROCID) = 1
   BEGIN
-    INSERT INTO @Errors ([Message])
-    SELECT 'ANSI_NULLS has to be set to ON for the stored procedure.'
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'ANSI_NULLS has to be set to ON for the stored procedure.', 16, 1
   END
 
   IF NOT (SELECT uses_quoted_identifier FROM sys.sql_modules WHERE [object_id] = @@PROCID) = 1
   BEGIN
-    INSERT INTO @Errors ([Message])
-    SELECT 'QUOTED_IDENTIFIER has to be set to ON for the stored procedure.'
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'QUOTED_IDENTIFIER has to be set to ON for the stored procedure.', 16, 1
   END
 
   IF NOT EXISTS (SELECT * FROM sys.objects objects INNER JOIN sys.schemas schemas ON objects.[schema_id] = schemas.[schema_id] WHERE objects.[type] = 'P' AND schemas.[name] = 'dbo' AND objects.[name] = 'CommandExecute')
   BEGIN
-    INSERT INTO @Errors ([Message])
-    SELECT 'The stored procedure CommandExecute is missing. Download https://ola.hallengren.com/scripts/CommandExecute.sql.'
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'The stored procedure CommandExecute is missing. Download https://ola.hallengren.com/scripts/CommandExecute.sql.', 16, 1
   END
 
   IF EXISTS (SELECT * FROM sys.objects objects INNER JOIN sys.schemas schemas ON objects.[schema_id] = schemas.[schema_id] WHERE objects.[type] = 'P' AND schemas.[name] = 'dbo' AND objects.[name] = 'CommandExecute' AND OBJECT_DEFINITION(objects.[object_id]) NOT LIKE '%@DatabaseContext%')
   BEGIN
-    INSERT INTO @Errors ([Message])
-    SELECT 'The stored procedure CommandExecute needs to be updated. Download https://ola.hallengren.com/scripts/CommandExecute.sql.'
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'The stored procedure CommandExecute needs to be updated. Download https://ola.hallengren.com/scripts/CommandExecute.sql.', 16, 1
   END
 
   IF @LogToTable = 'Y' AND NOT EXISTS (SELECT * FROM sys.objects objects INNER JOIN sys.schemas schemas ON objects.[schema_id] = schemas.[schema_id] WHERE objects.[type] = 'U' AND schemas.[name] = 'dbo' AND objects.[name] = 'CommandLog')
   BEGIN
-    INSERT INTO @Errors ([Message])
-    SELECT 'The table CommandLog is missing. Download https://ola.hallengren.com/scripts/CommandLog.sql.'
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'The table CommandLog is missing. Download https://ola.hallengren.com/scripts/CommandLog.sql.', 16, 1
   END
 
   IF @DatabasesInParallel = 'Y' AND NOT EXISTS (SELECT * FROM sys.objects objects INNER JOIN sys.schemas schemas ON objects.[schema_id] = schemas.[schema_id] WHERE objects.[type] = 'U' AND schemas.[name] = 'dbo' AND objects.[name] = 'Queue')
   BEGIN
-    INSERT INTO @Errors ([Message])
-    SELECT 'The table Queue is missing. Download https://ola.hallengren.com/scripts/Queue.sql.'
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'The table Queue is missing. Download https://ola.hallengren.com/scripts/Queue.sql.', 16, 1
   END
 
   IF @DatabasesInParallel = 'Y' AND NOT EXISTS (SELECT * FROM sys.objects objects INNER JOIN sys.schemas schemas ON objects.[schema_id] = schemas.[schema_id] WHERE objects.[type] = 'U' AND schemas.[name] = 'dbo' AND objects.[name] = 'QueueDatabase')
   BEGIN
-    INSERT INTO @Errors ([Message])
-    SELECT 'The table QueueDatabase is missing. Download https://ola.hallengren.com/scripts/QueueDatabase.sql.'
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'The table QueueDatabase is missing. Download https://ola.hallengren.com/scripts/QueueDatabase.sql.', 16, 1
   END
 
   IF @Resumable = 'Y' AND NOT EXISTS (SELECT * FROM sys.objects objects INNER JOIN sys.schemas schemas ON objects.[schema_id] = schemas.[schema_id] WHERE objects.[type] = 'U' AND schemas.[name] = 'dbo' AND objects.[name] = 'CheckTableObjects')
@@ -344,8 +335,8 @@ BEGIN
 
   IF @@TRANCOUNT <> 0
   BEGIN
-    INSERT INTO @Errors ([Message])
-    SELECT 'The transaction count is not 0.'
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'The transaction count is not 0.', 16, 1
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -355,21 +346,21 @@ BEGIN
   SET @Databases = REPLACE(@Databases, CHAR(10), '')
   SET @Databases = REPLACE(@Databases, CHAR(13), '')
 
-  WHILE CHARINDEX(', ',@Databases) > 0 SET @Databases = REPLACE(@Databases,', ',',')
-  WHILE CHARINDEX(' ,',@Databases) > 0 SET @Databases = REPLACE(@Databases,' ,',',')
+  WHILE CHARINDEX(@StringDelimiter + ' ', @Databases) > 0 SET @Databases = REPLACE(@Databases, @StringDelimiter + ' ', @StringDelimiter)
+  WHILE CHARINDEX(' ' + @StringDelimiter, @Databases) > 0 SET @Databases = REPLACE(@Databases, ' ' + @StringDelimiter, @StringDelimiter)
 
   SET @Databases = LTRIM(RTRIM(@Databases));
 
   WITH Databases1 (StartPosition, EndPosition, DatabaseItem) AS
   (
   SELECT 1 AS StartPosition,
-         ISNULL(NULLIF(CHARINDEX(',', @Databases, 1), 0), LEN(@Databases) + 1) AS EndPosition,
-         SUBSTRING(@Databases, 1, ISNULL(NULLIF(CHARINDEX(',', @Databases, 1), 0), LEN(@Databases) + 1) - 1) AS DatabaseItem
+         ISNULL(NULLIF(CHARINDEX(@StringDelimiter, @Databases, 1), 0), LEN(@Databases) + 1) AS EndPosition,
+         SUBSTRING(@Databases, 1, ISNULL(NULLIF(CHARINDEX(@StringDelimiter, @Databases, 1), 0), LEN(@Databases) + 1) - 1) AS DatabaseItem
   WHERE @Databases IS NOT NULL
   UNION ALL
   SELECT CAST(EndPosition AS int) + 1 AS StartPosition,
-         ISNULL(NULLIF(CHARINDEX(',', @Databases, EndPosition + 1), 0), LEN(@Databases) + 1) AS EndPosition,
-         SUBSTRING(@Databases, EndPosition + 1, ISNULL(NULLIF(CHARINDEX(',', @Databases, EndPosition + 1), 0), LEN(@Databases) + 1) - EndPosition - 1) AS DatabaseItem
+         ISNULL(NULLIF(CHARINDEX(@StringDelimiter, @Databases, EndPosition + 1), 0), LEN(@Databases) + 1) AS EndPosition,
+         SUBSTRING(@Databases, EndPosition + 1, ISNULL(NULLIF(CHARINDEX(@StringDelimiter, @Databases, EndPosition + 1), 0), LEN(@Databases) + 1) - EndPosition - 1) AS DatabaseItem
   FROM Databases1
   WHERE EndPosition < LEN(@Databases) + 1
   ),
@@ -472,8 +463,8 @@ BEGIN
 
   IF @Databases IS NOT NULL AND (NOT EXISTS(SELECT * FROM @SelectedDatabases) OR EXISTS(SELECT * FROM @SelectedDatabases WHERE DatabaseName IS NULL OR DatabaseName = ''))
   BEGIN
-    INSERT INTO @Errors ([Message])
-    SELECT 'The value for the parameter @Databases is not supported.'
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'The value for the parameter @Databases is not supported.', 16, 1
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -486,21 +477,21 @@ BEGIN
     SET @AvailabilityGroups = REPLACE(@AvailabilityGroups, CHAR(10), '')
     SET @AvailabilityGroups = REPLACE(@AvailabilityGroups, CHAR(13), '')
 
-    WHILE CHARINDEX(', ',@AvailabilityGroups) > 0 SET @AvailabilityGroups = REPLACE(@AvailabilityGroups,', ',',')
-    WHILE CHARINDEX(' ,',@AvailabilityGroups) > 0 SET @AvailabilityGroups = REPLACE(@AvailabilityGroups,' ,',',')
+    WHILE CHARINDEX(@StringDelimiter + ' ', @AvailabilityGroups) > 0 SET @AvailabilityGroups = REPLACE(@AvailabilityGroups, @StringDelimiter + ' ', @StringDelimiter)
+    WHILE CHARINDEX(' ' + @StringDelimiter, @AvailabilityGroups) > 0 SET @AvailabilityGroups = REPLACE(@AvailabilityGroups, ' ' + @StringDelimiter, @StringDelimiter)
 
     SET @AvailabilityGroups = LTRIM(RTRIM(@AvailabilityGroups));
 
     WITH AvailabilityGroups1 (StartPosition, EndPosition, AvailabilityGroupItem) AS
     (
     SELECT 1 AS StartPosition,
-           ISNULL(NULLIF(CHARINDEX(',', @AvailabilityGroups, 1), 0), LEN(@AvailabilityGroups) + 1) AS EndPosition,
-           SUBSTRING(@AvailabilityGroups, 1, ISNULL(NULLIF(CHARINDEX(',', @AvailabilityGroups, 1), 0), LEN(@AvailabilityGroups) + 1) - 1) AS AvailabilityGroupItem
+           ISNULL(NULLIF(CHARINDEX(@StringDelimiter, @AvailabilityGroups, 1), 0), LEN(@AvailabilityGroups) + 1) AS EndPosition,
+           SUBSTRING(@AvailabilityGroups, 1, ISNULL(NULLIF(CHARINDEX(@StringDelimiter, @AvailabilityGroups, 1), 0), LEN(@AvailabilityGroups) + 1) - 1) AS AvailabilityGroupItem
     WHERE @AvailabilityGroups IS NOT NULL
     UNION ALL
     SELECT CAST(EndPosition AS int) + 1 AS StartPosition,
-           ISNULL(NULLIF(CHARINDEX(',', @AvailabilityGroups, EndPosition + 1), 0), LEN(@AvailabilityGroups) + 1) AS EndPosition,
-           SUBSTRING(@AvailabilityGroups, EndPosition + 1, ISNULL(NULLIF(CHARINDEX(',', @AvailabilityGroups, EndPosition + 1), 0), LEN(@AvailabilityGroups) + 1) - EndPosition - 1) AS AvailabilityGroupItem
+           ISNULL(NULLIF(CHARINDEX(@StringDelimiter, @AvailabilityGroups, EndPosition + 1), 0), LEN(@AvailabilityGroups) + 1) AS EndPosition,
+           SUBSTRING(@AvailabilityGroups, EndPosition + 1, ISNULL(NULLIF(CHARINDEX(@StringDelimiter, @AvailabilityGroups, EndPosition + 1), 0), LEN(@AvailabilityGroups) + 1) - EndPosition - 1) AS AvailabilityGroupItem
     FROM AvailabilityGroups1
     WHERE EndPosition < LEN(@AvailabilityGroups) + 1
     ),
@@ -567,20 +558,20 @@ BEGIN
 
   IF @AvailabilityGroups IS NOT NULL AND (NOT EXISTS(SELECT * FROM @SelectedAvailabilityGroups) OR EXISTS(SELECT * FROM @SelectedAvailabilityGroups WHERE AvailabilityGroupName IS NULL OR AvailabilityGroupName = '') OR @Version < 11 OR SERVERPROPERTY('IsHadrEnabled') = 0)
   BEGIN
-    INSERT INTO @Errors ([Message])
-    SELECT 'The value for the parameter @AvailabilityGroups is not supported.'
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'The value for the parameter @AvailabilityGroups is not supported.', 16, 1
   END
 
   IF (@Databases IS NULL AND @AvailabilityGroups IS NULL)
   BEGIN
-    INSERT INTO @Errors ([Message])
-    SELECT 'You need to specify one of the parameters @Databases and @AvailabilityGroups.'
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'You need to specify one of the parameters @Databases and @AvailabilityGroups.', 16, 2
   END
 
   IF (@Databases IS NOT NULL AND @AvailabilityGroups IS NOT NULL)
   BEGIN
-    INSERT INTO @Errors ([Message])
-    SELECT 'You can only specify one of the parameters @Databases and @AvailabilityGroups.'
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'You can only specify one of the parameters @Databases and @AvailabilityGroups.', 16, 3
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -590,21 +581,21 @@ BEGIN
   SET @FileGroups = REPLACE(@FileGroups, CHAR(10), '')
   SET @FileGroups = REPLACE(@FileGroups, CHAR(13), '')
 
-  WHILE CHARINDEX(', ',@FileGroups) > 0 SET @FileGroups = REPLACE(@FileGroups,', ',',')
-  WHILE CHARINDEX(' ,',@FileGroups) > 0 SET @FileGroups = REPLACE(@FileGroups,' ,',',')
+  WHILE CHARINDEX(@StringDelimiter + ' ', @FileGroups) > 0 SET @FileGroups = REPLACE(@FileGroups, @StringDelimiter + ' ', @StringDelimiter)
+  WHILE CHARINDEX(' ' + @StringDelimiter, @FileGroups) > 0 SET @FileGroups = REPLACE(@FileGroups, ' ' + @StringDelimiter, @StringDelimiter)
 
   SET @FileGroups = LTRIM(RTRIM(@FileGroups));
 
   WITH FileGroups1 (StartPosition, EndPosition, FileGroupItem) AS
   (
   SELECT 1 AS StartPosition,
-         ISNULL(NULLIF(CHARINDEX(',', @FileGroups, 1), 0), LEN(@FileGroups) + 1) AS EndPosition,
-         SUBSTRING(@FileGroups, 1, ISNULL(NULLIF(CHARINDEX(',', @FileGroups, 1), 0), LEN(@FileGroups) + 1) - 1) AS FileGroupItem
+         ISNULL(NULLIF(CHARINDEX(@StringDelimiter, @FileGroups, 1), 0), LEN(@FileGroups) + 1) AS EndPosition,
+         SUBSTRING(@FileGroups, 1, ISNULL(NULLIF(CHARINDEX(@StringDelimiter, @FileGroups, 1), 0), LEN(@FileGroups) + 1) - 1) AS FileGroupItem
   WHERE @FileGroups IS NOT NULL
   UNION ALL
   SELECT CAST(EndPosition AS int) + 1 AS StartPosition,
-         ISNULL(NULLIF(CHARINDEX(',', @FileGroups, EndPosition + 1), 0), LEN(@FileGroups) + 1) AS EndPosition,
-         SUBSTRING(@FileGroups, EndPosition + 1, ISNULL(NULLIF(CHARINDEX(',', @FileGroups, EndPosition + 1), 0), LEN(@FileGroups) + 1) - EndPosition - 1) AS FileGroupItem
+         ISNULL(NULLIF(CHARINDEX(@StringDelimiter, @FileGroups, EndPosition + 1), 0), LEN(@FileGroups) + 1) AS EndPosition,
+         SUBSTRING(@FileGroups, EndPosition + 1, ISNULL(NULLIF(CHARINDEX(@StringDelimiter, @FileGroups, EndPosition + 1), 0), LEN(@FileGroups) + 1) - EndPosition - 1) AS FileGroupItem
   FROM FileGroups1
   WHERE EndPosition < LEN(@FileGroups) + 1
   ),
@@ -642,21 +633,21 @@ BEGIN
   SET @Objects = REPLACE(@Objects, CHAR(10), '')
   SET @Objects = REPLACE(@Objects, CHAR(13), '')
 
-  WHILE CHARINDEX(', ',@Objects) > 0 SET @Objects = REPLACE(@Objects,', ',',')
-  WHILE CHARINDEX(' ,',@Objects) > 0 SET @Objects = REPLACE(@Objects,' ,',',')
+  WHILE CHARINDEX(@StringDelimiter + ' ', @Objects) > 0 SET @Objects = REPLACE(@Objects, @StringDelimiter + ' ', @StringDelimiter)
+  WHILE CHARINDEX(' ' + @StringDelimiter, @Objects) > 0 SET @Objects = REPLACE(@Objects, ' ' + @StringDelimiter, @StringDelimiter)
 
   SET @Objects = LTRIM(RTRIM(@Objects));
 
   WITH Objects1 (StartPosition, EndPosition, ObjectItem) AS
   (
   SELECT 1 AS StartPosition,
-         ISNULL(NULLIF(CHARINDEX(',', @Objects, 1), 0), LEN(@Objects) + 1) AS EndPosition,
-         SUBSTRING(@Objects, 1, ISNULL(NULLIF(CHARINDEX(',', @Objects, 1), 0), LEN(@Objects) + 1) - 1) AS ObjectItem
+         ISNULL(NULLIF(CHARINDEX(@StringDelimiter, @Objects, 1), 0), LEN(@Objects) + 1) AS EndPosition,
+         SUBSTRING(@Objects, 1, ISNULL(NULLIF(CHARINDEX(@StringDelimiter, @Objects, 1), 0), LEN(@Objects) + 1) - 1) AS ObjectItem
   WHERE @Objects IS NOT NULL
   UNION ALL
   SELECT CAST(EndPosition AS int) + 1 AS StartPosition,
-         ISNULL(NULLIF(CHARINDEX(',', @Objects, EndPosition + 1), 0), LEN(@Objects) + 1) AS EndPosition,
-         SUBSTRING(@Objects, EndPosition + 1, ISNULL(NULLIF(CHARINDEX(',', @Objects, EndPosition + 1), 0), LEN(@Objects) + 1) - EndPosition - 1) AS ObjectItem
+         ISNULL(NULLIF(CHARINDEX(@StringDelimiter, @Objects, EndPosition + 1), 0), LEN(@Objects) + 1) AS EndPosition,
+         SUBSTRING(@Objects, EndPosition + 1, ISNULL(NULLIF(CHARINDEX(@StringDelimiter, @Objects, EndPosition + 1), 0), LEN(@Objects) + 1) - EndPosition - 1) AS ObjectItem
   FROM Objects1
   WHERE EndPosition < LEN(@Objects) + 1
   ),
@@ -766,18 +757,18 @@ BEGIN
   --// Select check commands                                                                      //--
   ----------------------------------------------------------------------------------------------------
 
-  SET @CheckCommands = REPLACE(@CheckCommands,', ',',');
+  SET @CheckCommands = REPLACE(@CheckCommands, @StringDelimiter + ' ', @StringDelimiter);
 
   WITH CheckCommands (StartPosition, EndPosition, CheckCommand) AS
   (
   SELECT 1 AS StartPosition,
-         ISNULL(NULLIF(CHARINDEX(',', @CheckCommands, 1), 0), LEN(@CheckCommands) + 1) AS EndPosition,
-         SUBSTRING(@CheckCommands, 1, ISNULL(NULLIF(CHARINDEX(',', @CheckCommands, 1), 0), LEN(@CheckCommands) + 1) - 1) AS CheckCommand
+         ISNULL(NULLIF(CHARINDEX(@StringDelimiter, @CheckCommands, 1), 0), LEN(@CheckCommands) + 1) AS EndPosition,
+         SUBSTRING(@CheckCommands, 1, ISNULL(NULLIF(CHARINDEX(@StringDelimiter, @CheckCommands, 1), 0), LEN(@CheckCommands) + 1) - 1) AS CheckCommand
   WHERE @CheckCommands IS NOT NULL
   UNION ALL
   SELECT CAST(EndPosition AS int) + 1 AS StartPosition,
-         ISNULL(NULLIF(CHARINDEX(',', @CheckCommands, EndPosition + 1), 0), LEN(@CheckCommands) + 1) AS EndPosition,
-         SUBSTRING(@CheckCommands, EndPosition + 1, ISNULL(NULLIF(CHARINDEX(',', @CheckCommands, EndPosition + 1), 0), LEN(@CheckCommands) + 1) - EndPosition - 1) AS CheckCommand
+         ISNULL(NULLIF(CHARINDEX(@StringDelimiter, @CheckCommands, EndPosition + 1), 0), LEN(@CheckCommands) + 1) AS EndPosition,
+         SUBSTRING(@CheckCommands, EndPosition + 1, ISNULL(NULLIF(CHARINDEX(@StringDelimiter, @CheckCommands, EndPosition + 1), 0), LEN(@CheckCommands) + 1) - EndPosition - 1) AS CheckCommand
   FROM CheckCommands
   WHERE EndPosition < LEN(@CheckCommands) + 1
   )
@@ -790,130 +781,274 @@ BEGIN
   --// Check input parameters                                                                     //--
   ----------------------------------------------------------------------------------------------------
 
-  IF EXISTS (SELECT * FROM @SelectedCheckCommands WHERE CheckCommand NOT IN('CHECKDB','CHECKFILEGROUP','CHECKALLOC','CHECKTABLE','CHECKCATALOG')) OR EXISTS (SELECT * FROM @SelectedCheckCommands GROUP BY CheckCommand HAVING COUNT(*) > 1) OR NOT EXISTS (SELECT * FROM @SelectedCheckCommands) OR (EXISTS (SELECT * FROM @SelectedCheckCommands WHERE CheckCommand IN('CHECKDB')) AND EXISTS (SELECT CheckCommand FROM @SelectedCheckCommands WHERE CheckCommand IN('CHECKFILEGROUP','CHECKALLOC','CHECKTABLE','CHECKCATALOG'))) OR (EXISTS (SELECT * FROM @SelectedCheckCommands WHERE CheckCommand IN('CHECKFILEGROUP')) AND EXISTS (SELECT CheckCommand FROM @SelectedCheckCommands WHERE CheckCommand IN('CHECKALLOC','CHECKTABLE')))
+  IF EXISTS (SELECT * FROM @SelectedCheckCommands WHERE CheckCommand NOT IN('CHECKDB','CHECKFILEGROUP','CHECKALLOC','CHECKTABLE','CHECKCATALOG'))
   BEGIN
-    INSERT INTO @Errors ([Message])
-    SELECT 'The value for the parameter @CheckCommands is not supported.'
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'The value for the parameter @CheckCommands is not supported.', 16, 1
   END
+
+  IF EXISTS (SELECT * FROM @SelectedCheckCommands GROUP BY CheckCommand HAVING COUNT(*) > 1)
+  BEGIN
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'The value for the parameter @CheckCommands is not supported.', 16, 2
+  END
+
+  IF NOT EXISTS (SELECT * FROM @SelectedCheckCommands)
+  BEGIN
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'The value for the parameter @CheckCommands is not supported.' , 16, 3
+  END
+
+  IF EXISTS (SELECT * FROM @SelectedCheckCommands WHERE CheckCommand IN('CHECKDB')) AND EXISTS (SELECT CheckCommand FROM @SelectedCheckCommands WHERE CheckCommand IN('CHECKFILEGROUP','CHECKALLOC','CHECKTABLE','CHECKCATALOG'))
+  BEGIN
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'The value for the parameter @CheckCommands is not supported.', 16, 4
+  END
+
+  IF EXISTS (SELECT * FROM @SelectedCheckCommands WHERE CheckCommand IN('CHECKFILEGROUP')) AND EXISTS (SELECT CheckCommand FROM @SelectedCheckCommands WHERE CheckCommand IN('CHECKALLOC','CHECKTABLE'))
+  BEGIN
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'The value for the parameter @CheckCommands is not supported.', 16, 5
+  END
+
+  ----------------------------------------------------------------------------------------------------
 
   IF @PhysicalOnly NOT IN ('Y','N') OR @PhysicalOnly IS NULL
   BEGIN
-    INSERT INTO @Errors ([Message])
-    SELECT 'The value for the parameter @PhysicalOnly is not supported.'
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'The value for the parameter @PhysicalOnly is not supported.', 16, 1
   END
+
+  ----------------------------------------------------------------------------------------------------
+
+  IF @DataPurity NOT IN ('Y','N') OR @DataPurity IS NULL
+  BEGIN
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'The value for the parameter @DataPurity is not supported.', 16, 1
+  END
+
+  IF @PhysicalOnly = 'Y' AND @DataPurity = 'Y'
+  BEGIN
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'The parameters @PhysicalOnly and @DataPurity cannot be used together.', 16, 2
+  END
+
+  ----------------------------------------------------------------------------------------------------
 
   IF @NoIndex NOT IN ('Y','N') OR @NoIndex IS NULL
   BEGIN
-    INSERT INTO @Errors ([Message])
-    SELECT 'The value for the parameter @NoIndex is not supported.'
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'The value for the parameter @NoIndex is not supported.', 16, 1
   END
 
-  IF @ExtendedLogicalChecks NOT IN ('Y','N') OR @ExtendedLogicalChecks IS NULL OR (@ExtendedLogicalChecks = 'Y' AND NOT @Version >= 10) OR (@PhysicalOnly = 'Y' AND @ExtendedLogicalChecks = 'Y')
+  ----------------------------------------------------------------------------------------------------
+
+  IF @ExtendedLogicalChecks NOT IN ('Y','N') OR @ExtendedLogicalChecks IS NULL
   BEGIN
-    INSERT INTO @Errors ([Message])
-    SELECT 'The value for the parameter @ExtendedLogicalChecks is not supported.'
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'The value for the parameter @ExtendedLogicalChecks is not supported.', 16, 1
   END
+
+  IF @PhysicalOnly = 'Y' AND @ExtendedLogicalChecks = 'Y'
+  BEGIN
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'The parameters @PhysicalOnly and @ExtendedLogicalChecks cannot be used together.', 16, 2
+  END
+
+  ----------------------------------------------------------------------------------------------------
 
   IF @TabLock NOT IN ('Y','N') OR @TabLock IS NULL
   BEGIN
-    INSERT INTO @Errors ([Message])
-    SELECT 'The value for the parameter @TabLock is not supported.'
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'The value for the parameter @TabLock is not supported.', 16, 1
   END
 
-  IF EXISTS(SELECT * FROM @SelectedFileGroups WHERE DatabaseName IS NULL OR FileGroupName IS NULL) OR (@FileGroups IS NOT NULL AND NOT EXISTS(SELECT * FROM @SelectedFileGroups)) OR (@FileGroups IS NOT NULL AND NOT EXISTS (SELECT * FROM @SelectedCheckCommands WHERE CheckCommand = 'CHECKFILEGROUP'))
+  ----------------------------------------------------------------------------------------------------
+
+  IF EXISTS(SELECT * FROM @SelectedFileGroups WHERE DatabaseName IS NULL OR FileGroupName IS NULL)
   BEGIN
-    INSERT INTO @Errors ([Message])
-    SELECT 'The value for the parameter @FileGroups is not supported.'
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'The value for the parameter @FileGroups is not supported.', 16, 1
   END
 
-  IF EXISTS(SELECT * FROM @SelectedObjects WHERE DatabaseName IS NULL OR SchemaName IS NULL OR ObjectName IS NULL) OR (@Objects IS NOT NULL AND NOT EXISTS(SELECT * FROM @SelectedObjects)) OR (@Objects IS NOT NULL AND NOT EXISTS (SELECT * FROM @SelectedCheckCommands WHERE CheckCommand = 'CHECKTABLE'))
+  IF @FileGroups IS NOT NULL AND NOT EXISTS(SELECT * FROM @SelectedFileGroups)
   BEGIN
-    INSERT INTO @Errors ([Message])
-    SELECT 'The value for the parameter @Objects is not supported.'
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'The value for the parameter @FileGroups is not supported.', 16, 2
   END
 
-  IF @MaxDOP < 0 OR @MaxDOP > 64 OR (@MaxDOP IS NOT NULL AND NOT (@Version >= 12.050000 OR SERVERPROPERTY('EngineEdition') IN (5, 8)))
+  IF @FileGroups IS NOT NULL AND NOT EXISTS (SELECT * FROM @SelectedCheckCommands WHERE CheckCommand = 'CHECKFILEGROUP')
   BEGIN
-    INSERT INTO @Errors ([Message])
-    SELECT 'The value for the parameter @MaxDOP is not supported.'
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'The value for the parameter @FileGroups is not supported.', 16, 3
   END
+
+  ----------------------------------------------------------------------------------------------------
+
+  IF EXISTS(SELECT * FROM @SelectedObjects WHERE DatabaseName IS NULL OR SchemaName IS NULL OR ObjectName IS NULL)
+  BEGIN
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'The value for the parameter @Objects is not supported.', 16, 1
+  END
+
+  IF (@Objects IS NOT NULL AND NOT EXISTS(SELECT * FROM @SelectedObjects))
+  BEGIN
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'The value for the parameter @Objects is not supported.', 16, 2
+  END
+
+  IF (@Objects IS NOT NULL AND NOT EXISTS (SELECT * FROM @SelectedCheckCommands WHERE CheckCommand = 'CHECKTABLE'))
+  BEGIN
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'The value for the parameter @Objects is not supported.', 16, 3
+  END
+
+  ----------------------------------------------------------------------------------------------------
+
+  IF @MaxDOP < 0 OR @MaxDOP > 64
+  BEGIN
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'The value for the parameter @MaxDOP is not supported.', 16, 1
+  END
+
+  IF @MaxDOP IS NOT NULL AND NOT (@Version >= 12.050000 OR SERVERPROPERTY('EngineEdition') IN (5, 8))
+  BEGIN
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'The value for the parameter @MaxDOP is not supported. MAXDOP is not available in this version of SQL Server.', 16, 2
+  END
+
+  ----------------------------------------------------------------------------------------------------
 
   IF @AvailabilityGroupReplicas NOT IN('ALL','PRIMARY','SECONDARY','PREFERRED_BACKUP_REPLICA') OR @AvailabilityGroupReplicas IS NULL
   BEGIN
-    INSERT INTO @Errors ([Message])
-    SELECT 'The value for the parameter @AvailabilityGroupReplicas is not supported.'
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'The value for the parameter @AvailabilityGroupReplicas is not supported.', 16, 1
   END
+
+  ----------------------------------------------------------------------------------------------------
 
   IF @Updateability NOT IN('READ_ONLY','READ_WRITE','ALL') OR @Updateability IS NULL
   BEGIN
-    INSERT INTO @Errors ([Message])
-    SELECT 'The value for the parameter @Updateability is not supported.'
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'The value for the parameter @Updateability is not supported.', 16, 1
   END
+
+  ----------------------------------------------------------------------------------------------------
 
   IF @TimeLimit < 0
   BEGIN
-    INSERT INTO @Errors ([Message])
-    SELECT 'The value for the parameter @TimeLimit is not supported.'
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'The value for the parameter @TimeLimit is not supported.', 16, 1
   END
+
+  ----------------------------------------------------------------------------------------------------
 
   IF @LockTimeout < 0
   BEGIN
-    INSERT INTO @Errors ([Message])
-    SELECT 'The value for the parameter @LockTimeout is not supported.'
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'The value for the parameter @LockTimeout is not supported.', 16, 1
   END
 
-  IF @LockMessageSeverity NOT IN(10,16)
+  ----------------------------------------------------------------------------------------------------
+
+  IF @LockMessageSeverity NOT IN(10, 16)
   BEGIN
-    INSERT INTO @Errors ([Message])
-    SELECT 'The value for the parameter @LockMessageSeverity is not supported.'
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'The value for the parameter @LockMessageSeverity is not supported.', 16, 1
   END
 
-  IF @DatabaseOrder NOT IN('DATABASE_NAME_ASC','DATABASE_NAME_DESC','DATABASE_SIZE_ASC','DATABASE_SIZE_DESC','DATABASE_LAST_GOOD_CHECK_ASC','DATABASE_LAST_GOOD_CHECK_DESC','REPLICA_LAST_GOOD_CHECK_ASC','REPLICA_LAST_GOOD_CHECK_DESC') OR (@DatabaseOrder IN('DATABASE_LAST_GOOD_CHECK_ASC','DATABASE_LAST_GOOD_CHECK_DESC') AND NOT ((@Version >= 12.06024 AND @Version < 13) OR (@Version >= 13.05026 AND @Version < 14) OR @Version >= 14.0302916)) OR (@DatabaseOrder IN('REPLICA_LAST_GOOD_CHECK_ASC','REPLICA_LAST_GOOD_CHECK_DESC') AND @LogToTable = 'N') OR (@DatabaseOrder IN('DATABASE_LAST_GOOD_CHECK_ASC','DATABASE_LAST_GOOD_CHECK_DESC','REPLICA_LAST_GOOD_CHECK_ASC','REPLICA_LAST_GOOD_CHECK_DESC') AND @CheckCommands <> 'CHECKDB') OR (@DatabaseOrder IS NOT NULL AND SERVERPROPERTY('EngineEdition') = 5)
+  ----------------------------------------------------------------------------------------------------
+
+  IF @StringDelimiter IS NULL OR LEN(@StringDelimiter) > 1
   BEGIN
-    INSERT INTO @Errors ([Message])
-    SELECT 'The value for the parameter @DatabaseOrder is not supported.'
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'The value for the parameter @StringDelimiter is not supported.', 16, 1
   END
 
-  IF @DatabasesInParallel NOT IN('Y','N') OR @DatabasesInParallel IS NULL OR (@DatabasesInParallel = 'Y' AND SERVERPROPERTY('EngineEdition') = 5)
+  ----------------------------------------------------------------------------------------------------
+
+  IF @DatabaseOrder NOT IN('DATABASE_NAME_ASC','DATABASE_NAME_DESC','DATABASE_SIZE_ASC','DATABASE_SIZE_DESC','DATABASE_LAST_GOOD_CHECK_ASC','DATABASE_LAST_GOOD_CHECK_DESC','REPLICA_LAST_GOOD_CHECK_ASC','REPLICA_LAST_GOOD_CHECK_DESC')
   BEGIN
-    INSERT INTO @Errors ([Message])
-    SELECT 'The value for the parameter @DatabasesInParallel is not supported.'
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'The value for the parameter @DatabaseOrder is not supported.', 16, 1
   END
+
+  IF @DatabaseOrder IN('DATABASE_LAST_GOOD_CHECK_ASC','DATABASE_LAST_GOOD_CHECK_DESC') AND NOT ((@Version >= 12.06024 AND @Version < 13) OR (@Version >= 13.05026 AND @Version < 14) OR @Version >= 14.0302916)
+  BEGIN
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'The value for the parameter @DatabaseOrder is not supported. DATABASEPROPERTYEX(''DatabaseName'', ''LastGoodCheckDbTime'') is not available in this version of SQL Server.', 16, 2
+  END
+
+  IF @DatabaseOrder IN('REPLICA_LAST_GOOD_CHECK_ASC','REPLICA_LAST_GOOD_CHECK_DESC') AND @LogToTable = 'N'
+  BEGIN
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'The value for the parameter @DatabaseOrder is not supported. You need to provide the parameter @LogToTable = ''Y''.', 16, 3
+  END
+
+  IF @DatabaseOrder IN('DATABASE_LAST_GOOD_CHECK_ASC','DATABASE_LAST_GOOD_CHECK_DESC','REPLICA_LAST_GOOD_CHECK_ASC','REPLICA_LAST_GOOD_CHECK_DESC') AND @CheckCommands <> 'CHECKDB'
+  BEGIN
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'The value for the parameter @DatabaseOrder is not supported. You need to provide the parameter @CheckCommands = ''CHECKDB''.', 16, 4
+  END
+
+  IF @DatabaseOrder IS NOT NULL AND SERVERPROPERTY('EngineEdition') = 5
+  BEGIN
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'The value for the parameter @DatabaseOrder is not supported. This parameter is not supported in Azure SQL Database.', 16, 5
+  END
+
+  ----------------------------------------------------------------------------------------------------
+
+  IF @DatabasesInParallel NOT IN('Y','N') OR @DatabasesInParallel IS NULL
+  BEGIN
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'The value for the parameter @DatabasesInParallel is not supported.', 16, 1
+  END
+
+  IF @DatabasesInParallel = 'Y' AND SERVERPROPERTY('EngineEdition') = 5
+  BEGIN
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'The value for the parameter @DatabasesInParallel is not supported. This parameter is not supported in Azure SQL Database.', 16, 2
+  END
+
+  ----------------------------------------------------------------------------------------------------
 
   IF @LogToTable NOT IN('Y','N') OR @LogToTable IS NULL
   BEGIN
-    INSERT INTO @Errors ([Message])
-    SELECT 'The value for the parameter @LogToTable is not supported.'
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'The value for the parameter @LogToTable is not supported.', 16, 1
   END
+
+  ----------------------------------------------------------------------------------------------------
 
   IF @Execute NOT IN('Y','N') OR @Execute IS NULL
   BEGIN
-    INSERT INTO @Errors ([Message])
-    SELECT 'The value for the parameter @Execute is not supported.'
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'The value for the parameter @Execute is not supported.', 16, 1
   END
 
   --Additions---------------------------
   IF @Resumable NOT IN('Y','N') OR @Resumable IS NULL
   BEGIN
-    INSERT INTO @Errors ([Message])
-    SELECT 'The value for the parameter @Resumable must be Y or N.'
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'The value for the parameter @Resumable must be Y or N.', 16, 1
   END
   IF @Resumable = 'Y' and @TimeLimit IS NULL
   BEGIN
-    INSERT INTO @Errors ([Message])
-    SELECT 'The value for the parameter @Resumable cannot be Y if @TimeLimit is not set.'
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'The value for the parameter @Resumable cannot be Y if @TimeLimit is not set.', 16, 1
   END
   IF @Resumable = 'Y' AND EXISTS (SELECT CheckCommand FROM @SelectedCheckCommands WHERE CheckCommand NOT IN('CHECKTABLE'))
   BEGIN
-    INSERT INTO @Errors ([Message])
-    SELECT 'The @Resumable parameter currently only supports the CHECKTABLE command.'
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'The @Resumable parameter currently only supports the CHECKTABLE command.', 16, 1
   END
   --------------------------------------
 
   IF EXISTS(SELECT * FROM @Errors)
   BEGIN
-    INSERT INTO @Errors ([Message])
-    SELECT 'The documentation is available at https://ola.hallengren.com/sql-server-integrity-check.html.'
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'The documentation is available at https://ola.hallengren.com/sql-server-integrity-check.html.', 16, 1
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -927,8 +1062,8 @@ BEGIN
   AND DatabaseName NOT IN (SELECT DatabaseName FROM @tmpDatabases)
   IF @@ROWCOUNT > 0
   BEGIN
-    INSERT INTO @Errors ([Message])
-    SELECT 'The following databases in the @Databases parameter do not exist: ' + LEFT(@ErrorMessage,LEN(@ErrorMessage)-1) + '.'
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'The following databases in the @Databases parameter do not exist: ' + LEFT(@ErrorMessage,LEN(@ErrorMessage)-1) + '.', 10, 1
   END
 
   SET @ErrorMessage = ''
@@ -938,8 +1073,8 @@ BEGIN
   AND DatabaseName NOT IN (SELECT DatabaseName FROM @tmpDatabases)
   IF @@ROWCOUNT > 0
   BEGIN
-    INSERT INTO @Errors ([Message])
-    SELECT 'The following databases in the @FileGroups parameter do not exist: ' + LEFT(@ErrorMessage,LEN(@ErrorMessage)-1) + '.'
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'The following databases in the @FileGroups parameter do not exist: ' + LEFT(@ErrorMessage,LEN(@ErrorMessage)-1) + '.', 10, 1
   END
 
   SET @ErrorMessage = ''
@@ -949,8 +1084,8 @@ BEGIN
   AND DatabaseName NOT IN (SELECT DatabaseName FROM @tmpDatabases)
   IF @@ROWCOUNT > 0
   BEGIN
-    INSERT INTO @Errors ([Message])
-    SELECT 'The following databases in the @Objects parameter do not exist: ' + LEFT(@ErrorMessage,LEN(@ErrorMessage)-1) + '.'
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'The following databases in the @Objects parameter do not exist: ' + LEFT(@ErrorMessage,LEN(@ErrorMessage)-1) + '.', 10, 1
   END
 
   SET @ErrorMessage = ''
@@ -960,8 +1095,8 @@ BEGIN
   AND AvailabilityGroupName NOT IN (SELECT AvailabilityGroupName FROM @tmpAvailabilityGroups)
   IF @@ROWCOUNT > 0
   BEGIN
-    INSERT INTO @Errors ([Message])
-    SELECT 'The following availability groups do not exist: ' + LEFT(@ErrorMessage,LEN(@ErrorMessage)-1) + '.'
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'The following availability groups do not exist: ' + LEFT(@ErrorMessage,LEN(@ErrorMessage)-1) + '.', 10, 1
   END
 
   SET @ErrorMessage = ''
@@ -972,8 +1107,8 @@ BEGIN
   AND DatabaseName NOT IN (SELECT DatabaseName FROM @tmpDatabases WHERE Selected = 1)
   IF @@ROWCOUNT > 0
   BEGIN
-    INSERT INTO @Errors ([Message])
-    SELECT 'The following databases have been selected in the @FileGroups parameter, but not in the @Databases or @AvailabilityGroups parameters: ' + LEFT(@ErrorMessage,LEN(@ErrorMessage)-1) + '.'
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'The following databases have been selected in the @FileGroups parameter, but not in the @Databases or @AvailabilityGroups parameters: ' + LEFT(@ErrorMessage,LEN(@ErrorMessage)-1) + '.', 10, 1
   END
 
   SET @ErrorMessage = ''
@@ -984,8 +1119,8 @@ BEGIN
   AND DatabaseName NOT IN (SELECT DatabaseName FROM @tmpDatabases WHERE Selected = 1)
   IF @@ROWCOUNT > 0
   BEGIN
-    INSERT INTO @Errors ([Message])
-    SELECT 'The following databases have been selected in the @Objects parameter, but not in the @Databases or @AvailabilityGroups parameters: ' + LEFT(@ErrorMessage,LEN(@ErrorMessage)-1) + '.'
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'The following databases have been selected in the @Objects parameter, but not in the @Databases or @AvailabilityGroups parameters: ' + LEFT(@ErrorMessage,LEN(@ErrorMessage)-1) + '.', 10, 1
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -994,33 +1129,33 @@ BEGIN
 
   IF @@SERVERNAME <> CAST(SERVERPROPERTY('ServerName') AS nvarchar(max)) AND SERVERPROPERTY('IsHadrEnabled') = 1
   BEGIN
-    INSERT INTO @Errors ([Message])
-    SELECT 'The @@SERVERNAME does not match SERVERPROPERTY(''ServerName''). See ' + CASE WHEN SERVERPROPERTY('IsClustered') = 0 THEN 'https://docs.microsoft.com/en-us/sql/database-engine/install-windows/rename-a-computer-that-hosts-a-stand-alone-instance-of-sql-server' WHEN SERVERPROPERTY('IsClustered') = 1 THEN 'https://docs.microsoft.com/en-us/sql/sql-server/failover-clusters/install/rename-a-sql-server-failover-cluster-instance' END + '.'
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'The @@SERVERNAME does not match SERVERPROPERTY(''ServerName''). See ' + CASE WHEN SERVERPROPERTY('IsClustered') = 0 THEN 'https://docs.microsoft.com/en-us/sql/database-engine/install-windows/rename-a-computer-that-hosts-a-stand-alone-instance-of-sql-server' WHEN SERVERPROPERTY('IsClustered') = 1 THEN 'https://docs.microsoft.com/en-us/sql/sql-server/failover-clusters/install/rename-a-sql-server-failover-cluster-instance' END + '.', 16, 1
   END
 
   ----------------------------------------------------------------------------------------------------
   --// Raise errors                                                                               //--
   ----------------------------------------------------------------------------------------------------
 
-  DECLARE ErrorCursor CURSOR FAST_FORWARD FOR SELECT [Message] FROM @Errors ORDER BY [ID] ASC
+  DECLARE ErrorCursor CURSOR FAST_FORWARD FOR SELECT [Message], Severity, [State] FROM @Errors ORDER BY [ID] ASC
 
   OPEN ErrorCursor
 
-  FETCH ErrorCursor INTO @CurrentMessage
+  FETCH ErrorCursor INTO @CurrentMessage, @CurrentSeverity, @CurrentState
 
   WHILE @@FETCH_STATUS = 0
   BEGIN
-    RAISERROR('%s', 16, 1, @CurrentMessage) WITH NOWAIT
+    RAISERROR('%s', @CurrentSeverity, @CurrentState, @CurrentMessage) WITH NOWAIT
     RAISERROR(@EmptyLine, 10, 1) WITH NOWAIT
 
-    FETCH NEXT FROM ErrorCursor INTO @CurrentMessage
+    FETCH NEXT FROM ErrorCursor INTO @CurrentMessage, @CurrentSeverity, @CurrentState
   END
 
   CLOSE ErrorCursor
 
   DEALLOCATE ErrorCursor
 
-  IF EXISTS (SELECT * FROM @Errors)
+  IF EXISTS (SELECT * FROM @Errors WHERE Severity >= 16)
   BEGIN
     SET @ReturnCode = 50000
     GOTO Logging
@@ -1328,6 +1463,14 @@ BEGIN
 
     SET @CurrentDatabase_sp_executesql = QUOTENAME(@CurrentDatabaseName) + '.sys.sp_executesql'
 
+    BEGIN
+      SET @DatabaseMessage = 'Date and time: ' + CONVERT(nvarchar,SYSDATETIME(),120)
+      RAISERROR('%s',10,1,@DatabaseMessage) WITH NOWAIT
+
+      SET @DatabaseMessage = 'Database: ' + QUOTENAME(@CurrentDatabaseName)
+      RAISERROR('%s',10,1,@DatabaseMessage) WITH NOWAIT
+    END
+
     SELECT @CurrentUserAccess = user_access_desc,
            @CurrentIsReadOnly = is_read_only,
            @CurrentDatabaseState = state_desc,
@@ -1335,6 +1478,23 @@ BEGIN
            @CurrentRecoveryModel = recovery_model_desc
     FROM sys.databases
     WHERE [name] = @CurrentDatabaseName
+
+    BEGIN
+      SET @DatabaseMessage = 'State: ' + @CurrentDatabaseState
+      RAISERROR('%s',10,1,@DatabaseMessage) WITH NOWAIT
+
+      SET @DatabaseMessage = 'Standby: ' + CASE WHEN @CurrentInStandby = 1 THEN 'Yes' ELSE 'No' END
+      RAISERROR('%s',10,1,@DatabaseMessage) WITH NOWAIT
+
+      SET @DatabaseMessage = 'Updateability: ' + CASE WHEN @CurrentIsReadOnly = 1 THEN 'READ_ONLY' WHEN  @CurrentIsReadOnly = 0 THEN 'READ_WRITE' END
+      RAISERROR('%s',10,1,@DatabaseMessage) WITH NOWAIT
+
+      SET @DatabaseMessage = 'User access: ' + @CurrentUserAccess
+      RAISERROR('%s',10,1,@DatabaseMessage) WITH NOWAIT
+
+      SET @DatabaseMessage = 'Recovery model: ' + @CurrentRecoveryModel
+      RAISERROR('%s',10,1,@DatabaseMessage) WITH NOWAIT
+    END
 
     IF @CurrentDatabaseState = 'ONLINE' AND SERVERPROPERTY('EngineEdition') <> 5
     BEGIN
@@ -1371,32 +1531,11 @@ BEGIN
       WHERE database_id = DB_ID(@CurrentDatabaseName)
     END
 
-    SET @DatabaseMessage = 'Date and time: ' + CONVERT(nvarchar,SYSDATETIME(),120)
-    RAISERROR('%s',10,1,@DatabaseMessage) WITH NOWAIT
-
-    SET @DatabaseMessage = 'Database: ' + QUOTENAME(@CurrentDatabaseName)
-    RAISERROR('%s',10,1,@DatabaseMessage) WITH NOWAIT
-
-    SET @DatabaseMessage = 'State: ' + @CurrentDatabaseState
-    RAISERROR('%s',10,1,@DatabaseMessage) WITH NOWAIT
-
-    SET @DatabaseMessage = 'Standby: ' + CASE WHEN @CurrentInStandby = 1 THEN 'Yes' ELSE 'No' END
-    RAISERROR('%s',10,1,@DatabaseMessage) WITH NOWAIT
-
-    SET @DatabaseMessage = 'Updateability: ' + CASE WHEN @CurrentIsReadOnly = 1 THEN 'READ_ONLY' WHEN  @CurrentIsReadOnly = 0 THEN 'READ_WRITE' END
-    RAISERROR('%s',10,1,@DatabaseMessage) WITH NOWAIT
-
-    SET @DatabaseMessage = 'User access: ' + @CurrentUserAccess
-    RAISERROR('%s',10,1,@DatabaseMessage) WITH NOWAIT
-
     IF @CurrentIsDatabaseAccessible IS NOT NULL
     BEGIN
       SET @DatabaseMessage = 'Is accessible: ' + CASE WHEN @CurrentIsDatabaseAccessible = 1 THEN 'Yes' ELSE 'No' END
       RAISERROR('%s',10,1,@DatabaseMessage) WITH NOWAIT
     END
-
-    SET @DatabaseMessage = 'Recovery model: ' + @CurrentRecoveryModel
-    RAISERROR('%s',10,1,@DatabaseMessage) WITH NOWAIT
 
     IF @CurrentAvailabilityGroup IS NOT NULL
     BEGIN
@@ -1435,32 +1574,34 @@ BEGIN
       -- Check database
       IF EXISTS(SELECT * FROM @SelectedCheckCommands WHERE CheckCommand = 'CHECKDB') AND (SYSDATETIME() < @EndTime OR @TimeLimit IS NULL)
       BEGIN
-        SET @CurrentCommandType01 = 'DBCC_CHECKDB'
+        SET @CurrentDatabaseContext = CASE WHEN SERVERPROPERTY('EngineEdition') = 5 THEN @CurrentDatabaseName ELSE 'master' END
 
-        SET @CurrentCommand01 = ''
-        IF @LockTimeout IS NOT NULL SET @CurrentCommand01 = 'SET LOCK_TIMEOUT ' + CAST(@LockTimeout * 1000 AS nvarchar) + '; '
-        SET @CurrentCommand01 += 'DBCC CHECKDB (' + QUOTENAME(@CurrentDatabaseName)
-        IF @NoIndex = 'Y' SET @CurrentCommand01 += ', NOINDEX'
-        SET @CurrentCommand01 += ') WITH NO_INFOMSGS, ALL_ERRORMSGS'
-        IF @PhysicalOnly = 'N' SET @CurrentCommand01 += ', DATA_PURITY'
-        IF @PhysicalOnly = 'Y' SET @CurrentCommand01 += ', PHYSICAL_ONLY'
-        IF @ExtendedLogicalChecks = 'Y' SET @CurrentCommand01 += ', EXTENDED_LOGICAL_CHECKS'
-        IF @TabLock = 'Y' SET @CurrentCommand01 += ', TABLOCK'
-        IF @MaxDOP IS NOT NULL SET @CurrentCommand01 += ', MAXDOP = ' + CAST(@MaxDOP AS nvarchar)
+        SET @CurrentCommandType = 'DBCC_CHECKDB'
 
-        EXECUTE @CurrentCommandOutput01 = [dbo].[CommandExecute] @DatabaseContext = 'master', @Command = @CurrentCommand01, @CommandType = @CurrentCommandType01, @Mode = 1, @DatabaseName = @CurrentDatabaseName, @LogToTable = @LogToTable, @Execute = @Execute
+        SET @CurrentCommand = ''
+        IF @LockTimeout IS NOT NULL SET @CurrentCommand = 'SET LOCK_TIMEOUT ' + CAST(@LockTimeout * 1000 AS nvarchar) + '; '
+        SET @CurrentCommand += 'DBCC CHECKDB (' + QUOTENAME(@CurrentDatabaseName)
+        IF @NoIndex = 'Y' SET @CurrentCommand += ', NOINDEX'
+        SET @CurrentCommand += ') WITH NO_INFOMSGS, ALL_ERRORMSGS'
+        IF @DataPurity = 'Y' SET @CurrentCommand += ', DATA_PURITY'
+        IF @PhysicalOnly = 'Y' SET @CurrentCommand += ', PHYSICAL_ONLY'
+        IF @ExtendedLogicalChecks = 'Y' SET @CurrentCommand += ', EXTENDED_LOGICAL_CHECKS'
+        IF @TabLock = 'Y' SET @CurrentCommand += ', TABLOCK'
+        IF @MaxDOP IS NOT NULL SET @CurrentCommand += ', MAXDOP = ' + CAST(@MaxDOP AS nvarchar)
+
+        EXECUTE @CurrentCommandOutput = dbo.CommandExecute @DatabaseContext = @CurrentDatabaseContext, @Command = @CurrentCommand, @CommandType = @CurrentCommandType, @Mode = 1, @DatabaseName = @CurrentDatabaseName, @LogToTable = @LogToTable, @Execute = @Execute
         SET @Error = @@ERROR
-        IF @Error <> 0 SET @CurrentCommandOutput01 = @Error
-        IF @CurrentCommandOutput01 <> 0 SET @ReturnCode = @CurrentCommandOutput01
+        IF @Error <> 0 SET @CurrentCommandOutput = @Error
+        IF @CurrentCommandOutput <> 0 SET @ReturnCode = @CurrentCommandOutput
       END
 
       -- Check filegroups
       IF EXISTS(SELECT * FROM @SelectedCheckCommands WHERE CheckCommand = 'CHECKFILEGROUP') AND (SYSDATETIME() < @EndTime OR @TimeLimit IS NULL)
       BEGIN
-        SET @CurrentCommand02 = 'SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED; SELECT data_space_id AS FileGroupID, name AS FileGroupName, 0 AS [Order], 0 AS Selected, 0 AS Completed FROM sys.filegroups filegroups WHERE [type] <> ''FX'' ORDER BY CASE WHEN filegroups.name = ''PRIMARY'' THEN 1 ELSE 0 END DESC, filegroups.name ASC'
+        SET @CurrentCommand = 'SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED; SELECT data_space_id AS FileGroupID, name AS FileGroupName, 0 AS [Order], 0 AS Selected, 0 AS Completed FROM sys.filegroups filegroups WHERE [type] <> ''FX'' ORDER BY CASE WHEN filegroups.name = ''PRIMARY'' THEN 1 ELSE 0 END DESC, filegroups.name ASC'
 
         INSERT INTO @tmpFileGroups (FileGroupID, FileGroupName, [Order], Selected, Completed)
-        EXECUTE @CurrentDatabase_sp_executesql  @stmt = @CurrentCommand02
+        EXECUTE @CurrentDatabase_sp_executesql  @stmt = @CurrentCommand
         SET @Error = @@ERROR
         IF @Error <> 0 SET @ReturnCode = @Error
 
@@ -1536,12 +1677,12 @@ BEGIN
           END
 
           -- Does the filegroup exist?
-          SET @CurrentCommand03 = ''
-          IF @LockTimeout IS NOT NULL SET @CurrentCommand03 = 'SET LOCK_TIMEOUT ' + CAST(@LockTimeout * 1000 AS nvarchar) + '; '
-          SET @CurrentCommand03 += 'IF EXISTS(SELECT * FROM sys.filegroups filegroups WHERE [type] <> ''FX'' AND filegroups.data_space_id = @ParamFileGroupID AND filegroups.[name] = @ParamFileGroupName) BEGIN SET @ParamFileGroupExists = 1 END'
+          SET @CurrentCommand = ''
+          IF @LockTimeout IS NOT NULL SET @CurrentCommand = 'SET LOCK_TIMEOUT ' + CAST(@LockTimeout * 1000 AS nvarchar) + '; '
+          SET @CurrentCommand += 'IF EXISTS(SELECT * FROM sys.filegroups filegroups WHERE [type] <> ''FX'' AND filegroups.data_space_id = @ParamFileGroupID AND filegroups.[name] = @ParamFileGroupName) BEGIN SET @ParamFileGroupExists = 1 END'
 
           BEGIN TRY
-            EXECUTE @CurrentDatabase_sp_executesql @stmt = @CurrentCommand03, @params = N'@ParamFileGroupID int, @ParamFileGroupName sysname, @ParamFileGroupExists bit OUTPUT', @ParamFileGroupID = @CurrentFileGroupID, @ParamFileGroupName = @CurrentFileGroupName, @ParamFileGroupExists = @CurrentFileGroupExists OUTPUT
+            EXECUTE @CurrentDatabase_sp_executesql @stmt = @CurrentCommand, @params = N'@ParamFileGroupID int, @ParamFileGroupName sysname, @ParamFileGroupExists bit OUTPUT', @ParamFileGroupID = @CurrentFileGroupID, @ParamFileGroupName = @CurrentFileGroupName, @ParamFileGroupExists = @CurrentFileGroupExists OUTPUT
 
             IF @CurrentFileGroupExists IS NULL SET @CurrentFileGroupExists = 0
           END TRY
@@ -1559,21 +1700,23 @@ BEGIN
 
           IF @CurrentFileGroupExists = 1
           BEGIN
-            SET @CurrentCommandType04 = 'DBCC_CHECKFILEGROUP'
+            SET @CurrentDatabaseContext = @CurrentDatabaseName
 
-            SET @CurrentCommand04 = ''
-            IF @LockTimeout IS NOT NULL SET @CurrentCommand04 = 'SET LOCK_TIMEOUT ' + CAST(@LockTimeout * 1000 AS nvarchar) + '; '
-            SET @CurrentCommand04 += 'DBCC CHECKFILEGROUP (' + QUOTENAME(@CurrentFileGroupName)
-            IF @NoIndex = 'Y' SET @CurrentCommand04 += ', NOINDEX'
-            SET @CurrentCommand04 += ') WITH NO_INFOMSGS, ALL_ERRORMSGS'
-            IF @PhysicalOnly = 'Y' SET @CurrentCommand04 += ', PHYSICAL_ONLY'
-            IF @TabLock = 'Y' SET @CurrentCommand04 += ', TABLOCK'
-            IF @MaxDOP IS NOT NULL SET @CurrentCommand04 += ', MAXDOP = ' + CAST(@MaxDOP AS nvarchar)
+            SET @CurrentCommandType = 'DBCC_CHECKFILEGROUP'
 
-            EXECUTE @CurrentCommandOutput04 = [dbo].[CommandExecute] @DatabaseContext = @CurrentDatabaseName, @Command = @CurrentCommand04, @CommandType = @CurrentCommandType04, @Mode = 1, @DatabaseName = @CurrentDatabaseName, @LogToTable = @LogToTable, @Execute = @Execute
+            SET @CurrentCommand = ''
+            IF @LockTimeout IS NOT NULL SET @CurrentCommand = 'SET LOCK_TIMEOUT ' + CAST(@LockTimeout * 1000 AS nvarchar) + '; '
+            SET @CurrentCommand += 'DBCC CHECKFILEGROUP (' + QUOTENAME(@CurrentFileGroupName)
+            IF @NoIndex = 'Y' SET @CurrentCommand += ', NOINDEX'
+            SET @CurrentCommand += ') WITH NO_INFOMSGS, ALL_ERRORMSGS'
+            IF @PhysicalOnly = 'Y' SET @CurrentCommand += ', PHYSICAL_ONLY'
+            IF @TabLock = 'Y' SET @CurrentCommand += ', TABLOCK'
+            IF @MaxDOP IS NOT NULL SET @CurrentCommand += ', MAXDOP = ' + CAST(@MaxDOP AS nvarchar)
+
+            EXECUTE @CurrentCommandOutput = dbo.CommandExecute @DatabaseContext = @CurrentDatabaseContext, @Command = @CurrentCommand, @CommandType = @CurrentCommandType, @Mode = 1, @DatabaseName = @CurrentDatabaseName, @LogToTable = @LogToTable, @Execute = @Execute
             SET @Error = @@ERROR
-            IF @Error <> 0 SET @CurrentCommandOutput04 = @Error
-            IF @CurrentCommandOutput04 <> 0 SET @ReturnCode = @CurrentCommandOutput04
+            IF @Error <> 0 SET @CurrentCommandOutput = @Error
+            IF @CurrentCommandOutput <> 0 SET @ReturnCode = @CurrentCommandOutput
           END
 
           UPDATE @tmpFileGroups
@@ -1587,55 +1730,57 @@ BEGIN
           SET @CurrentFileGroupName = NULL
           SET @CurrentFileGroupExists = NULL
 
-          SET @CurrentCommand03 = NULL
-          SET @CurrentCommand04 = NULL
-
-          SET @CurrentCommandOutput04 = NULL
-
-          SET @CurrentCommandType04 = NULL
+          SET @CurrentDatabaseContext = NULL
+          SET @CurrentCommand = NULL
+          SET @CurrentCommandOutput = NULL
+          SET @CurrentCommandType = NULL
         END
       END
 
       -- Check disk space allocation structures
       IF EXISTS(SELECT * FROM @SelectedCheckCommands WHERE CheckCommand = 'CHECKALLOC') AND (SYSDATETIME() < @EndTime OR @TimeLimit IS NULL)
       BEGIN
-        SET @CurrentCommandType05 = 'DBCC_CHECKALLOC'
+        SET @CurrentDatabaseContext = CASE WHEN SERVERPROPERTY('EngineEdition') = 5 THEN @CurrentDatabaseName ELSE 'master' END
 
-        SET @CurrentCommand05 = ''
-        IF @LockTimeout IS NOT NULL SET @CurrentCommand05 = 'SET LOCK_TIMEOUT ' + CAST(@LockTimeout * 1000 AS nvarchar) + '; '
-        SET @CurrentCommand05 += 'DBCC CHECKALLOC (' + QUOTENAME(@CurrentDatabaseName)
-        SET @CurrentCommand05 += ') WITH NO_INFOMSGS, ALL_ERRORMSGS'
-        IF @TabLock = 'Y' SET @CurrentCommand05 += ', TABLOCK'
+        SET @CurrentCommandType = 'DBCC_CHECKALLOC'
 
-        EXECUTE @CurrentCommandOutput05 = [dbo].[CommandExecute] @DatabaseContext = 'master', @Command = @CurrentCommand05, @CommandType = @CurrentCommandType05, @Mode = 1, @DatabaseName = @CurrentDatabaseName, @LogToTable = @LogToTable, @Execute = @Execute
+        SET @CurrentCommand = ''
+        IF @LockTimeout IS NOT NULL SET @CurrentCommand = 'SET LOCK_TIMEOUT ' + CAST(@LockTimeout * 1000 AS nvarchar) + '; '
+        SET @CurrentCommand += 'DBCC CHECKALLOC (' + QUOTENAME(@CurrentDatabaseName)
+        SET @CurrentCommand += ') WITH NO_INFOMSGS, ALL_ERRORMSGS'
+        IF @TabLock = 'Y' SET @CurrentCommand += ', TABLOCK'
+
+        EXECUTE @CurrentCommandOutput = dbo.CommandExecute @DatabaseContext = @CurrentDatabaseContext, @Command = @CurrentCommand, @CommandType = @CurrentCommandType, @Mode = 1, @DatabaseName = @CurrentDatabaseName, @LogToTable = @LogToTable, @Execute = @Execute
         SET @Error = @@ERROR
-        IF @Error <> 0 SET @CurrentCommandOutput05 = @Error
-        IF @CurrentCommandOutput05 <> 0 SET @ReturnCode = @CurrentCommandOutput05
+        IF @Error <> 0 SET @CurrentCommandOutput = @Error
+        IF @CurrentCommandOutput <> 0 SET @ReturnCode = @CurrentCommandOutput
       END
 
       -- Check catalog
       IF EXISTS(SELECT * FROM @SelectedCheckCommands WHERE CheckCommand = 'CHECKCATALOG') AND (SYSDATETIME() < @EndTime OR @TimeLimit IS NULL)
       BEGIN
-        SET @CurrentCommandType09 = 'DBCC_CHECKCATALOG'
+        SET @CurrentDatabaseContext = CASE WHEN SERVERPROPERTY('EngineEdition') = 5 THEN @CurrentDatabaseName ELSE 'master' END
 
-        SET @CurrentCommand09 = ''
-        IF @LockTimeout IS NOT NULL SET @CurrentCommand09 = 'SET LOCK_TIMEOUT ' + CAST(@LockTimeout * 1000 AS nvarchar) + '; '
-        SET @CurrentCommand09 += 'DBCC CHECKCATALOG (' + QUOTENAME(@CurrentDatabaseName)
-        SET @CurrentCommand09 += ') WITH NO_INFOMSGS'
+        SET @CurrentCommandType = 'DBCC_CHECKCATALOG'
 
-        EXECUTE @CurrentCommandOutput09 = [dbo].[CommandExecute] @DatabaseContext = 'master', @Command = @CurrentCommand09, @CommandType = @CurrentCommandType09, @Mode = 1, @DatabaseName = @CurrentDatabaseName, @LogToTable = @LogToTable, @Execute = @Execute
+        SET @CurrentCommand = ''
+        IF @LockTimeout IS NOT NULL SET @CurrentCommand = 'SET LOCK_TIMEOUT ' + CAST(@LockTimeout * 1000 AS nvarchar) + '; '
+        SET @CurrentCommand += 'DBCC CHECKCATALOG (' + QUOTENAME(@CurrentDatabaseName)
+        SET @CurrentCommand += ') WITH NO_INFOMSGS'
+
+        EXECUTE @CurrentCommandOutput = dbo.CommandExecute @DatabaseContext = @CurrentDatabaseContext, @Command = @CurrentCommand, @CommandType = @CurrentCommandType, @Mode = 1, @DatabaseName = @CurrentDatabaseName, @LogToTable = @LogToTable, @Execute = @Execute
         SET @Error = @@ERROR
-        IF @Error <> 0 SET @CurrentCommandOutput09 = @Error
-        IF @CurrentCommandOutput09 <> 0 SET @ReturnCode = @CurrentCommandOutput09
+        IF @Error <> 0 SET @CurrentCommandOutput = @Error
+        IF @CurrentCommandOutput <> 0 SET @ReturnCode = @CurrentCommandOutput
       END
 
       -- Check objects
       IF EXISTS(SELECT * FROM @SelectedCheckCommands WHERE CheckCommand = 'CHECKTABLE') AND (SYSDATETIME() < @EndTime OR @TimeLimit IS NULL)
       BEGIN
-        SET @CurrentCommand06 = 'SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED; SELECT schemas.[schema_id] AS SchemaID, schemas.[name] AS SchemaName, objects.[object_id] AS ObjectID, objects.[name] AS ObjectName, RTRIM(objects.[type]) AS ObjectType, 0 AS [Order], 0 AS Selected, 0 AS Completed FROM sys.objects objects INNER JOIN sys.schemas schemas ON objects.schema_id = schemas.schema_id LEFT OUTER JOIN sys.tables tables ON objects.object_id = tables.object_id WHERE objects.[type] IN(''U'',''V'') AND EXISTS(SELECT * FROM sys.indexes indexes WHERE indexes.object_id = objects.object_id)' + CASE WHEN @Version >= 12 THEN ' AND (tables.is_memory_optimized = 0 OR is_memory_optimized IS NULL)' ELSE '' END + ' ORDER BY schemas.name ASC, objects.name ASC'
+        SET @CurrentCommand = 'SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED; SELECT schemas.[schema_id] AS SchemaID, schemas.[name] AS SchemaName, objects.[object_id] AS ObjectID, objects.[name] AS ObjectName, RTRIM(objects.[type]) AS ObjectType, 0 AS [Order], 0 AS Selected, 0 AS Completed FROM sys.objects objects INNER JOIN sys.schemas schemas ON objects.schema_id = schemas.schema_id LEFT OUTER JOIN sys.tables tables ON objects.object_id = tables.object_id WHERE objects.[type] IN(''U'',''V'') AND EXISTS(SELECT * FROM sys.indexes indexes WHERE indexes.object_id = objects.object_id)' + CASE WHEN @Version >= 12 THEN ' AND (tables.is_memory_optimized = 0 OR is_memory_optimized IS NULL)' ELSE '' END + ' ORDER BY schemas.name ASC, objects.name ASC'
 
         INSERT INTO @tmpObjects (SchemaID, SchemaName, ObjectID, ObjectName, ObjectType, [Order], Selected, Completed)
-        EXECUTE @CurrentDatabase_sp_executesql @stmt = @CurrentCommand06
+        EXECUTE @CurrentDatabase_sp_executesql @stmt = @CurrentCommand
         SET @Error = @@ERROR
         IF @Error <> 0 SET @ReturnCode = @Error
 
@@ -1768,12 +1913,12 @@ BEGIN
           END
 
           -- Does the object exist?
-          SET @CurrentCommand07 = ''
-          IF @LockTimeout IS NOT NULL SET @CurrentCommand07 = 'SET LOCK_TIMEOUT ' + CAST(@LockTimeout * 1000 AS nvarchar) + '; '
-          SET @CurrentCommand07 += 'IF EXISTS(SELECT * FROM sys.objects objects INNER JOIN sys.schemas schemas ON objects.schema_id = schemas.schema_id LEFT OUTER JOIN sys.tables tables ON objects.object_id = tables.object_id WHERE objects.[type] IN(''U'',''V'') AND EXISTS(SELECT * FROM sys.indexes indexes WHERE indexes.object_id = objects.object_id)' + CASE WHEN @Version >= 12 THEN ' AND (tables.is_memory_optimized = 0 OR is_memory_optimized IS NULL)' ELSE '' END + ' AND schemas.[schema_id] = @ParamSchemaID AND schemas.[name] = @ParamSchemaName AND objects.[object_id] = @ParamObjectID AND objects.[name] = @ParamObjectName AND objects.[type] = @ParamObjectType) BEGIN SET @ParamObjectExists = 1 END'
+          SET @CurrentCommand = ''
+          IF @LockTimeout IS NOT NULL SET @CurrentCommand = 'SET LOCK_TIMEOUT ' + CAST(@LockTimeout * 1000 AS nvarchar) + '; '
+          SET @CurrentCommand += 'IF EXISTS(SELECT * FROM sys.objects objects INNER JOIN sys.schemas schemas ON objects.schema_id = schemas.schema_id LEFT OUTER JOIN sys.tables tables ON objects.object_id = tables.object_id WHERE objects.[type] IN(''U'',''V'') AND EXISTS(SELECT * FROM sys.indexes indexes WHERE indexes.object_id = objects.object_id)' + CASE WHEN @Version >= 12 THEN ' AND (tables.is_memory_optimized = 0 OR is_memory_optimized IS NULL)' ELSE '' END + ' AND schemas.[schema_id] = @ParamSchemaID AND schemas.[name] = @ParamSchemaName AND objects.[object_id] = @ParamObjectID AND objects.[name] = @ParamObjectName AND objects.[type] = @ParamObjectType) BEGIN SET @ParamObjectExists = 1 END'
 
           BEGIN TRY
-            EXECUTE @CurrentDatabase_sp_executesql @stmt = @CurrentCommand07, @params = N'@ParamSchemaID int, @ParamSchemaName sysname, @ParamObjectID int, @ParamObjectName sysname, @ParamObjectType sysname, @ParamObjectExists bit OUTPUT', @ParamSchemaID = @CurrentSchemaID, @ParamSchemaName = @CurrentSchemaName, @ParamObjectID = @CurrentObjectID, @ParamObjectName = @CurrentObjectName, @ParamObjectType = @CurrentObjectType, @ParamObjectExists = @CurrentObjectExists OUTPUT
+            EXECUTE @CurrentDatabase_sp_executesql @stmt = @CurrentCommand, @params = N'@ParamSchemaID int, @ParamSchemaName sysname, @ParamObjectID int, @ParamObjectName sysname, @ParamObjectType sysname, @ParamObjectExists bit OUTPUT', @ParamSchemaID = @CurrentSchemaID, @ParamSchemaName = @CurrentSchemaName, @ParamObjectID = @CurrentObjectID, @ParamObjectName = @CurrentObjectName, @ParamObjectType = @CurrentObjectType, @ParamObjectExists = @CurrentObjectExists OUTPUT
 
             IF @CurrentObjectExists IS NULL SET @CurrentObjectExists = 0
           END TRY
@@ -1791,31 +1936,33 @@ BEGIN
 
           IF @CurrentObjectExists = 1
           BEGIN
-            SET @CurrentCommandType08 = 'DBCC_CHECKTABLE'
+            SET @CurrentDatabaseContext = @CurrentDatabaseName
 
-            SET @CurrentCommand08 = ''
-            IF @LockTimeout IS NOT NULL SET @CurrentCommand08 = 'SET LOCK_TIMEOUT ' + CAST(@LockTimeout * 1000 AS nvarchar) + '; '
-            SET @CurrentCommand08 += 'DBCC CHECKTABLE (''' + QUOTENAME(@CurrentSchemaName) + '.' + QUOTENAME(@CurrentObjectName) + ''''
-            IF @NoIndex = 'Y' SET @CurrentCommand08 += ', NOINDEX'
-            SET @CurrentCommand08 += ') WITH NO_INFOMSGS, ALL_ERRORMSGS'
-            IF @PhysicalOnly = 'N' SET @CurrentCommand08 += ', DATA_PURITY'
-            IF @PhysicalOnly = 'Y' SET @CurrentCommand08 += ', PHYSICAL_ONLY'
-            IF @ExtendedLogicalChecks = 'Y' SET @CurrentCommand08 += ', EXTENDED_LOGICAL_CHECKS'
-            IF @TabLock = 'Y' SET @CurrentCommand08 += ', TABLOCK'
-            IF @MaxDOP IS NOT NULL SET @CurrentCommand08 += ', MAXDOP = ' + CAST(@MaxDOP AS nvarchar)
+            SET @CurrentCommandType = 'DBCC_CHECKTABLE'
+
+            SET @CurrentCommand = ''
+            IF @LockTimeout IS NOT NULL SET @CurrentCommand = 'SET LOCK_TIMEOUT ' + CAST(@LockTimeout * 1000 AS nvarchar) + '; '
+            SET @CurrentCommand += 'DBCC CHECKTABLE (''' + QUOTENAME(@CurrentSchemaName) + '.' + QUOTENAME(@CurrentObjectName) + ''''
+            IF @NoIndex = 'Y' SET @CurrentCommand += ', NOINDEX'
+            SET @CurrentCommand += ') WITH NO_INFOMSGS, ALL_ERRORMSGS'
+            IF @DataPurity = 'Y' SET @CurrentCommand += ', DATA_PURITY'
+            IF @PhysicalOnly = 'Y' SET @CurrentCommand += ', PHYSICAL_ONLY'
+            IF @ExtendedLogicalChecks = 'Y' SET @CurrentCommand += ', EXTENDED_LOGICAL_CHECKS'
+            IF @TabLock = 'Y' SET @CurrentCommand += ', TABLOCK'
+            IF @MaxDOP IS NOT NULL SET @CurrentCommand += ', MAXDOP = ' + CAST(@MaxDOP AS nvarchar)
 
             --If average run time is longer than remaining time + one minute to give a little overhead, skip
             IF @Resumable = 'Y' AND DATEADD(MS, @avgRun, GETDATE()) > DATEADD(MI, 1, @EndTime)
             BEGIN
-              SET @CurrentCommand08 = 'Skipped due to TimeLimit Constraint: ' + CONVERT(nvarchar, DATEADD(MS, @avgRun, GETDATE()), 121) + ' is greater than ' + CONVERT(nvarchar, DATEADD(MI, 1, @EndTime), 121)
+              SET @CurrentCommand = 'Skipped due to TimeLimit Constraint: ' + CONVERT(nvarchar, DATEADD(MS, @avgRun, GETDATE()), 121) + ' is greater than ' + CONVERT(nvarchar, DATEADD(MI, 1, @EndTime), 121)
             END
             ELSE
             BEGIN
               IF @Resumable = 'Y'
               BEGIN
                 SET @cmdStartTime = GETDATE()
-              END            
-              EXECUTE @CurrentCommandOutput08 = [dbo].[CommandExecute] @DatabaseContext = @CurrentDatabaseName, @Command = @CurrentCommand08, @CommandType = @CurrentCommandType08, @Mode = 1, @DatabaseName = @CurrentDatabaseName, @SchemaName = @CurrentSchemaName, @ObjectName = @CurrentObjectName, @ObjectType = @CurrentObjectType, @LogToTable = @LogToTable, @Execute = @Execute
+              END
+              EXECUTE @CurrentCommandOutput = dbo.CommandExecute @DatabaseContext = @CurrentDatabaseContext, @Command = @CurrentCommand, @CommandType = @CurrentCommandType, @Mode = 1, @DatabaseName = @CurrentDatabaseName, @SchemaName = @CurrentSchemaName, @ObjectName = @CurrentObjectName, @ObjectType = @CurrentObjectType, @LogToTable = @LogToTable, @Execute = @Execute
               IF @Resumable = 'Y'
               BEGIN
                 --Set End Time and last check date
@@ -1830,8 +1977,8 @@ BEGIN
               END
             END
             SET @Error = @@ERROR
-            IF @Error <> 0 SET @CurrentCommandOutput08 = @Error
-            IF @CurrentCommandOutput08 <> 0 SET @ReturnCode = @CurrentCommandOutput08
+            IF @Error <> 0 SET @CurrentCommandOutput = @Error
+            IF @CurrentCommandOutput <> 0 SET @ReturnCode = @CurrentCommandOutput
           END
 
           IF @Resumable = 'Y'
@@ -1865,12 +2012,10 @@ BEGIN
           SET @CurrentObjectType = NULL
           SET @CurrentObjectExists = NULL
 
-          SET @CurrentCommand07 = NULL
-          SET @CurrentCommand08 = NULL
-
-          SET @CurrentCommandOutput08 = NULL
-
-          SET @CurrentCommandType08 = NULL
+          SET @CurrentDatabaseContext = NULL
+          SET @CurrentCommand = NULL
+          SET @CurrentCommandOutput = NULL
+          SET @CurrentCommandType = NULL
 
           SET @avgRun = NULL
           SET @previousRunDate = NULL
@@ -1928,19 +2073,10 @@ BEGIN
     SET @CurrentIsPreferredBackupReplica = NULL
     SET @CurrentDatabaseMirroringRole = NULL
 
-    SET @CurrentCommand01 = NULL
-    SET @CurrentCommand02 = NULL
-    SET @CurrentCommand05 = NULL
-    SET @CurrentCommand06 = NULL
-    SET @CurrentCommand09 = NULL
-
-    SET @CurrentCommandOutput01 = NULL
-    SET @CurrentCommandOutput05 = NULL
-    SET @CurrentCommandOutput09 = NULL
-
-    SET @CurrentCommandType01 = NULL
-    SET @CurrentCommandType05 = NULL
-    SET @CurrentCommandType09 = NULL
+    SET @CurrentDatabaseContext = NULL
+    SET @CurrentCommand = NULL
+    SET @CurrentCommandOutput = NULL
+    SET @CurrentCommandType = NULL
 
     DELETE FROM @tmpFileGroups
     DELETE FROM @tmpObjects
