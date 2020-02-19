@@ -1086,10 +1086,10 @@ BEGIN
       RAISERROR(@EmptyLine,10,1) WITH NOWAIT
     END CATCH
     
-    IF @DataDomainBoostLockboxPath IS NULL SET @DataDomainBoostLockboxPath = (SELECT [VALUE] FROM #TempDataDomainBoostConfig WHERE [KEY] = 'LOCKBOX_PATH')
-    IF @DataDomainBoostUser IS NULL SET @DataDomainBoostUser = (SELECT [VALUE] FROM #TempDataDomainBoostConfig WHERE [KEY] = 'DDBOOST_USER')
-    IF @DataDomainBoostHost IS NULL SET @DataDomainBoostHost = (SELECT [VALUE] FROM #TempDataDomainBoostConfig WHERE [KEY] = 'DEVICE_HOST')
-    IF @DataDomainBoostDevicePath IS NULL SET @DataDomainBoostDevicePath = (SELECT [VALUE] FROM #TempDataDomainBoostConfig WHERE [KEY] = 'DEVICE_PATH')
+    IF @DataDomainBoostLockboxPath IS NULL SET @DataDomainBoostLockboxPath = LTRIM(RTRIM((SELECT [VALUE] FROM #TempDataDomainBoostConfig WHERE [KEY] = 'LOCKBOX_PATH')))
+    IF @DataDomainBoostUser IS NULL SET @DataDomainBoostUser = LTRIM(RTRIM((SELECT [VALUE] FROM #TempDataDomainBoostConfig WHERE [KEY] = 'DDBOOST_USER')))
+    IF @DataDomainBoostHost IS NULL SET @DataDomainBoostHost = LTRIM(RTRIM((SELECT [VALUE] FROM #TempDataDomainBoostConfig WHERE [KEY] = 'DEVICE_HOST')))
+    IF @DataDomainBoostDevicePath IS NULL SET @DataDomainBoostDevicePath = LTRIM(RTRIM((SELECT [VALUE] FROM #TempDataDomainBoostConfig WHERE [KEY] = 'DEVICE_PATH')))
 
     DROP TABLE #TempDataDomainBoostConfig
     SET @CurrentCommand = NULL
