@@ -1985,7 +1985,7 @@ BEGIN
           BEGIN
             UPDATE dbo.CheckTableObjects
             SET [LastCheckDate] = @lastCheckDate
-            , [Command] = @CurrentCommand08
+            , [Command] = @CurrentCommand
             , [AvgRunDuration_MS] = @avgRun
             , PreviousRunDate = @previousRunDate
             , PreviousRunDuration_MS = @prevousRunDuration_MS
