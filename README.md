@@ -1,3 +1,12 @@
+# Custom Solution
+Main differences are in the DatabaseIntegrityCheck script and added the CheckTableObjects table
+
+Added Parameters:<br>
+ - @Resumable - valid values are 'Y' or 'N'
+   - defaults to 'N'
+   - Must be used in conjunction with @TimeLimit
+    - Can only be used if the CheckTable command is specified
+
 # SQL Server Maintenance Solution
 [![licence badge]][licence]
 [![stars badge]][stars]
