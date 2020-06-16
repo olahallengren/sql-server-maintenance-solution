@@ -1038,10 +1038,10 @@ BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
     SELECT 'The value for the parameter @Resumable cannot be Y if @TimeLimit is not set.', 16, 1
   END
-  IF @Resumable = 'Y' AND EXISTS (SELECT CheckCommand FROM @SelectedCheckCommands WHERE CheckCommand NOT IN('CHECKTABLE'))
+  IF @Resumable = 'Y' AND NOT EXISTS (SELECT CheckCommand FROM @SelectedCheckCommands WHERE CheckCommand IN('CHECKTABLE'))
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The @Resumable parameter currently only supports the CHECKTABLE command.', 16, 1
+    SELECT 'The @Resumable parameter can only be used if the CHECKTABLE command is specified.', 16, 1
   END
   --------------------------------------
 
@@ -1891,7 +1891,8 @@ BEGIN
             AND LastCheckDate <> CAST(@StartTime as date) --makes sure it's not the same day, as we don't need to run it again
             ORDER BY
             CASE WHEN @OrderBySmallest = 1 THEN used_page_count END ASC,
-            CASE WHEN @OrderBySmallest = 0 THEN database_name END ASC
+            CASE WHEN @OrderBySmallest = 0 THEN database_name END ASC,
+            LastCheckDate ASC, StartTime Asc
           END
           ELSE
           BEGIN
@@ -1954,7 +1955,7 @@ BEGIN
             --If average run time is longer than remaining time + one minute to give a little overhead, skip
             IF @Resumable = 'Y' AND DATEADD(MS, @avgRun, GETDATE()) > DATEADD(MI, 1, @EndTime)
             BEGIN
-              SET @CurrentCommand = 'Skipped due to TimeLimit Constraint: ' + CONVERT(nvarchar, DATEADD(MS, @avgRun, GETDATE()), 121) + ' is greater than ' + CONVERT(nvarchar, DATEADD(MI, 1, @EndTime), 121)
+              SET @CurrentCommand = 'Skipped due to TimeLimit Constraint. Estimated EndTime (' + CONVERT(nvarchar, DATEADD(MS, @avgRun, GETDATE()), 121) + ') is greater than Specified EndTime (' + CONVERT(nvarchar, DATEADD(MI, 1, @EndTime), 121) + ')'
             END
             ELSE
             BEGIN
@@ -1970,7 +1971,7 @@ BEGIN
                 SET @lastCheckDate = @StartTime
                 --Set run duration of this run and the new execution count
                 SET @newRunDuration = DATEDIFF(ms, @cmdStartTime, @cmdEndTime)
-                SET @newExecutionCount = @originalExecutionCount + 1
+                SET @newExecutionCount = @origExecutionCount + 1
                 --Calculate the new average run time
                 --This formula works since the number of executions is being updated in the previous step
                 SET @avgRun = @avgRun + ((@newRunDuration - @avgRun) / @newExecutionCount)

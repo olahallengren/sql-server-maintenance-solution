@@ -3,10 +3,20 @@ Main differences are in the DatabaseIntegrityCheck script and added the CheckTab
 
 Added Parameters:<br>
  - @Resumable - valid values are 'Y' or 'N'
-   - defaults to 'N'
-   - Must be used in conjunction with @TimeLimit
+    - defaults to 'N'
+    - Must be used in conjunction with @TimeLimit
     - Can only be used if the CheckTable command is specified
+    - Runs CheckAlloc, then CheckCatalog, then CheckTable
+      - This is a different order than original Ola, which was CheckAlloc, CheckTable, CheckCatalog
+    - Will only run CHECKTABLE checks once per day, as it makes sure that "dbo.CheckTableObjects.LastCheckDate <> CAST(@StartTime as date)"
+      - This is to prevent a loop of it just going through the same tables over and over during the time window
+      - To reset either Truncate the CheckTableObjects table, or update LastCheckDate to an older date
+        - ```UPDATE dbo.CheckTableObjects SET LastCheckDate = DATEADD(DAY, -1, LastCheckDate) ```
 
+Example:
+```sql    
+EXECUTE [dbo].[DatabaseIntegrityCheck] @Databases = 'ALL_DATABASES', @CheckCommands = 'CHECKALLOC,CHECKCATALOG,CHECKTABLE', @TimeLimit = 18000, @LogToTable = 'Y', @Execute = 'Y', @Resumable = 'Y'
+```
 # SQL Server Maintenance Solution
 [![licence badge]][licence]
 [![stars badge]][stars]
