@@ -681,8 +681,10 @@ BEGIN
 
   ----------------------------------------------------------------------------------------------------
   --// Update Persistent Table if we need to resume operations                                    //--
+  --// This is done here so the order can be updated appropriately                                //--
   ----------------------------------------------------------------------------------------------------
 
+-------------------TAKE SNAPSHOT HERE IF NEEDED, OTHERWISE THIS WILL FAIL--------------------------
   IF @Resumable = 'Y'
   BEGIN
     --Populate dbo.CheckTableObjects here?
@@ -1036,13 +1038,18 @@ BEGIN
   IF @Resumable = 'Y' and @TimeLimit IS NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @Resumable cannot be Y if @TimeLimit is not set.', 16, 1
+    SELECT 'The value for the parameter @Resumable cannot be Y if @TimeLimit is not set.', 16, 2
   END
   IF @Resumable = 'Y' AND NOT EXISTS (SELECT CheckCommand FROM @SelectedCheckCommands WHERE CheckCommand IN('CHECKTABLE'))
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The @Resumable parameter can only be used if the CHECKTABLE command is specified.', 16, 1
+    SELECT 'The @Resumable parameter can only be used if the CHECKTABLE command is specified.', 16, 3
   END
+  -- IF @Resumable = 'Y' AND @DatabaseOrder IS NOT NULL
+  -- BEGIN
+  --   INSERT INTO @Errors ([Message], Severity, [State])
+  --   SELECT 'The @Resumable parameter will override any order specified by the @DatabaseOrder parameter.', 10, 1
+  -- END
   --------------------------------------
 
   IF EXISTS(SELECT * FROM @Errors)
@@ -1290,24 +1297,25 @@ BEGIN
     UPDATE tmpDatabases
     SET [Order] = RowNumber
   END
-  ELSE
-  IF @DatabaseOrder IS NULL AND @Resumable = 'Y'
+  --Addition----------------------------
+  IF @Resumable = 'Y'
   BEGIN
     WITH cte1 AS (
       SELECT [database_name], MIN(LastCheckDate) as MinLastCheckDate
       FROM dbo.CheckTableObjects
       GROUP BY [database_name]
     ), cte2 AS (
-      SELECT [database_name], MinLastCheckDate, ROW_NUMBER() OVER (ORDER BY MinLastCheckDate ASC, [database_name] ASC) as RowNumber
+      SELECT cte1.[database_name], cte1.MinLastCheckDate, ROW_NUMBER() OVER (ORDER BY cte1.MinLastCheckDate ASC, tmpDatabases.[Order] ASC) as RowNumber
       FROM cte1
-      JOIN @tmpDatabases tmpDatabases on tmpDatabases.DatabaseName = cte1.[database_name] AND tmpDatabases.Selected = 1
+      JOIN @tmpDatabases tmpDatabases on tmpDatabases.DatabaseName = cte1.[database_name]
+      WHERE tmpDatabases.Selected = 1
     )
     UPDATE @tmpDatabases
     SET [Order] = cte2.RowNumber
     FROM @tmpDatabases tmpDatabases
     JOIN cte2 on cte2.database_name = tmpDatabases.DatabaseName
   END
-
+  --------------------------------------
   ----------------------------------------------------------------------------------------------------
   --// Update the queue                                                                           //--
   ----------------------------------------------------------------------------------------------------
@@ -1778,6 +1786,8 @@ BEGIN
       IF EXISTS(SELECT * FROM @SelectedCheckCommands WHERE CheckCommand = 'CHECKTABLE') AND (SYSDATETIME() < @EndTime OR @TimeLimit IS NULL)
       BEGIN
         SET @CurrentCommand = 'SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED; SELECT schemas.[schema_id] AS SchemaID, schemas.[name] AS SchemaName, objects.[object_id] AS ObjectID, objects.[name] AS ObjectName, RTRIM(objects.[type]) AS ObjectType, 0 AS [Order], 0 AS Selected, 0 AS Completed FROM sys.objects objects INNER JOIN sys.schemas schemas ON objects.schema_id = schemas.schema_id LEFT OUTER JOIN sys.tables tables ON objects.object_id = tables.object_id WHERE objects.[type] IN(''U'',''V'') AND EXISTS(SELECT * FROM sys.indexes indexes WHERE indexes.object_id = objects.object_id)' + CASE WHEN @Version >= 12 THEN ' AND (tables.is_memory_optimized = 0 OR is_memory_optimized IS NULL)' ELSE '' END + ' ORDER BY schemas.name ASC, objects.name ASC'
+
+      -------------------TAKE SNAPSHOT HERE IF NEEDED, OTHERWISE THIS WILL FAIL--------------------------
 
         INSERT INTO @tmpObjects (SchemaID, SchemaName, ObjectID, ObjectName, ObjectType, [Order], Selected, Completed)
         EXECUTE @CurrentDatabase_sp_executesql @stmt = @CurrentCommand
