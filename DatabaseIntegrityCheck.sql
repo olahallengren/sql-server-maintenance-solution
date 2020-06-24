@@ -684,17 +684,63 @@ BEGIN
   --// This is done here so the order can be updated appropriately                                //--
   ----------------------------------------------------------------------------------------------------
 
--------------------TAKE SNAPSHOT HERE IF NEEDED, OTHERWISE THIS WILL FAIL--------------------------
   IF @Resumable = 'Y'
   BEGIN
-    --Populate dbo.CheckTableObjects here?
+
+    DECLARE @agbit bit, @role tinyint, @secondaryRoleAllowConnections tinyint, @hasMemOptFG bit, @snapName nvarchar(128), @snapCreated bit
+
     WHILE 1=1
     BEGIN
-      SELECT TOP 1 @CurrentDatabaseName = DatabaseName, @dbtype = DatabaseType FROM @tmpDatabases WHERE Selected = 1 AND Completed = 0
+      SELECT TOP 1 @CurrentDatabaseName = DatabaseName, @dbtype = DatabaseType, @agbit = AvailabilityGroup FROM @tmpDatabases WHERE Selected = 1 AND Completed = 0
       IF @@ROWCOUNT = 0
       BEGIN
         BREAK
       END
+      SET @CurrentDatabase_sp_executesql = QUOTENAME(@CurrentDatabaseName) + '.sys.sp_executesql'
+     
+     --Check if we need to create a snapshot
+      IF @agbit = 1
+      BEGIN
+      	select @role = s.role, @secondaryRoleAllowConnections = r.secondary_role_allow_connections
+	      from sys.databases d
+	      join sys.dm_hadr_availability_replica_states s on d.replica_id = s.replica_id
+	      join sys.availability_replicas r on s.replica_id = r.replica_id
+        where d.name = @CurrentDatabaseName
+
+        --role = 2 means secondary, secondaryRoleAllowConnections = 0 means non-readable secondary
+        IF @role = 2 and @secondaryRoleAllowConnections = 0
+        BEGIN
+          --We need a snapshot but first we need to make sure the database doesnt have mem opt tables for versions older than SQL 2019
+          IF @Version < 15
+          BEGIN
+            set @sqlcmd = 'IF EXISTS (SELECT * FROM sys.filegroups WHERE type = ''FX'') BEGIN SET @currentHasMemOptFG = 1 END ELSE BEGIN SET @currentHasMemOptFG = 0 END'
+            execute @CurrentDatabase_sp_executesql @stmt = @sqlcmd, @params = N'@currentHasMemOptFG bit OUTPUT', @currentHasMemOptFG = @hasMemOptFG OUTPUT
+          END
+
+          IF @hasMemOptFG = 0 OR @hasMemOptFG IS NULL
+          BEGIN 
+            --Build and execute create snapshot statement
+            SET @snapName = @CurrentDatabaseName + '_RollIntegChkInfo_snapshot_' + CONVERT(nvarchar, @StartTime, 112)
+            SET @sqlcmd = 'CREATE DATABASE ' + QUOTENAME(@snapName) + ' ON '
+            SELECT @sqlcmd = @sqlcmd + '(Name = ' + QUOTENAME(name) + ', Filename = '''
+              + physical_name --+ CASE WHEN @SnapshotPath = 'DEFAULT' THEN physical_name ELSE @SnapshotPath + '\' + name END
+              + '_CHKALOCCAT_snapshot_' + CONVERT(nvarchar, @StartTime, 112) + '''),'
+            FROM sys.master_files WHERE database_id = DB_ID(@CurrentDatabaseName) AND type = 0
+            SET @sqlcmd = LEFT(@sqlcmd, LEN(@sqlcmd) - 1)
+            SET @sqlcmd = @sqlcmd + ' AS SNAPSHOT OF ' + QUOTENAME(@CurrentDatabaseName)
+            EXEC sp_executesql @sqlcmd
+            SET @snapCreated = 1
+          END
+
+        END
+      END
+
+
+    --now that we've potentially created a snapshot, we need to use it if it was needed
+
+
+
+
 
       SET @sqlcmd = 'USE ' + QUOTENAME(@CurrentDatabaseName) + ' SELECT DB_ID() as dbid, DB_NAME() as database_name, ''' + @dbtype + ''' as dbtype, 
       ss.[schema_id], ss.[name] as [schema], so.[object_id], so.[name] as object_name, so.[type], so.type_desc, SUM(sps.used_page_count) AS used_page_count
@@ -709,6 +755,14 @@ BEGIN
 
       INSERT INTO @tblObj (dbid, database_name, dbtype, schema_id, [schema], object_id, object_name, type, type_desc, used_page_count)
       EXEC sp_executesql @sqlcmd
+
+      --Clear Variables
+      SET @agbit = NULL
+      SET @role = NULL
+      SET @secondaryRoleAllowConnections = NULL
+      SET @hasMemOptFG = NULL
+      SET @snapName = NULL
+      SET @snapCreated = NULL
 
       --Update Loop Counter
       UPDATE @tmpDatabases
