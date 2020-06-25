@@ -1142,7 +1142,7 @@ BEGIN
           IF @Version < 15
           BEGIN
             SET @CurrentCommand = 'IF EXISTS (SELECT * FROM sys.filegroups WHERE type = ''FX'') BEGIN SET @currentHasMemOptFG = 1 END ELSE BEGIN SET @currentHasMemOptFG = 0 END'
-            EXECUTE @CurrentDatabase_sp_executesql @stmt = @CurrentCommand, @params = N'@currentHasMemOptFG bit OUTPUT', @currentHasMemOptFG = @hasMemOptFG OUTPUT
+            EXECUTE sp_executesql @stmt = @CurrentCommand, @params = N'@currentHasMemOptFG bit OUTPUT', @currentHasMemOptFG = @hasMemOptFG OUTPUT
           END
 
           IF @hasMemOptFG = 0 OR @hasMemOptFG IS NULL
@@ -1157,7 +1157,7 @@ BEGIN
             FROM sys.master_files WHERE database_id = DB_ID(@CurrentDatabaseName) AND type = 0
             SET @CurrentCommand = LEFT(@CurrentCommand, LEN(@CurrentCommand) - 1)
             SET @CurrentCommand = @CurrentCommand + ' AS SNAPSHOT OF ' + QUOTENAME(@CurrentDatabaseName)
-            EXECUTE @CurrentDatabase_sp_executesql @stmt = @CurrentCommand
+            EXECUTE sp_executesql @stmt = @CurrentCommand
             SET @snapCreated = 1
           END
 
@@ -1187,11 +1187,10 @@ BEGIN
       --Drop Snapshot
       IF @snapCreated = 1
       BEGIN
-        SET @CurrentDatabase_sp_executesql = QUOTENAME(@CurrentDatabaseName) + '.sys.sp_executesql'
         SET @CurrentCommand = 'IF EXISTS (SELECT name FROM sys.databases WHERE name = ''' + @snapName
           + ''') AND (SELECT source_database_id FROM sys.databases WHERE name = ''' + @snapName
           + ''') IS NOT NULL BEGIN DROP DATABASE ' + QUOTENAME(@snapName) + ' END'
-        EXECUTE @CurrentDatabase_sp_executesql @stmt = @CurrentCommand
+        EXECUTE sp_executesql @stmt = @CurrentCommand
       END
 
       --Update Loop Counter
@@ -1877,7 +1876,7 @@ BEGIN
           IF @Version < 15
           BEGIN
             SET @CurrentCommand = 'IF EXISTS (SELECT * FROM sys.filegroups WHERE type = ''FX'') BEGIN SET @currentHasMemOptFG = 1 END ELSE BEGIN SET @currentHasMemOptFG = 0 END'
-            EXECUTE @CurrentDatabase_sp_executesql @stmt = @CurrentCommand, @params = N'@currentHasMemOptFG bit OUTPUT', @currentHasMemOptFG = @hasMemOptFG OUTPUT
+            EXECUTE sp_executesql @stmt = @CurrentCommand, @params = N'@currentHasMemOptFG bit OUTPUT', @currentHasMemOptFG = @hasMemOptFG OUTPUT
           END
 
           --We can't take snapshots of system databases (other than msdb but we don't want to anyway)
@@ -1893,7 +1892,7 @@ BEGIN
               FROM sys.master_files WHERE database_id = DB_ID(@CurrentDatabaseName) AND type = 0
               SET @CurrentCommand = LEFT(@CurrentCommand, LEN(@CurrentCommand) - 1)
               SET @CurrentCommand = @CurrentCommand + ' AS SNAPSHOT OF ' + QUOTENAME(@CurrentDatabaseName)
-              EXECUTE @CurrentDatabase_sp_executesql @stmt = @CurrentCommand
+              EXECUTE sp_executesql @stmt = @CurrentCommand
               SET @snapCreated = 1
           END
 
@@ -2191,11 +2190,10 @@ BEGIN
     --Drop Snapshot
     IF @snapCreated = 1
     BEGIN
-      SET @CurrentDatabase_sp_executesql = QUOTENAME(@CurrentDatabaseName) + '.sys.sp_executesql'
       SET @CurrentCommand = 'IF EXISTS (SELECT name FROM sys.databases WHERE name = ''' + @snapName
         + ''') AND (SELECT source_database_id FROM sys.databases WHERE name = ''' + @snapName
         + ''') IS NOT NULL BEGIN DROP DATABASE ' + QUOTENAME(@snapName) + ' END'
-      EXECUTE @CurrentDatabase_sp_executesql @stmt = @CurrentCommand
+      EXECUTE sp_executesql @stmt = @CurrentCommand
     END
 
     -- Clear variables
