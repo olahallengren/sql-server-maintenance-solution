@@ -1,5 +1,10 @@
 # Custom Solution
-Main differences are in the DatabaseIntegrityCheck script and added the CheckTableObjects table
+Main differences are in the DatabaseIntegrityCheck script and added the CheckTableObjects table<br><br>
+ Differences:
+  - Runs CheckAlloc, then CheckCatalog, then CheckTable
+    - This is a different order than original Ola, which was CheckAlloc, CheckTable, CheckCatalog
+  - For CHECKTABLE command, it will always take a manual database snapshot, as that allows for faster runs, especially on larger databases.
+  - The @Resumable parameter will store info in the CheckTableObjects table and goes through the objects in a rolling fashion, thus allowing for the checking of VLDBs without the need for a large window to run CHECKDB
 
 Added Parameters:<br>
  - @Resumable - valid values are 'Y' or 'N'
