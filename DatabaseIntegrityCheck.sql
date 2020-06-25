@@ -687,7 +687,7 @@ BEGIN
   IF @Resumable = 'Y'
   BEGIN
 
-    DECLARE @agbit bit, @role tinyint, @secondaryRoleAllowConnections tinyint, @hasMemOptFG bit, @snapName nvarchar(128), @snapCreated bit
+    DECLARE @agbit bit, @role tinyint, @secondaryRoleAllowConnections tinyint, @hasMemOptFG bit, @snapName nvarchar(128), @snapCreated bit, @snapNamePart nvarchar(max)
 
     WHILE 1=1
     BEGIN
@@ -720,11 +720,12 @@ BEGIN
           IF @hasMemOptFG = 0 OR @hasMemOptFG IS NULL
           BEGIN 
             --Build and execute create snapshot statement
-            SET @snapName = @CurrentDatabaseName + '_RollIntegChkInfo_snapshot_' + CONVERT(nvarchar, @StartTime, 112)
+            SET @snapNamePart = '_RollIntegChkInfo_snapshot_'
+            SET @snapName = @CurrentDatabaseName + @snapNamePart + CONVERT(nvarchar, @StartTime, 112)
             SET @sqlcmd = 'CREATE DATABASE ' + QUOTENAME(@snapName) + ' ON '
             SELECT @sqlcmd = @sqlcmd + '(Name = ' + QUOTENAME(name) + ', Filename = '''
               + physical_name --+ CASE WHEN @SnapshotPath = 'DEFAULT' THEN physical_name ELSE @SnapshotPath + '\' + name END
-              + '_CHKALOCCAT_snapshot_' + CONVERT(nvarchar, @StartTime, 112) + '''),'
+              + @snapNamePart + CONVERT(nvarchar, @StartTime, 112) + '''),'
             FROM sys.master_files WHERE database_id = DB_ID(@CurrentDatabaseName) AND type = 0
             SET @sqlcmd = LEFT(@sqlcmd, LEN(@sqlcmd) - 1)
             SET @sqlcmd = @sqlcmd + ' AS SNAPSHOT OF ' + QUOTENAME(@CurrentDatabaseName)
@@ -735,16 +736,13 @@ BEGIN
         END
       END
 
+      --now that we've potentially created a snapshot, we need to use it if it was needed
+      IF @snapCreated = 1
+      BEGIN
+        SET @CurrentDatabase_sp_executesql = QUOTENAME(@snapName) + '.sys.sp_executesql'
+      END
 
-    --now that we've potentially created a snapshot, we need to use it if it was needed
-    IF @snapCreated = 1
-    BEGIN SET @CurrentDatabase_sp_executesql = QUOTENAME(@snapName) + '.sys.sp_executesql' END
-
-
-
-
-
-      SET @sqlcmd = 'SELECT DB_ID() as dbid, DB_NAME() as database_name, ''' + @dbtype + ''' as dbtype, 
+      SET @sqlcmd = 'SELECT DB_ID(''' + @CurrentDatabaseName + ''') as dbid, ''' + @CurrentDatabaseName + ''' as database_name, ''' + @dbtype + ''' as dbtype, 
       ss.[schema_id], ss.[name] as [schema], so.[object_id], so.[name] as object_name, so.[type], so.type_desc, SUM(sps.used_page_count) AS used_page_count
       FROM sys.objects so
       INNER JOIN sys.dm_db_partition_stats sps ON so.[object_id] = sps.[object_id]
@@ -758,6 +756,13 @@ BEGIN
       INSERT INTO @tblObj (dbid, database_name, dbtype, schema_id, [schema], object_id, object_name, type, type_desc, used_page_count)
       execute @CurrentDatabase_sp_executesql @stmt = @sqlcmd
 
+      --Drop Snapshot
+      IF @snapCreated = 1
+      BEGIN
+        SET @sqlcmd = 'DROP DATABASE ' + QUOTENAME(@snapName)
+        execute sp_executesql @sqlcmd
+      END
+      
       --Clear Variables
       SET @agbit = NULL
       SET @role = NULL
