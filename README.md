@@ -1,3 +1,29 @@
+# Custom Solution
+Main differences are in the DatabaseIntegrityCheck script and added the CheckTableObjects table<br><br>
+ Differences:
+  - Runs CheckAlloc, then CheckCatalog, then CheckTable
+    - This is a different order than original Ola, which was CheckAlloc, CheckTable, CheckCatalog
+  - For CHECKTABLE command, it will always take a manual database snapshot, as that allows for faster runs, especially on larger databases.
+  - The @Resumable parameter will store info in the CheckTableObjects table and goes through the objects in a rolling fashion, thus allowing for the checking of VLDBs without the need for a large window to run CHECKDB
+
+Added Parameters:<br>
+ - @Resumable - valid values are 'Y' or 'N'
+   - defaults to 'N'
+   - Must be used in conjunction with @TimeLimit
+   - Can only be used if the CheckTable command is specified
+   - Will only run CHECKTABLE checks once per day, as it makes sure that "dbo.CheckTableObjects.LastCheckDate <> CAST(@StartTime as date)"
+     - This is to prevent a loop of it just going through the same tables over and over during the time window
+     - To reset either Truncate the CheckTableObjects table, or update LastCheckDate to an older date
+       - ```UPDATE dbo.CheckTableObjects SET LastCheckDate = DATEADD(DAY, -1, LastCheckDate) ```
+ - @AllowSnapshots - valid values are 'Y' or 'N'
+   - Defaults to 'Y'
+   - Allows the script to take it's own snapshot for the CHECKTABLE command to allow for faster operation.  Otherwise, the CHECKTABLE commad will create an internal snapshot for each command that it runs, which creates much more overhead, especially on larger databases
+   - Also allows for checking non-readable secondaries when the database is in an availability group.
+
+Example:
+```sql    
+EXECUTE [dbo].[DatabaseIntegrityCheck] @Databases = 'ALL_DATABASES', @CheckCommands = 'CHECKALLOC,CHECKCATALOG,CHECKTABLE', @TimeLimit = 18000, @LogToTable = 'Y', @Execute = 'Y', @Resumable = 'Y'
+```
 # SQL Server Maintenance Solution
 [![licence badge]][licence]
 [![stars badge]][stars]

@@ -30,7 +30,8 @@ ALTER PROCEDURE [dbo].[DatabaseIntegrityCheck]
 @DatabasesInParallel nvarchar(max) = 'N',
 @LogToTable nvarchar(max) = 'N',
 @Execute nvarchar(max) = 'Y',
-@Resumable nvarchar(max) = 'N'
+@Resumable nvarchar(max) = 'N',
+@AllowSnapshots nvarchar(max) = 'Y'
 
 AS
 
@@ -173,7 +174,6 @@ BEGIN
                                   Selected bit)
 
   --Additions-------------------
-  DECLARE @sqlcmd nvarchar(max)
   DECLARE @dbtype nvarchar(max)
   DECLARE @avgRun int
   DECLARE @previousRunDate datetime
@@ -186,6 +186,7 @@ BEGIN
   DECLARE @newExecutionCount int
   DECLARE @InitialRunCheck bit
   DECLARE @OrderBySmallest bit
+
   DECLARE @tblObj TABLE ([database_name] nvarchar(128),
                          [dbid] int,
                          [dbtype] nvarchar(max),
@@ -196,6 +197,14 @@ BEGIN
                          [type] CHAR(2),
                          [type_desc] NVARCHAR(60),
                          [used_page_count] bigint)
+
+  DECLARE @agbit bit
+  DECLARE @role tinyint
+  DECLARE @secondaryRoleAllowConnections tinyint
+  DECLARE @hasMemOptFG bit
+  DECLARE @snapName nvarchar(128)
+  DECLARE @snapCreated bit
+  DECLARE @snapNamePart nvarchar(max)
   -------------------------------
 
   DECLARE @SelectedCheckCommands TABLE (CheckCommand nvarchar(max))
@@ -245,6 +254,7 @@ BEGIN
   SET @Parameters += ', @LogToTable = ' + ISNULL('''' + REPLACE(@LogToTable,'''','''''') + '''','NULL')
   SET @Parameters += ', @Execute = ' + ISNULL('''' + REPLACE(@Execute,'''','''''') + '''','NULL')
   SET @Parameters += ', @Resumable = ' + ISNULL('''' + REPLACE(@Resumable,'''','''''') + '''','NULL')
+  SET @Parameters += ', @AllowSnapshots = ' + ISNULL('''' + REPLACE(@AllowSnapshots,'''','''''') + '''','NULL')
 
   SET @StartMessage = 'Date and time: ' + CONVERT(nvarchar,@StartTime,120)
   RAISERROR('%s',10,1,@StartMessage) WITH NOWAIT
@@ -680,80 +690,6 @@ BEGIN
   OPTION (MAXRECURSION 0)
 
   ----------------------------------------------------------------------------------------------------
-  --// Update Persistent Table if we need to resume operations                                    //--
-  ----------------------------------------------------------------------------------------------------
-
-  IF @Resumable = 'Y'
-  BEGIN
-    --Populate dbo.CheckTableObjects here?
-    WHILE 1=1
-    BEGIN
-      SELECT TOP 1 @CurrentDatabaseName = DatabaseName, @dbtype = DatabaseType FROM @tmpDatabases WHERE Selected = 1 AND Completed = 0
-      IF @@ROWCOUNT = 0
-      BEGIN
-        BREAK
-      END
-
-      SET @sqlcmd = 'USE ' + QUOTENAME(@CurrentDatabaseName) + ' SELECT DB_ID() as dbid, DB_NAME() as database_name, ''' + @dbtype + ''' as dbtype, 
-      ss.[schema_id], ss.[name] as [schema], so.[object_id], so.[name] as object_name, so.[type], so.type_desc, SUM(sps.used_page_count) AS used_page_count
-      FROM sys.objects so
-      INNER JOIN sys.dm_db_partition_stats sps ON so.[object_id] = sps.[object_id]
-      INNER JOIN sys.indexes si ON sps.[object_id] = si.[object_id] AND sps.[index_id] = si.[index_id]
-      INNER JOIN sys.schemas ss ON so.[schema_id] = ss.[schema_id]
-      LEFT JOIN sys.tables st ON so.[object_id] = st.[object_id]
-      WHERE so.[type] IN (''U'', ''V'')'
-      + CASE WHEN @Version >= 12 THEN ' AND (st.is_memory_optimized = 0 OR st.is_memory_optimized IS NULL)' ELSE '' END
-      + 'GROUP BY so.[object_id], so.[name], ss.name, ss.[schema_id], so.[type], so.type_desc'
-
-      INSERT INTO @tblObj (dbid, database_name, dbtype, schema_id, [schema], object_id, object_name, type, type_desc, used_page_count)
-      EXEC sp_executesql @sqlcmd
-
-      --Update Loop Counter
-      UPDATE @tmpDatabases
-      SET Completed = 1
-      WHERE DatabaseName = @CurrentDatabaseName
-    END
-    
-    --Merge into persistent table
-    MERGE master.dbo.CheckTableObjects as [Target]
-    USING (SELECT * FROM @tblObj) as [Source]
-    ON (Target.database_name = Source.database_name AND Target.[schema] = Source.[schema] AND Target.object_name = Source.object_name)
-    WHEN MATCHED /*AND Target.used_page_count <> source.used_page_count */ THEN
-        UPDATE SET Target.used_page_count = source.used_page_count, Target.Active = 1
-    WHEN NOT MATCHED BY TARGET THEN
-        INSERT ([database_name]
-          ,[dbid]
-          ,[dbtype]
-          ,[object_id]
-          ,[object_name]
-          ,[schema_id]
-          ,[schema]
-          ,[type]
-          ,[type_desc]
-          ,[used_page_count]
-          ,[Active])
-        VALUES (Source.[database_name]
-          ,Source.[dbid]
-          ,Source.[dbtype]
-          ,Source.[object_id]
-          ,Source.[object_name]
-          ,Source.[schema_id]
-          ,Source.[schema]
-          ,Source.[type]
-          ,Source.[type_desc]
-          ,Source.[used_page_count]
-          ,1)
-    WHEN NOT MATCHED BY SOURCE THEN
-        UPDATE SET Active = 0
-    ;
-
-    --Reset completed status
-    UPDATE @tmpDatabases
-    SET Completed = 0
-
-  END
-
-  ----------------------------------------------------------------------------------------------------
   --// Select check commands                                                                      //--
   ----------------------------------------------------------------------------------------------------
 
@@ -1036,12 +972,18 @@ BEGIN
   IF @Resumable = 'Y' and @TimeLimit IS NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @Resumable cannot be Y if @TimeLimit is not set.', 16, 1
+    SELECT 'The value for the parameter @Resumable cannot be Y if @TimeLimit is not set.', 16, 2
   END
-  IF @Resumable = 'Y' AND EXISTS (SELECT CheckCommand FROM @SelectedCheckCommands WHERE CheckCommand NOT IN('CHECKTABLE'))
+  IF @Resumable = 'Y' AND NOT EXISTS (SELECT CheckCommand FROM @SelectedCheckCommands WHERE CheckCommand IN('CHECKTABLE'))
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The @Resumable parameter currently only supports the CHECKTABLE command.', 16, 1
+    SELECT 'The @Resumable parameter can only be used if the CHECKTABLE command is specified.', 16, 3
+  END
+
+  IF @AllowSnapshots NOT IN('Y','N') OR @AllowSnapshots IS NULL
+  BEGIN
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'The value for the parameter @AllowSnapshots must be Y or N.', 16, 1
   END
   --------------------------------------
 
@@ -1159,6 +1101,155 @@ BEGIN
   BEGIN
     SET @ReturnCode = 50000
     GOTO Logging
+  END
+
+  ----------------------------------------------------------------------------------------------------
+  --// Update Persistent Table if we need to resume operations                                    //--
+  --// This is done here so the order can be updated appropriately                                //--
+  ----------------------------------------------------------------------------------------------------
+
+  IF @Resumable = 'Y'
+  BEGIN
+    WHILE 1=1
+    BEGIN
+      SELECT TOP 1 @CurrentDatabaseName = DatabaseName,
+                   @dbtype = DatabaseType,
+                   @agbit = AvailabilityGroup
+      FROM @tmpDatabases
+      WHERE Selected = 1
+      AND Completed = 0
+
+      IF @@ROWCOUNT = 0
+      BEGIN
+        BREAK
+      END
+      SET @CurrentDatabase_sp_executesql = QUOTENAME(@CurrentDatabaseName) + '.sys.sp_executesql'
+     
+     --Check if we need to create a snapshot
+      IF @agbit = 1
+      BEGIN
+      	SELECT @role = s.role,
+               @secondaryRoleAllowConnections = r.secondary_role_allow_connections
+	      FROM sys.databases d
+	      JOIN sys.dm_hadr_availability_replica_states s ON d.replica_id = s.replica_id
+	      JOIN sys.availability_replicas r ON s.replica_id = r.replica_id
+        WHERE d.name = @CurrentDatabaseName
+
+        --role = 2 means secondary, secondaryRoleAllowConnections = 0 means non-readable secondary
+        IF @role = 2 and @secondaryRoleAllowConnections = 0
+        BEGIN
+          --We need a snapshot but first we need to make sure the database doesnt have mem opt tables for versions older than SQL 2019
+          IF @Version < 15
+          BEGIN
+            SET @CurrentCommand = 'IF EXISTS (SELECT * FROM sys.filegroups WHERE type = ''FX'') BEGIN SET @currentHasMemOptFG = 1 END ELSE BEGIN SET @currentHasMemOptFG = 0 END'
+            EXECUTE sp_executesql @stmt = @CurrentCommand, @params = N'@currentHasMemOptFG bit OUTPUT', @currentHasMemOptFG = @hasMemOptFG OUTPUT
+          END
+
+          IF @hasMemOptFG = 0 OR @hasMemOptFG IS NULL
+          BEGIN 
+            --Build and execute create snapshot statement
+            SET @snapNamePart = '_RollIntegChkInfo_ss_'
+            SET @snapName = @CurrentDatabaseName + @snapNamePart + CONVERT(nvarchar, @StartTime, 112)
+            SET @CurrentCommand = 'CREATE DATABASE ' + QUOTENAME(@snapName) + ' ON '
+            SELECT @CurrentCommand = @CurrentCommand + '(Name = ' + QUOTENAME(name) + ', Filename = '''
+              + physical_name --+ CASE WHEN @SnapshotPath = 'DEFAULT' THEN physical_name ELSE @SnapshotPath + '\' + name END
+              + @snapNamePart + CONVERT(nvarchar, @StartTime, 112) + '''),'
+            FROM sys.master_files WHERE database_id = DB_ID(@CurrentDatabaseName) AND type = 0
+            SET @CurrentCommand = LEFT(@CurrentCommand, LEN(@CurrentCommand) - 1)
+            SET @CurrentCommand = @CurrentCommand + ' AS SNAPSHOT OF ' + QUOTENAME(@CurrentDatabaseName)
+            EXECUTE sp_executesql @stmt = @CurrentCommand
+            SET @snapCreated = 1
+          END
+
+        END
+      END
+
+      --now that we've potentially created a snapshot, we need to use it if it was needed
+      IF @snapCreated = 1
+      BEGIN
+        SET @CurrentDatabase_sp_executesql = QUOTENAME(@snapName) + '.sys.sp_executesql'
+      END
+
+      SET @CurrentCommand = 'SELECT DB_ID(''' + @CurrentDatabaseName + ''') as dbid, ''' + @CurrentDatabaseName + ''' as database_name, ''' + @dbtype + ''' as dbtype, 
+        ss.[schema_id], ss.[name] as [schema], so.[object_id], so.[name] as object_name, so.[type], so.type_desc, SUM(sps.used_page_count) AS used_page_count
+        FROM sys.objects so
+        INNER JOIN sys.dm_db_partition_stats sps ON so.[object_id] = sps.[object_id]
+        INNER JOIN sys.indexes si ON sps.[object_id] = si.[object_id] AND sps.[index_id] = si.[index_id]
+        INNER JOIN sys.schemas ss ON so.[schema_id] = ss.[schema_id]
+        LEFT JOIN sys.tables st ON so.[object_id] = st.[object_id]
+        WHERE so.[type] IN (''U'', ''V'')'
+        + CASE WHEN @Version >= 12 THEN ' AND (st.is_memory_optimized = 0 OR st.is_memory_optimized IS NULL)' ELSE '' END
+        + 'GROUP BY so.[object_id], so.[name], ss.name, ss.[schema_id], so.[type], so.type_desc'
+
+      INSERT INTO @tblObj (dbid, database_name, dbtype, schema_id, [schema], object_id, object_name, type, type_desc, used_page_count)
+      EXECUTE @CurrentDatabase_sp_executesql @stmt = @CurrentCommand
+
+      --Drop Snapshot
+      IF @snapCreated = 1
+      BEGIN
+        SET @CurrentCommand = 'IF EXISTS (SELECT name FROM sys.databases WHERE name = ''' + @snapName
+          + ''') AND (SELECT source_database_id FROM sys.databases WHERE name = ''' + @snapName
+          + ''') IS NOT NULL BEGIN DROP DATABASE ' + QUOTENAME(@snapName) + ' END'
+        EXECUTE sp_executesql @stmt = @CurrentCommand
+      END
+
+      --Update Loop Counter
+      UPDATE @tmpDatabases
+      SET Completed = 1
+      WHERE DatabaseName = @CurrentDatabaseName
+      
+      --Clear Variables
+      SET @agbit = NULL
+      SET @role = NULL
+      SET @secondaryRoleAllowConnections = NULL
+      SET @hasMemOptFG = NULL
+      SET @snapName = NULL
+      SET @snapNamePart = NULL
+      SET @snapCreated = NULL
+      SET @CurrentDatabaseName = NULL
+      SET @dbtype = NULL
+      SET @CurrentCommand = NULL
+      SET @CurrentDatabase_sp_executesql = NULL
+
+    END
+    
+    --Merge into persistent table
+    MERGE master.dbo.CheckTableObjects as [Target]
+    USING (SELECT * FROM @tblObj) as [Source]
+    ON (Target.database_name = Source.database_name AND Target.[schema] = Source.[schema] AND Target.object_name = Source.object_name)
+    WHEN MATCHED /*AND Target.used_page_count <> source.used_page_count */ THEN
+        UPDATE SET Target.used_page_count = source.used_page_count, Target.Active = 1
+    WHEN NOT MATCHED BY TARGET THEN
+        INSERT ([database_name]
+          ,[dbid]
+          ,[dbtype]
+          ,[object_id]
+          ,[object_name]
+          ,[schema_id]
+          ,[schema]
+          ,[type]
+          ,[type_desc]
+          ,[used_page_count]
+          ,[Active])
+        VALUES (Source.[database_name]
+          ,Source.[dbid]
+          ,Source.[dbtype]
+          ,Source.[object_id]
+          ,Source.[object_name]
+          ,Source.[schema_id]
+          ,Source.[schema]
+          ,Source.[type]
+          ,Source.[type_desc]
+          ,Source.[used_page_count]
+          ,1)
+    WHEN NOT MATCHED BY SOURCE THEN
+        UPDATE SET Active = 0
+    ;
+
+    --Reset completed status
+    UPDATE @tmpDatabases
+    SET Completed = 0
+
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -1290,24 +1381,25 @@ BEGIN
     UPDATE tmpDatabases
     SET [Order] = RowNumber
   END
-  ELSE
-  IF @DatabaseOrder IS NULL AND @Resumable = 'Y'
+  --Addition----------------------------
+  IF @Resumable = 'Y'
   BEGIN
     WITH cte1 AS (
       SELECT [database_name], MIN(LastCheckDate) as MinLastCheckDate
       FROM dbo.CheckTableObjects
       GROUP BY [database_name]
     ), cte2 AS (
-      SELECT [database_name], MinLastCheckDate, ROW_NUMBER() OVER (ORDER BY MinLastCheckDate ASC, [database_name] ASC) as RowNumber
+      SELECT cte1.[database_name], cte1.MinLastCheckDate, ROW_NUMBER() OVER (ORDER BY cte1.MinLastCheckDate ASC, tmpDatabases.[Order] ASC) as RowNumber
       FROM cte1
-      JOIN @tmpDatabases tmpDatabases on tmpDatabases.DatabaseName = cte1.[database_name] AND tmpDatabases.Selected = 1
+      JOIN @tmpDatabases tmpDatabases on tmpDatabases.DatabaseName = cte1.[database_name]
+      WHERE tmpDatabases.Selected = 1
     )
     UPDATE @tmpDatabases
     SET [Order] = cte2.RowNumber
     FROM @tmpDatabases tmpDatabases
     JOIN cte2 on cte2.database_name = tmpDatabases.DatabaseName
   END
-
+  --------------------------------------
   ----------------------------------------------------------------------------------------------------
   --// Update the queue                                                                           //--
   ----------------------------------------------------------------------------------------------------
@@ -1449,7 +1541,8 @@ BEGIN
     ELSE
     BEGIN
       SELECT TOP 1 @CurrentDBID = ID,
-                   @CurrentDatabaseName = DatabaseName
+                   @CurrentDatabaseName = DatabaseName,
+                   @dbtype = DatabaseType
       FROM @tmpDatabases
       WHERE Selected = 1
       AND Completed = 0
@@ -1777,6 +1870,38 @@ BEGIN
       -- Check objects
       IF EXISTS(SELECT * FROM @SelectedCheckCommands WHERE CheckCommand = 'CHECKTABLE') AND (SYSDATETIME() < @EndTime OR @TimeLimit IS NULL)
       BEGIN
+      IF @AllowSnapshots = 'Y'
+        BEGIN
+          --We need a snapshot but first we need to make sure the database doesnt have mem opt tables for versions older than SQL 2019
+          IF @Version < 15
+          BEGIN
+            SET @CurrentCommand = 'IF EXISTS (SELECT * FROM sys.filegroups WHERE type = ''FX'') BEGIN SET @currentHasMemOptFG = 1 END ELSE BEGIN SET @currentHasMemOptFG = 0 END'
+            EXECUTE sp_executesql @stmt = @CurrentCommand, @params = N'@currentHasMemOptFG bit OUTPUT', @currentHasMemOptFG = @hasMemOptFG OUTPUT
+          END
+
+          --We can't take snapshots of system databases (other than msdb but we don't want to anyway)
+          IF @dbtype = 'U' AND (@hasMemOptFG = 0 OR @hasMemOptFG IS NULL)
+            BEGIN 
+              --Build and execute create snapshot statement
+              SET @snapNamePart = '_CHKTABLE_ss_'
+              SET @snapName = @CurrentDatabaseName + @snapNamePart + CONVERT(nvarchar, @StartTime, 112)
+              SET @CurrentCommand = 'CREATE DATABASE ' + QUOTENAME(@snapName) + ' ON '
+              SELECT @CurrentCommand = @CurrentCommand + '(Name = ' + QUOTENAME(name) + ', Filename = '''
+                + physical_name --+ CASE WHEN @SnapshotPath = 'DEFAULT' THEN physical_name ELSE @SnapshotPath + '\' + name END
+                + @snapNamePart + CONVERT(nvarchar, @StartTime, 112) + '''),'
+              FROM sys.master_files WHERE database_id = DB_ID(@CurrentDatabaseName) AND type = 0
+              SET @CurrentCommand = LEFT(@CurrentCommand, LEN(@CurrentCommand) - 1)
+              SET @CurrentCommand = @CurrentCommand + ' AS SNAPSHOT OF ' + QUOTENAME(@CurrentDatabaseName)
+              EXECUTE sp_executesql @stmt = @CurrentCommand
+              SET @snapCreated = 1
+          END
+
+          IF @snapCreated = 1
+          BEGIN
+            SET @CurrentDatabase_sp_executesql = QUOTENAME(@snapName) + '.sys.sp_executesql'
+          END
+        END
+        
         SET @CurrentCommand = 'SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED; SELECT schemas.[schema_id] AS SchemaID, schemas.[name] AS SchemaName, objects.[object_id] AS ObjectID, objects.[name] AS ObjectName, RTRIM(objects.[type]) AS ObjectType, 0 AS [Order], 0 AS Selected, 0 AS Completed FROM sys.objects objects INNER JOIN sys.schemas schemas ON objects.schema_id = schemas.schema_id LEFT OUTER JOIN sys.tables tables ON objects.object_id = tables.object_id WHERE objects.[type] IN(''U'',''V'') AND EXISTS(SELECT * FROM sys.indexes indexes WHERE indexes.object_id = objects.object_id)' + CASE WHEN @Version >= 12 THEN ' AND (tables.is_memory_optimized = 0 OR is_memory_optimized IS NULL)' ELSE '' END + ' ORDER BY schemas.name ASC, objects.name ASC'
 
         INSERT INTO @tmpObjects (SchemaID, SchemaName, ObjectID, ObjectName, ObjectType, [Order], Selected, Completed)
@@ -1891,7 +2016,8 @@ BEGIN
             AND LastCheckDate <> CAST(@StartTime as date) --makes sure it's not the same day, as we don't need to run it again
             ORDER BY
             CASE WHEN @OrderBySmallest = 1 THEN used_page_count END ASC,
-            CASE WHEN @OrderBySmallest = 0 THEN database_name END ASC
+            CASE WHEN @OrderBySmallest = 0 THEN database_name END ASC,
+            LastCheckDate ASC, StartTime Asc
           END
           ELSE
           BEGIN
@@ -1936,7 +2062,14 @@ BEGIN
 
           IF @CurrentObjectExists = 1
           BEGIN
-            SET @CurrentDatabaseContext = @CurrentDatabaseName
+            IF @snapCreated = 1
+            BEGIN
+              SET @CurrentDatabaseContext = @snapName
+            END
+            ELSE
+            BEGIN
+              SET @CurrentDatabaseContext = @CurrentDatabaseName
+            END
 
             SET @CurrentCommandType = 'DBCC_CHECKTABLE'
 
@@ -1954,7 +2087,7 @@ BEGIN
             --If average run time is longer than remaining time + one minute to give a little overhead, skip
             IF @Resumable = 'Y' AND DATEADD(MS, @avgRun, GETDATE()) > DATEADD(MI, 1, @EndTime)
             BEGIN
-              SET @CurrentCommand = 'Skipped due to TimeLimit Constraint: ' + CONVERT(nvarchar, DATEADD(MS, @avgRun, GETDATE()), 121) + ' is greater than ' + CONVERT(nvarchar, DATEADD(MI, 1, @EndTime), 121)
+              SET @CurrentCommand = 'Skipped due to TimeLimit Constraint. Estimated EndTime (' + CONVERT(nvarchar, DATEADD(MS, @avgRun, GETDATE()), 121) + ') is greater than Specified EndTime (' + CONVERT(nvarchar, DATEADD(MI, 1, @EndTime), 121) + ')'
             END
             ELSE
             BEGIN
@@ -1970,7 +2103,7 @@ BEGIN
                 SET @lastCheckDate = @StartTime
                 --Set run duration of this run and the new execution count
                 SET @newRunDuration = DATEDIFF(ms, @cmdStartTime, @cmdEndTime)
-                SET @newExecutionCount = @originalExecutionCount + 1
+                SET @newExecutionCount = @origExecutionCount + 1
                 --Calculate the new average run time
                 --This formula works since the number of executions is being updated in the previous step
                 SET @avgRun = @avgRun + ((@newRunDuration - @avgRun) / @newExecutionCount)
@@ -2024,10 +2157,10 @@ BEGIN
           SET @cmdStartTime = NULL
           SET @cmdEndTime = NULL
           SET @lastCheckDate = NULL
-        END
-      END
+        END  --Ending WHILE (SYSDATETIME() < @EndTime OR @TimeLimit IS NULL) loop (cycles through each object)
+      END  --Ends IF EXISTS(SELECT * FROM @SelectedCheckCommands WHERE CheckCommand = 'CHECKTABLE') AND (SYSDATETIME() < @EndTime OR @TimeLimit IS NULL) statement
 
-    END
+    END  --Ends IF @CurrentDatabaseState = 'ONLINE'... statement
 
     IF @CurrentDatabaseState = 'SUSPECT'
     BEGIN
@@ -2054,6 +2187,15 @@ BEGIN
       AND ID = @CurrentDBID
     END
 
+    --Drop Snapshot
+    IF @snapCreated = 1
+    BEGIN
+      SET @CurrentCommand = 'IF EXISTS (SELECT name FROM sys.databases WHERE name = ''' + @snapName
+        + ''') AND (SELECT source_database_id FROM sys.databases WHERE name = ''' + @snapName
+        + ''') IS NOT NULL BEGIN DROP DATABASE ' + QUOTENAME(@snapName) + ' END'
+      EXECUTE sp_executesql @stmt = @CurrentCommand
+    END
+
     -- Clear variables
     SET @CurrentDBID = NULL
     SET @CurrentDatabaseName = NULL
@@ -2077,6 +2219,13 @@ BEGIN
     SET @CurrentCommand = NULL
     SET @CurrentCommandOutput = NULL
     SET @CurrentCommandType = NULL
+
+    --Additions------------
+    SET @hasMemOptFG = NULL
+    SET @snapName = NULL
+    SET @snapCreated = NULL
+    SET @dbtype = NULL
+    ------------------------
 
     DELETE FROM @tmpFileGroups
     DELETE FROM @tmpObjects
