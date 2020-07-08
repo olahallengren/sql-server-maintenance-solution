@@ -1,5 +1,5 @@
 # Custom Solution
-Main differences are in the DatabaseIntegrityCheck script and added the CheckTableObjects table<br><br>
+This is a fork of Ola's Maintenance Solution.  Main differences are in the DatabaseIntegrityCheck script and added the CheckTableObjects table<br><br>
  Differences:
   - Runs CheckAlloc, then CheckCatalog, then CheckTable
     - This is a different order than original Ola, which was CheckAlloc, CheckTable, CheckCatalog
