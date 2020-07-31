@@ -1218,7 +1218,12 @@ BEGIN
     USING (SELECT * FROM @tblObj) as [Source]
     ON (Target.database_name = Source.database_name AND Target.[schema] = Source.[schema] AND Target.object_name = Source.object_name)
     WHEN MATCHED /*AND Target.used_page_count <> source.used_page_count */ THEN
-        UPDATE SET Target.used_page_count = source.used_page_count, Target.Active = 1
+        UPDATE SET 
+          Target.[dbid] = Source.[dbid],
+          Target.[schema_id] = Source.[schema_id],
+          Target.[object_id] = Source.[object_id],
+          Target.[used_page_count] = Source.[used_page_count],
+          Target.[Active] = 1
     WHEN NOT MATCHED BY TARGET THEN
         INSERT ([database_name]
           ,[dbid]
@@ -2012,7 +2017,7 @@ BEGIN
             FROM dbo.CheckTableObjects
             WHERE @CurrentDatabaseName = [database_name]
             AND Active = 1
-            AND LastCheckDate = (SELECT MIN(LastCheckDate) FROM dbo.CheckTableObjects WHERE [database_name] = @CurrentDatabaseName) --Makes sure it's the oldest entry for that database
+            AND LastCheckDate = (SELECT MIN(LastCheckDate) FROM dbo.CheckTableObjects WHERE [database_name] = @CurrentDatabaseName AND Active = 1) --Makes sure it's the oldest entry for that database
             AND LastCheckDate <> CAST(@StartTime as date) --makes sure it's not the same day, as we don't need to run it again
             ORDER BY
             CASE WHEN @OrderBySmallest = 1 THEN used_page_count END ASC,
