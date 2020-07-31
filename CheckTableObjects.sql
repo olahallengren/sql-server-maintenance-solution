@@ -1,5 +1,3 @@
---Create persistant table to hold information
---Add other fields like Last Run Time, Duration
 IF NOT EXISTS (SELECT 1 FROM sys.objects where object_id = OBJECT_ID(N'[dbo].[CheckTableObjects]') and type in (N'U'))
 CREATE TABLE dbo.CheckTableObjects(
     ID int IDENTITY,
@@ -22,6 +20,6 @@ CREATE TABLE dbo.CheckTableObjects(
     [PreviousRunDate] datetime,
     [PreviousRunDuration_MS] int,
     [LastCheckDate] date DEFAULT '1900-01-01',
-    [Active] bit
-    
+    [Active] bit,
+    CONSTRAINT PK_CheckTableObjects_ID PRIMARY KEY CLUSTERED (ID)
 )
