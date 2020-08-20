@@ -9,7 +9,7 @@ CREATE TABLE [dbo].[Queue](
   [SchemaName] [sysname] NOT NULL,
   [ObjectName] [sysname] NOT NULL,
   [Parameters] [nvarchar](max) NOT NULL,
-  [QueueStartTime] [datetime] NULL,
+  [QueueStartTime] [datetime2](7) NULL,
   [SessionID] [smallint] NULL,
   [RequestID] [int] NULL,
   [RequestStartTime] [datetime] NULL,
