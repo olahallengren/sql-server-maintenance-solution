@@ -1124,8 +1124,12 @@ BEGIN
         BREAK
       END
       SET @CurrentDatabase_sp_executesql = QUOTENAME(@CurrentDatabaseName) + '.sys.sp_executesql'
-     
-     --Check if we need to create a snapshot
+
+      SET @ReturnCode = 0
+
+     --Check if we need to create a snapshot to read the table info
+     --We only need to create a snapshot here if it's a non-readable secondary
+     --SQL 2019 allows snapshots of databases with MemOpt Filegroups
       IF @agbit = 1
       BEGIN
       	SELECT @role = s.role,
@@ -1138,16 +1142,8 @@ BEGIN
         --role = 2 means secondary, secondaryRoleAllowConnections = 0 means non-readable secondary
         IF @role = 2 and @secondaryRoleAllowConnections = 0
         BEGIN
-          --We need a snapshot but first we need to make sure the database doesnt have mem opt tables for versions older than SQL 2019
-          IF @Version < 15
-          BEGIN
-            SET @CurrentCommand = 'IF EXISTS (SELECT * FROM sys.filegroups WHERE type = ''FX'') BEGIN SET @currentHasMemOptFG = 1 END ELSE BEGIN SET @currentHasMemOptFG = 0 END'
-            EXECUTE sp_executesql @stmt = @CurrentCommand, @params = N'@currentHasMemOptFG bit OUTPUT', @currentHasMemOptFG = @hasMemOptFG OUTPUT
-          END
-
-          IF @hasMemOptFG = 0 OR @hasMemOptFG IS NULL
-          BEGIN 
-            --Build and execute create snapshot statement
+          BEGIN TRY
+            --Build create snapshot statement
             SET @snapNamePart = '_RollIntegChkInfo_ss_'
             SET @snapName = @CurrentDatabaseName + @snapNamePart + CONVERT(nvarchar, @StartTime, 112)
             SET @CurrentCommand = 'CREATE DATABASE ' + QUOTENAME(@snapName) + ' ON '
@@ -1159,38 +1155,60 @@ BEGIN
             SET @CurrentCommand = @CurrentCommand + ' AS SNAPSHOT OF ' + QUOTENAME(@CurrentDatabaseName)
             EXECUTE sp_executesql @stmt = @CurrentCommand
             SET @snapCreated = 1
-          END
-
+          END TRY
+          BEGIN CATCH
+            SET @ReturnCode = ERROR_NUMBER()
+            SET @ErrorMessage = 'Msg ' + CAST(ERROR_NUMBER() AS nvarchar) + ', ' + ISNULL(ERROR_MESSAGE(),'')
+            RAISERROR('%s',10,1,@ErrorMessage) WITH NOWAIT
+            SET @snapCreated = 0
+          END CATCH
         END
       END
 
-      --now that we've potentially created a snapshot, we need to use it if it was needed
-      IF @snapCreated = 1
+      --If ReturnCode <> 0 that means there was an issue collecting info, and we should move on and not check this database further
+      IF @ReturnCode <> 0
       BEGIN
-        SET @CurrentDatabase_sp_executesql = QUOTENAME(@snapName) + '.sys.sp_executesql'
+        SET @ErrorMessage = 'Error occured with database ' + @CurrentDatabaseName + ' likely because it is a Non-Readable Secondary with Memory Optimized FileGroups. We are removing this database from further checks.'
+        RAISERROR('%s',10,1,@ErrorMessage) WITH NOWAIT
+        RAISERROR(@EmptyLine,10,1) WITH NOWAIT
+
+        INSERT INTO dbo.CommandLog (DatabaseName, CommandType, Command, StartTime, EndTime, ErrorNumber, ErrorMessage)
+        VALUES (@CurrentDatabaseName, 'CREATE_SNAPSHOT', @CurrentCommand, GETDATE(), GETDATE(), @ReturnCode, @ErrorMessage)
+
+        UPDATE @tmpDatabases
+        SET Selected = 0
+        WHERE DatabaseName = @CurrentDatabaseName
       END
-
-      SET @CurrentCommand = 'SELECT DB_ID(''' + @CurrentDatabaseName + ''') as dbid, ''' + @CurrentDatabaseName + ''' as database_name, ''' + @dbtype + ''' as dbtype, 
-        ss.[schema_id], ss.[name] as [schema], so.[object_id], so.[name] as object_name, so.[type], so.type_desc, SUM(sps.used_page_count) AS used_page_count
-        FROM sys.objects so
-        INNER JOIN sys.dm_db_partition_stats sps ON so.[object_id] = sps.[object_id]
-        INNER JOIN sys.indexes si ON sps.[object_id] = si.[object_id] AND sps.[index_id] = si.[index_id]
-        INNER JOIN sys.schemas ss ON so.[schema_id] = ss.[schema_id]
-        LEFT JOIN sys.tables st ON so.[object_id] = st.[object_id]
-        WHERE so.[type] IN (''U'', ''V'')'
-        + CASE WHEN @Version >= 12 THEN ' AND (st.is_memory_optimized = 0 OR st.is_memory_optimized IS NULL)' ELSE '' END
-        + 'GROUP BY so.[object_id], so.[name], ss.name, ss.[schema_id], so.[type], so.type_desc'
-
-      INSERT INTO @tblObj (dbid, database_name, dbtype, schema_id, [schema], object_id, object_name, type, type_desc, used_page_count)
-      EXECUTE @CurrentDatabase_sp_executesql @stmt = @CurrentCommand
-
-      --Drop Snapshot
-      IF @snapCreated = 1
+      ELSE
       BEGIN
-        SET @CurrentCommand = 'IF EXISTS (SELECT name FROM sys.databases WHERE name = ''' + @snapName
-          + ''') AND (SELECT source_database_id FROM sys.databases WHERE name = ''' + @snapName
-          + ''') IS NOT NULL BEGIN DROP DATABASE ' + QUOTENAME(@snapName) + ' END'
-        EXECUTE sp_executesql @stmt = @CurrentCommand
+        --now that we've potentially created a snapshot, we need to use it if it was needed
+        IF @snapCreated = 1
+        BEGIN
+          SET @CurrentDatabase_sp_executesql = QUOTENAME(@snapName) + '.sys.sp_executesql'
+        END
+
+        SET @CurrentCommand = 'SELECT DB_ID(''' + @CurrentDatabaseName + ''') as dbid, ''' + @CurrentDatabaseName + ''' as database_name, ''' + @dbtype + ''' as dbtype, 
+          ss.[schema_id], ss.[name] as [schema], so.[object_id], so.[name] as object_name, so.[type], so.type_desc, SUM(sps.used_page_count) AS used_page_count
+          FROM sys.objects so
+          INNER JOIN sys.dm_db_partition_stats sps ON so.[object_id] = sps.[object_id]
+          INNER JOIN sys.indexes si ON sps.[object_id] = si.[object_id] AND sps.[index_id] = si.[index_id]
+          INNER JOIN sys.schemas ss ON so.[schema_id] = ss.[schema_id]
+          LEFT JOIN sys.tables st ON so.[object_id] = st.[object_id]
+          WHERE so.[type] IN (''U'', ''V'')'
+          + CASE WHEN @Version >= 12 THEN ' AND (st.is_memory_optimized = 0 OR st.is_memory_optimized IS NULL)' ELSE '' END
+          + 'GROUP BY so.[object_id], so.[name], ss.name, ss.[schema_id], so.[type], so.type_desc'
+
+        INSERT INTO @tblObj (dbid, database_name, dbtype, schema_id, [schema], object_id, object_name, type, type_desc, used_page_count)
+        EXECUTE @CurrentDatabase_sp_executesql @stmt = @CurrentCommand
+
+        --Drop Snapshot
+        IF @snapCreated = 1
+        BEGIN
+          SET @CurrentCommand = 'IF EXISTS (SELECT name FROM sys.databases WHERE name = ''' + @snapName
+            + ''') AND (SELECT source_database_id FROM sys.databases WHERE name = ''' + @snapName
+            + ''') IS NOT NULL BEGIN DROP DATABASE ' + QUOTENAME(@snapName) + ' END'
+          EXECUTE sp_executesql @stmt = @CurrentCommand
+        END
       END
 
       --Update Loop Counter
@@ -1218,7 +1236,7 @@ BEGIN
     USING (SELECT * FROM @tblObj) as [Source]
     ON (Target.database_name = Source.database_name AND Target.[schema] = Source.[schema] AND Target.object_name = Source.object_name)
     WHEN MATCHED /*AND Target.used_page_count <> source.used_page_count */ THEN
-        UPDATE SET 
+        UPDATE SET
           Target.[dbid] = Source.[dbid],
           Target.[schema_id] = Source.[schema_id],
           Target.[object_id] = Source.[object_id],
@@ -1547,7 +1565,8 @@ BEGIN
     BEGIN
       SELECT TOP 1 @CurrentDBID = ID,
                    @CurrentDatabaseName = DatabaseName,
-                   @dbtype = DatabaseType
+                   @dbtype = DatabaseType,
+                   @agbit = AvailabilityGroup
       FROM @tmpDatabases
       WHERE Selected = 1
       AND Completed = 0
@@ -1877,11 +1896,28 @@ BEGIN
       BEGIN
       IF @AllowSnapshots = 'Y'
         BEGIN
+          IF @agbit = 1
+          BEGIN
+            SELECT @role = s.role,
+                  @secondaryRoleAllowConnections = r.secondary_role_allow_connections
+            FROM sys.databases d
+            JOIN sys.dm_hadr_availability_replica_states s ON d.replica_id = s.replica_id
+            JOIN sys.availability_replicas r ON s.replica_id = r.replica_id
+            WHERE d.name = @CurrentDatabaseName
+          END
+          ELSE
+          BEGIN
+            --Setting these to arbitrary numbers for ease of logic
+            SET @role = 200
+            SET @secondaryRoleAllowConnections = 200
+          END
+
           --We need a snapshot but first we need to make sure the database doesnt have mem opt tables for versions older than SQL 2019
-          IF @Version < 15
+          --But we can only check for that if it's a readable secondary
+          IF @Version < 15 AND NOT (@role = 2 and @secondaryRoleAllowConnections = 0)
           BEGIN
             SET @CurrentCommand = 'IF EXISTS (SELECT * FROM sys.filegroups WHERE type = ''FX'') BEGIN SET @currentHasMemOptFG = 1 END ELSE BEGIN SET @currentHasMemOptFG = 0 END'
-            EXECUTE sp_executesql @stmt = @CurrentCommand, @params = N'@currentHasMemOptFG bit OUTPUT', @currentHasMemOptFG = @hasMemOptFG OUTPUT
+            EXECUTE @CurrentDatabase_sp_executesql @stmt = @CurrentCommand, @params = N'@currentHasMemOptFG bit OUTPUT', @currentHasMemOptFG = @hasMemOptFG OUTPUT
           END
 
           --We can't take snapshots of system databases (other than msdb but we don't want to anyway)
@@ -2017,7 +2053,7 @@ BEGIN
             FROM dbo.CheckTableObjects
             WHERE @CurrentDatabaseName = [database_name]
             AND Active = 1
-            AND LastCheckDate = (SELECT MIN(LastCheckDate) FROM dbo.CheckTableObjects WHERE [database_name] = @CurrentDatabaseName AND Active = 1) --Makes sure it's the oldest entry for that database
+            AND LastCheckDate = (SELECT MIN(LastCheckDate) FROM dbo.CheckTableObjects WHERE [database_name] = @CurrentDatabaseName and Active = 1) --Makes sure it's the oldest entry for that database
             AND LastCheckDate <> CAST(@StartTime as date) --makes sure it's not the same day, as we don't need to run it again
             ORDER BY
             CASE WHEN @OrderBySmallest = 1 THEN used_page_count END ASC,
@@ -2155,6 +2191,8 @@ BEGIN
           SET @CurrentCommandOutput = NULL
           SET @CurrentCommandType = NULL
 
+          SET @role = NULL
+          SET @secondaryRoleAllowConnections = NULL
           SET @avgRun = NULL
           SET @previousRunDate = NULL
           SET @prevousRunDuration_MS = NULL
