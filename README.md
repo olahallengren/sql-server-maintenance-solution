@@ -19,6 +19,7 @@ Added Parameters:<br>
    - Defaults to 'Y'
    - Allows the script to take it's own snapshot for the CHECKTABLE command to allow for faster operation.  Otherwise, the CHECKTABLE commad will create an internal snapshot for each command that it runs, which creates much more overhead, especially on larger databases
    - Also allows for checking non-readable secondaries when the database is in an availability group.
+   - NOTE: For versions of SQL older than 2019, if the non-readable secondary contains Memory Optimized tables, it cannot run CHECKTABLE commands
 
 Example:
 ```sql    
