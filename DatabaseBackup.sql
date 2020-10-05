@@ -1123,12 +1123,6 @@ BEGIN
     SELECT 'The value for the parameter @CleanupTime is not supported. Cleanup is not supported on Azure Blob Storage.', 16, 2
   END
 
-  IF @CleanupTime IS NOT NULL AND @HostPlatform = 'Linux'
-  BEGIN
-    INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @CleanupTime is not supported. Cleanup is not supported on Linux.', 16, 3
-  END
-
   IF @CleanupTime IS NOT NULL AND EXISTS(SELECT * FROM @Directories WHERE DirectoryPath = 'NUL')
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
@@ -3384,7 +3378,6 @@ BEGIN
 
       -- Delete old backup files, before backup
       IF NOT EXISTS (SELECT * FROM @CurrentDirectories WHERE CreateOutput <> 0 OR CreateOutput IS NULL)
-      AND @HostPlatform = 'Windows'
       AND (@BackupSoftware <> 'DATA_DOMAIN_BOOST' OR @BackupSoftware IS NULL)
       AND @CurrentBackupType = @BackupType
       BEGIN
@@ -3876,7 +3869,6 @@ BEGIN
       -- Delete old backup files, after backup
       IF ((@CurrentBackupOutput = 0 AND @Verify = 'N')
       OR (@CurrentBackupOutput = 0 AND @Verify = 'Y' AND NOT EXISTS (SELECT * FROM @CurrentBackupSet WHERE VerifyOutput <> 0 OR VerifyOutput IS NULL)))
-      AND @HostPlatform = 'Windows'
       AND (@BackupSoftware <> 'DATA_DOMAIN_BOOST' OR @BackupSoftware IS NULL)
       AND @CurrentBackupType = @BackupType
       BEGIN
