@@ -1791,8 +1791,6 @@ BEGIN
         IF @LockTimeout IS NOT NULL SET @CurrentCommand = 'SET LOCK_TIMEOUT ' + CAST(@LockTimeout * 1000 AS nvarchar) + '; '
         SET @CurrentCommand += 'DBCC CHECKCATALOG (' + QUOTENAME(@CurrentDatabaseName)
         SET @CurrentCommand += ') WITH NO_INFOMSGS'
-        IF @OutputTableResults IS NOT NULL SET @CurrentCommand += ', TABLERESULTS'
-
 
         EXECUTE @CurrentCommandOutput = dbo.CommandExecute @DatabaseContext = @CurrentDatabaseContext, @Command = @CurrentCommand, @CommandType = @CurrentCommandType, @Mode = 1, @DatabaseName = @CurrentDatabaseName, @LogToTable = @LogToTable, @Execute = @Execute
         SET @Error = @@ERROR
