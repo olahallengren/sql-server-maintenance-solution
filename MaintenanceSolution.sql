@@ -10,7 +10,7 @@ License: https://ola.hallengren.com/license.html
 
 GitHub: https://github.com/olahallengren/sql-server-maintenance-solution
 
-Version: 2020-01-26 14:06:53
+Version: 2020-10-25 18:05:29
 
 You can contact me by e-mail at ola@hallengren.com.
 
@@ -122,7 +122,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2020-01-26 14:06:53                                                               //--
+  --// Version: 2020-10-25 18:05:29                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -432,7 +432,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2020-01-26 14:06:53                                                               //--
+  --// Version: 2020-10-25 18:05:29                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -1129,7 +1129,7 @@ BEGIN
   --// Check directories                                                                          //--
   ----------------------------------------------------------------------------------------------------
 
-  IF EXISTS (SELECT * FROM @Directories WHERE Mirror = 0 AND (NOT (DirectoryPath LIKE '_:' OR DirectoryPath LIKE '_:\%' OR DirectoryPath LIKE '\\%\%' OR (DirectoryPath LIKE '/%/%' AND @HostPlatform = 'Linux') OR (DirectoryPath LIKE '.' AND @HostPlatform = 'Linux') OR (DirectoryPath = 'NUL' AND @HostPlatform = 'Windows')) OR DirectoryPath IS NULL OR LEFT(DirectoryPath,1) = ' ' OR RIGHT(DirectoryPath,1) = ' '))
+  IF EXISTS (SELECT * FROM @Directories WHERE Mirror = 0 AND (NOT (DirectoryPath LIKE '_:' OR DirectoryPath LIKE '_:\%' OR DirectoryPath LIKE '\\%\%' OR (DirectoryPath LIKE '/%/%' AND @HostPlatform = 'Linux') OR (DirectoryPath LIKE '.' AND @HostPlatform = 'Linux') OR DirectoryPath = 'NUL') OR DirectoryPath IS NULL OR LEFT(DirectoryPath,1) = ' ' OR RIGHT(DirectoryPath,1) = ' '))
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
     SELECT 'The value for the parameter @Directory is not supported.', 16, 1
@@ -1475,12 +1475,6 @@ BEGIN
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
     SELECT 'The value for the parameter @CleanupTime is not supported. Cleanup is not supported on Azure Blob Storage.', 16, 2
-  END
-
-  IF @CleanupTime IS NOT NULL AND @HostPlatform = 'Linux'
-  BEGIN
-    INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @CleanupTime is not supported. Cleanup is not supported on Linux.', 16, 3
   END
 
   IF @CleanupTime IS NOT NULL AND EXISTS(SELECT * FROM @Directories WHERE DirectoryPath = 'NUL')
@@ -3738,7 +3732,6 @@ BEGIN
 
       -- Delete old backup files, before backup
       IF NOT EXISTS (SELECT * FROM @CurrentDirectories WHERE CreateOutput <> 0 OR CreateOutput IS NULL)
-      AND @HostPlatform = 'Windows'
       AND (@BackupSoftware <> 'DATA_DOMAIN_BOOST' OR @BackupSoftware IS NULL)
       AND @CurrentBackupType = @BackupType
       BEGIN
@@ -4230,7 +4223,6 @@ BEGIN
       -- Delete old backup files, after backup
       IF ((@CurrentBackupOutput = 0 AND @Verify = 'N')
       OR (@CurrentBackupOutput = 0 AND @Verify = 'Y' AND NOT EXISTS (SELECT * FROM @CurrentBackupSet WHERE VerifyOutput <> 0 OR VerifyOutput IS NULL)))
-      AND @HostPlatform = 'Windows'
       AND (@BackupSoftware <> 'DATA_DOMAIN_BOOST' OR @BackupSoftware IS NULL)
       AND @CurrentBackupType = @BackupType
       BEGIN
@@ -4449,7 +4441,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2020-01-26 14:06:53                                                               //--
+  --// Version: 2020-10-25 18:05:29                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -6323,7 +6315,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2020-01-26 14:06:53                                                               //--
+  --// Version: 2020-10-25 18:05:29                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
