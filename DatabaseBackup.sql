@@ -78,7 +78,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2020-10-25 18:05:29                                                               //--
+  --// Version: 2020-11-01 18:16:36                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -688,12 +688,19 @@ BEGIN
   END
 
   ----------------------------------------------------------------------------------------------------
-  --// Select directories                                                                         //--
+  --// Select default directory                                                                      //--
   ----------------------------------------------------------------------------------------------------
 
-  IF @Directory IS NULL AND @URL IS NULL AND @HostPlatform = 'Windows' AND (@BackupSoftware <> 'DATA_DOMAIN_BOOST' OR @BackupSoftware IS NULL)
+  IF @Directory IS NULL AND @URL IS NULL AND (@BackupSoftware <> 'DATA_DOMAIN_BOOST' OR @BackupSoftware IS NULL)
   BEGIN
-    EXECUTE [master].dbo.xp_instance_regread N'HKEY_LOCAL_MACHINE', N'SOFTWARE\Microsoft\MSSQLServer\MSSQLServer', N'BackupDirectory', @DefaultDirectory OUTPUT
+    IF @Version >= 15
+    BEGIN
+      SET @DefaultDirectory = CAST(SERVERPROPERTY('InstanceDefaultBackupPath') AS nvarchar(max))
+    END
+    ELSE
+    BEGIN
+      EXECUTE [master].dbo.xp_instance_regread N'HKEY_LOCAL_MACHINE', N'SOFTWARE\Microsoft\MSSQLServer\MSSQLServer', N'BackupDirectory', @DefaultDirectory OUTPUT
+    END
 
     IF @DefaultDirectory LIKE 'http://%' OR @DefaultDirectory LIKE 'https://%'
     BEGIN
@@ -705,42 +712,39 @@ BEGIN
       SELECT 1, @DefaultDirectory, 0, 0
     END
   END
-  IF @Directory IS NULL AND @URL IS NULL AND @HostPlatform = 'Linux'
-  BEGIN
-    INSERT INTO @Directories (ID, DirectoryPath, Mirror, Completed)
-    SELECT 1, '.', 0, 0
-  END
-  ELSE
-  BEGIN
-    SET @Directory = REPLACE(@Directory, CHAR(10), '')
-    SET @Directory = REPLACE(@Directory, CHAR(13), '')
 
-    WHILE CHARINDEX(@StringDelimiter + ' ', @Directory) > 0 SET @Directory = REPLACE(@Directory, @StringDelimiter + ' ', @StringDelimiter)
-    WHILE CHARINDEX(' ' + @StringDelimiter, @Directory) > 0 SET @Directory = REPLACE(@Directory, ' ' + @StringDelimiter, @StringDelimiter)
+  ----------------------------------------------------------------------------------------------------
+  --// Select directories                                                                         //--
+  ----------------------------------------------------------------------------------------------------
 
-    SET @Directory = LTRIM(RTRIM(@Directory));
+  SET @Directory = REPLACE(@Directory, CHAR(10), '')
+  SET @Directory = REPLACE(@Directory, CHAR(13), '')
 
-    WITH Directories (StartPosition, EndPosition, Directory) AS
-    (
-    SELECT 1 AS StartPosition,
-           ISNULL(NULLIF(CHARINDEX(@StringDelimiter, @Directory, 1), 0), LEN(@Directory) + 1) AS EndPosition,
-           SUBSTRING(@Directory, 1, ISNULL(NULLIF(CHARINDEX(@StringDelimiter, @Directory, 1), 0), LEN(@Directory) + 1) - 1) AS Directory
-    WHERE @Directory IS NOT NULL
-    UNION ALL
-    SELECT CAST(EndPosition AS int) + 1 AS StartPosition,
-           ISNULL(NULLIF(CHARINDEX(@StringDelimiter, @Directory, EndPosition + 1), 0), LEN(@Directory) + 1) AS EndPosition,
-           SUBSTRING(@Directory, EndPosition + 1, ISNULL(NULLIF(CHARINDEX(@StringDelimiter, @Directory, EndPosition + 1), 0), LEN(@Directory) + 1) - EndPosition - 1) AS Directory
-    FROM Directories
-    WHERE EndPosition < LEN(@Directory) + 1
-    )
-    INSERT INTO @Directories (ID, DirectoryPath, Mirror, Completed)
-    SELECT ROW_NUMBER() OVER(ORDER BY StartPosition ASC) AS ID,
-           Directory,
-           0,
-           0
-    FROM Directories
-    OPTION (MAXRECURSION 0)
-  END
+  WHILE CHARINDEX(@StringDelimiter + ' ', @Directory) > 0 SET @Directory = REPLACE(@Directory, @StringDelimiter + ' ', @StringDelimiter)
+  WHILE CHARINDEX(' ' + @StringDelimiter, @Directory) > 0 SET @Directory = REPLACE(@Directory, ' ' + @StringDelimiter, @StringDelimiter)
+
+  SET @Directory = LTRIM(RTRIM(@Directory));
+
+  WITH Directories (StartPosition, EndPosition, Directory) AS
+  (
+  SELECT 1 AS StartPosition,
+          ISNULL(NULLIF(CHARINDEX(@StringDelimiter, @Directory, 1), 0), LEN(@Directory) + 1) AS EndPosition,
+          SUBSTRING(@Directory, 1, ISNULL(NULLIF(CHARINDEX(@StringDelimiter, @Directory, 1), 0), LEN(@Directory) + 1) - 1) AS Directory
+  WHERE @Directory IS NOT NULL
+  UNION ALL
+  SELECT CAST(EndPosition AS int) + 1 AS StartPosition,
+          ISNULL(NULLIF(CHARINDEX(@StringDelimiter, @Directory, EndPosition + 1), 0), LEN(@Directory) + 1) AS EndPosition,
+          SUBSTRING(@Directory, EndPosition + 1, ISNULL(NULLIF(CHARINDEX(@StringDelimiter, @Directory, EndPosition + 1), 0), LEN(@Directory) + 1) - EndPosition - 1) AS Directory
+  FROM Directories
+  WHERE EndPosition < LEN(@Directory) + 1
+  )
+  INSERT INTO @Directories (ID, DirectoryPath, Mirror, Completed)
+  SELECT ROW_NUMBER() OVER(ORDER BY StartPosition ASC) AS ID,
+          Directory,
+          0,
+          0
+  FROM Directories
+  OPTION (MAXRECURSION 0)
 
   SET @MirrorDirectory = REPLACE(@MirrorDirectory, CHAR(10), '')
   SET @MirrorDirectory = REPLACE(@MirrorDirectory, CHAR(13), '')
@@ -775,7 +779,7 @@ BEGIN
   --// Check directories                                                                          //--
   ----------------------------------------------------------------------------------------------------
 
-  IF EXISTS (SELECT * FROM @Directories WHERE Mirror = 0 AND (NOT (DirectoryPath LIKE '_:' OR DirectoryPath LIKE '_:\%' OR DirectoryPath LIKE '\\%\%' OR (DirectoryPath LIKE '/%/%' AND @HostPlatform = 'Linux') OR (DirectoryPath LIKE '.' AND @HostPlatform = 'Linux') OR DirectoryPath = 'NUL') OR DirectoryPath IS NULL OR LEFT(DirectoryPath,1) = ' ' OR RIGHT(DirectoryPath,1) = ' '))
+  IF EXISTS (SELECT * FROM @Directories WHERE Mirror = 0 AND (NOT (DirectoryPath LIKE '_:' OR DirectoryPath LIKE '_:\%' OR DirectoryPath LIKE '\\%\%' OR (DirectoryPath LIKE '/%/%' AND @HostPlatform = 'Linux') OR DirectoryPath = 'NUL') OR DirectoryPath IS NULL OR LEFT(DirectoryPath,1) = ' ' OR RIGHT(DirectoryPath,1) = ' '))
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
     SELECT 'The value for the parameter @Directory is not supported.', 16, 1
@@ -813,7 +817,7 @@ BEGIN
 
   ----------------------------------------------------------------------------------------------------
 
-  IF EXISTS(SELECT * FROM @Directories WHERE Mirror = 1 AND (NOT (DirectoryPath LIKE '_:' OR DirectoryPath LIKE '_:\%' OR DirectoryPath LIKE '\\%\%' OR (DirectoryPath LIKE '/%/%' AND @HostPlatform = 'Linux') OR (DirectoryPath LIKE '.' AND @HostPlatform = 'Linux')) OR DirectoryPath IS NULL OR LEFT(DirectoryPath,1) = ' ' OR RIGHT(DirectoryPath,1) = ' '))
+  IF EXISTS(SELECT * FROM @Directories WHERE Mirror = 1 AND (NOT (DirectoryPath LIKE '_:' OR DirectoryPath LIKE '_:\%' OR DirectoryPath LIKE '\\%\%' OR (DirectoryPath LIKE '/%/%' AND @HostPlatform = 'Linux')) OR DirectoryPath IS NULL OR LEFT(DirectoryPath,1) = ' ' OR RIGHT(DirectoryPath,1) = ' '))
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
     SELECT 'The value for the parameter @MirrorDirectory is not supported.', 16, 1
