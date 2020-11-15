@@ -78,7 +78,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2020-11-15 14:55:23                                                               //--
+  --// Version: 2020-11-15 18:44:03                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -2754,7 +2754,7 @@ BEGIN
     SET @DatabaseMessage = 'Differential base LSN: ' + ISNULL(CAST(@CurrentDifferentialBaseLSN AS nvarchar),'N/A')
     RAISERROR('%s',10,1,@DatabaseMessage) WITH NOWAIT
 
-    IF @CurrentBackupType = 'DIFF'
+    IF @CurrentBackupType = 'DIFF' OR @CurrentDifferentialBaseIsSnapshot IS NOT NULL
     BEGIN
       SET @DatabaseMessage = 'Differential base is snapshot: ' + CASE WHEN @CurrentDifferentialBaseIsSnapshot = 1 THEN 'Yes' WHEN @CurrentDifferentialBaseIsSnapshot = 0 THEN 'No' ELSE 'N/A' END
       RAISERROR('%s',10,1,@DatabaseMessage) WITH NOWAIT
