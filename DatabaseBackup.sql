@@ -79,7 +79,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2020-11-22 17:45:07                                                               //--
+  --// Version: 2020-11-26 16:54:49                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -144,6 +144,8 @@ BEGIN
   DECLARE @CurrentDate datetime2
   DECLARE @CurrentCleanupDate datetime2
   DECLARE @CurrentIsDatabaseAccessible bit
+  DECLARE @CurrentReplicaID uniqueidentifier
+  DECLARE @CurrentAvailabilityGroupID uniqueidentifier
   DECLARE @CurrentAvailabilityGroup nvarchar(max)
   DECLARE @CurrentAvailabilityGroupRole nvarchar(max)
   DECLARE @CurrentAvailabilityGroupBackupPreference nvarchar(max)
@@ -2617,13 +2619,19 @@ BEGIN
 
     IF @Version >= 11 AND SERVERPROPERTY('IsHadrEnabled') = 1
     BEGIN
+      SELECT @CurrentReplicaID = replica_id
+      FROM sys.databases
+      WHERE [name] = @CurrentDatabaseName
+
+      SELECT @CurrentAvailabilityGroupRole = dm_hadr_availability_replica_states.role_desc,
+             @CurrentAvailabilityGroupID = group_id
+      FROM sys.dm_hadr_availability_replica_states
+      WHERE replica_id = @CurrentReplicaID
+
       SELECT @CurrentAvailabilityGroup = availability_groups.name,
-             @CurrentAvailabilityGroupRole = dm_hadr_availability_replica_states.role_desc,
              @CurrentAvailabilityGroupBackupPreference = UPPER(availability_groups.automated_backup_preference_desc)
-      FROM sys.databases databases
-      INNER JOIN sys.dm_hadr_availability_replica_states dm_hadr_availability_replica_states ON databases.replica_id = dm_hadr_availability_replica_states.replica_id
-      INNER JOIN sys.availability_groups availability_groups ON dm_hadr_availability_replica_states.group_id = availability_groups.group_id
-      WHERE databases.name = @CurrentDatabaseName
+      FROM sys.availability_groups
+      WHERE group_id = @CurrentAvailabilityGroupID
     END
 
     IF @Version >= 11 AND SERVERPROPERTY('IsHadrEnabled') = 1 AND @CurrentAvailabilityGroup IS NOT NULL
@@ -2809,6 +2817,7 @@ BEGIN
     AND NOT (@CurrentIsReadOnly = 1 AND @Updateability = 'READ_WRITE')
     AND NOT (@CurrentIsReadOnly = 0 AND @Updateability = 'READ_ONLY')
     AND NOT (@CurrentBackupType = 'LOG' AND @LogSizeSinceLastLogBackup IS NOT NULL AND @TimeSinceLastLogBackup IS NOT NULL AND NOT(@CurrentLogSizeSinceLastLogBackup >= @LogSizeSinceLastLogBackup OR @CurrentLogSizeSinceLastLogBackup IS NULL OR DATEDIFF(SECOND,@CurrentLastLogBackup,SYSDATETIME()) >= @TimeSinceLastLogBackup OR @CurrentLastLogBackup IS NULL))
+    AND NOT (@CurrentBackupType = 'LOG' AND @Updateability = 'READ_ONLY' AND @BackupSoftware = 'DATA_DOMAIN_BOOST')
     BEGIN
 
       IF @CurrentBackupType = 'LOG' AND (@CleanupTime IS NOT NULL OR @MirrorCleanupTime IS NOT NULL)
@@ -4015,6 +4024,8 @@ BEGIN
     SET @CurrentDate = NULL
     SET @CurrentCleanupDate = NULL
     SET @CurrentIsDatabaseAccessible = NULL
+    SET @CurrentReplicaID = NULL
+    SET @CurrentAvailabilityGroupID = NULL
     SET @CurrentAvailabilityGroup = NULL
     SET @CurrentAvailabilityGroupRole = NULL
     SET @CurrentAvailabilityGroupBackupPreference = NULL
