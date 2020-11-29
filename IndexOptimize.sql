@@ -53,7 +53,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2020-11-29 18:17:18                                                               //--
+  --// Version: 2020-11-29 19:56:45                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -470,8 +470,8 @@ BEGIN
     SELECT databases.name,
            availability_groups.name
     FROM sys.databases databases
-    INNER JOIN sys.dm_hadr_availability_replica_states dm_hadr_availability_replica_states ON databases.replica_id = dm_hadr_availability_replica_states.replica_id
-    INNER JOIN sys.availability_groups availability_groups ON dm_hadr_availability_replica_states.group_id = availability_groups.group_id
+    INNER JOIN sys.availability_replicas availability_replicas ON databases.replica_id = availability_replicas.replica_id
+    INNER JOIN sys.availability_groups availability_groups ON availability_replicas.group_id = availability_groups.group_id
   END
 
   INSERT INTO @tmpDatabases (DatabaseName, DatabaseType, AvailabilityGroup, [Order], Selected, Completed)
@@ -1485,16 +1485,17 @@ BEGIN
 
     IF @Version >= 11 AND SERVERPROPERTY('IsHadrEnabled') = 1
     BEGIN
-      SELECT @CurrentReplicaID = replica_id
-      FROM sys.databases
-      WHERE [name] = @CurrentDatabaseName
+      SELECT @CurrentReplicaID = databases.replica_id
+      FROM sys.databases databases
+      INNER JOIN sys.availability_replicas availability_replicas ON databases.replica_id = availability_replicas.replica_id
+      WHERE databases.[name] = @CurrentDatabaseName
 
-      SELECT @CurrentAvailabilityGroupRole = dm_hadr_availability_replica_states.role_desc,
+      SELECT @CurrentAvailabilityGroupRole = role_desc,
              @CurrentAvailabilityGroupID = group_id
       FROM sys.dm_hadr_availability_replica_states
       WHERE replica_id = @CurrentReplicaID
 
-      SELECT @CurrentAvailabilityGroup = availability_groups.name
+      SELECT @CurrentAvailabilityGroup = [name]
       FROM sys.availability_groups
       WHERE group_id = @CurrentAvailabilityGroupID
     END
