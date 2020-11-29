@@ -36,7 +36,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2020-11-28 11:43:26                                                               //--
+  --// Version: 2020-11-29 18:17:18                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -132,7 +132,7 @@ BEGIN
     SELECT 'The value for the parameter @LockMessageSeverity is not supported.', 16, 1
   END
 
-  IF @ExecuteAsUser <> 'dbo'
+  IF LEN(@ExecuteAsUser) > 128
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
     SELECT 'The value for the parameter @ExecuteAsUser is not supported.', 16, 1
@@ -182,9 +182,9 @@ BEGIN
   --// Execute as user                                                                            //--
   ----------------------------------------------------------------------------------------------------
 
-  IF @ExecuteAsUser = 'dbo'
+  IF @ExecuteAsUser IS NOT NULL
   BEGIN
-    SET @Command = 'EXECUTE AS USER = ''dbo''; ' + @Command + '; REVERT;'
+    SET @Command = 'EXECUTE AS USER = ''' + REPLACE(@ExecuteAsUser,'''','''''') + '''; ' + @Command + '; REVERT;'
 
     SET @RevertCommand = 'REVERT'
   END

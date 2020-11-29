@@ -53,7 +53,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2020-11-28 11:43:26                                                               //--
+  --// Version: 2020-11-29 18:17:18                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -86,6 +86,7 @@ BEGIN
 
   DECLARE @CurrentDatabase_sp_executesql nvarchar(max)
 
+  DECLARE @CurrentExecuteAsUserExists bit
   DECLARE @CurrentUserAccess nvarchar(max)
   DECLARE @CurrentIsReadOnly bit
   DECLARE @CurrentDatabaseState nvarchar(max)
@@ -1095,7 +1096,7 @@ BEGIN
 
   ----------------------------------------------------------------------------------------------------
 
-  IF @ExecuteAsUser <> 'dbo'
+  IF LEN(@ExecuteAsUser) > 128
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
     SELECT 'The value for the parameter @ExecuteAsUser is not supported.', 16, 1
@@ -1429,6 +1430,14 @@ BEGIN
 
     SET @CurrentDatabase_sp_executesql = QUOTENAME(@CurrentDatabaseName) + '.sys.sp_executesql'
 
+    IF @ExecuteAsUser IS NOT NULL
+    BEGIN
+      SET @CurrentCommand = ''
+      SET @CurrentCommand += 'IF EXISTS(SELECT * FROM sys.database_principals database_principals WHERE database_principals.[name] = @ParamExecuteAsUser) BEGIN SET @ParamExecuteAsUserExists = 1 END ELSE BEGIN SET @ParamExecuteAsUserExists = 0 END'
+
+      EXECUTE @CurrentDatabase_sp_executesql @stmt = @CurrentCommand, @params = N'@ParamExecuteAsUser sysname, @ParamExecuteAsUserExists bit OUTPUT', @ParamExecuteAsUser = @ExecuteAsUser, @ParamExecuteAsUserExists = @CurrentExecuteAsUserExists OUTPUT
+    END
+
     BEGIN
       SET @DatabaseMessage = 'Date and time: ' + CONVERT(nvarchar,SYSDATETIME(),120)
       RAISERROR('%s',10,1,@DatabaseMessage) WITH NOWAIT
@@ -1520,9 +1529,17 @@ BEGIN
 
     RAISERROR(@EmptyLine,10,1) WITH NOWAIT
 
+    IF @CurrentExecuteAsUserExists = 0
+    BEGIN
+      SET @DatabaseMessage = 'The user ' + QUOTENAME(@ExecuteAsUser) + ' does not exist in the database ' + QUOTENAME(@CurrentDatabaseName) + '.'
+      RAISERROR('%s',16,1,@DatabaseMessage) WITH NOWAIT
+      RAISERROR(@EmptyLine,10,1) WITH NOWAIT
+    END
+
     IF @CurrentDatabaseState = 'ONLINE'
     AND NOT (@CurrentUserAccess = 'SINGLE_USER' AND @CurrentIsDatabaseAccessible = 0)
     AND DATABASEPROPERTYEX(@CurrentDatabaseName,'Updateability') = 'READ_WRITE'
+    AND (@CurrentExecuteAsUserExists = 1 OR @CurrentExecuteAsUserExists IS NULL)
     BEGIN
 
       -- Select indexes in the current database
@@ -2372,6 +2389,7 @@ BEGIN
 
     SET @CurrentDatabase_sp_executesql = NULL
 
+    SET @CurrentExecuteAsUserExists = NULL
     SET @CurrentUserAccess = NULL
     SET @CurrentIsReadOnly = NULL
     SET @CurrentDatabaseState = NULL
