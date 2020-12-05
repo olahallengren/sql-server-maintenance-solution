@@ -79,7 +79,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2020-12-05 18:28:36                                                               //--
+  --// Version: 2020-12-06 00:32:13                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -1978,7 +1978,7 @@ BEGIN
     SELECT 'The value for the parameter @FileName is not supported.', 16, 3
   END
 
-  IF @FileName LIKE '%{DirectorySeperator}%'
+  IF @FileName LIKE '%{DirectorySeparator}%'
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
     SELECT 'The value for the parameter @FileName is not supported.', 16, 4
@@ -2022,7 +2022,7 @@ BEGIN
     SELECT 'The value for the parameter @AvailabilityGroupFileName is not supported.', 16, 4
   END
 
-  IF @AvailabilityGroupFileName LIKE '%{DirectorySeperator}%'
+  IF @AvailabilityGroupFileName LIKE '%{DirectorySeparator}%'
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
     SELECT 'The value for the parameter @AvailabilityGroupFileName is not supported.', 16, 5
@@ -2624,8 +2624,11 @@ BEGIN
       INNER JOIN sys.availability_replicas availability_replicas ON databases.replica_id = availability_replicas.replica_id
       WHERE databases.[name] = @CurrentDatabaseName
 
-      SELECT @CurrentAvailabilityGroupRole = role_desc,
-             @CurrentAvailabilityGroupID = group_id
+      SELECT @CurrentAvailabilityGroupID = group_id
+      FROM sys.availability_replicas
+      WHERE replica_id = @CurrentReplicaID
+
+      SELECT @CurrentAvailabilityGroupRole = role_desc
       FROM sys.dm_hadr_availability_replica_states
       WHERE replica_id = @CurrentReplicaID
 
