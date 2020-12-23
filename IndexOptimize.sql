@@ -7,7 +7,7 @@ BEGIN
 EXEC dbo.sp_executesql @statement = N'CREATE PROCEDURE [dbo].[IndexOptimize] AS'
 END
 GO
-ALTER PROCEDURE [dbo].[IndexOptimize]
+ALTER PROCEDURE dbo.IndexOptimize
 
 @Databases nvarchar(max) = NULL,
 @FragmentationLow nvarchar(max) = NULL,
@@ -209,6 +209,14 @@ BEGIN
                                        Completed bit,
                                        PRIMARY KEY(Selected, Completed, [Order], ID))
 
+  DECLARE @IncrementalStatsCache TABLE(object_id INT NOT NULL,
+                                       stats_id INT NOT NULL,
+                                       partition_number int NOT NULL,
+                                       rows bigint,
+                                       modification_counter BIGINT,
+                                       PRIMARY KEY(object_id, stats_id, partition_number)
+                                       )
+
   DECLARE @SelectedDatabases TABLE (DatabaseName nvarchar(max),
                                     DatabaseType nvarchar(max),
                                     AvailabilityGroup nvarchar(max),
@@ -272,7 +280,7 @@ BEGIN
   END
 
   DECLARE @AmazonRDS bit = CASE WHEN DB_ID('rdsadmin') IS NOT NULL AND SUSER_SNAME(0x01) = 'rdsa' THEN 1 ELSE 0 END
-
+  
   ----------------------------------------------------------------------------------------------------
   --// Log initial information                                                                    //--
   ----------------------------------------------------------------------------------------------------
@@ -1614,7 +1622,7 @@ BEGIN
 
         IF (EXISTS(SELECT * FROM @ActionsPreferred) AND @UpdateStatistics = 'COLUMNS') OR @UpdateStatistics = 'ALL'
         BEGIN
-          SET @CurrentCommand = @CurrentCommand + ' UNION '
+          SET @CurrentCommand = @CurrentCommand + ' UNION ALL'
         END
 
         IF @UpdateStatistics IN('ALL','COLUMNS')
@@ -1867,7 +1875,23 @@ BEGIN
 
           IF @PartitionLevelStatistics = 1 AND @CurrentIsIncremental = 1
           BEGIN
-            SET @CurrentCommand += 'SELECT @ParamRowCount = [rows], @ParamModificationCounter = modification_counter FROM sys.dm_db_incremental_stats_properties (@ParamObjectID, @ParamStatisticsID) WHERE partition_number = @ParamPartitionNumber'
+            IF NOT EXISTS (SELECT * FROM @IncrementalStatsCache AS isc WHERE isc.object_id = @CurrentObjectID AND isc.stats_id = @CurrentStatisticsID)
+            BEGIN
+                DELETE FROM @IncrementalStatsCache WHERE 1 = 1
+                SET @CurrentCommand += 'SELECT object_id, stats_id, partition_number, rows, modification_counter FROM sys.dm_db_incremental_stats_properties (@ParamObjectID, @ParamStatisticsID);'
+                ;
+                INSERT INTO @IncrementalStatsCache (object_id, stats_id, partition_number, rows, modification_counter)
+                EXECUTE @CurrentDatabase_sp_executesql @stmt = @CurrentCommand, @params = N'@ParamObjectID BIGINT, @ParamStatisticsID BIGINT', @ParamObjectID = @CurrentObjectID, @ParamStatisticsID = @CurrentStatisticsID
+                ;
+            END
+            SELECT @CurrentRowCount = isc.rows
+                 , @CurrentModificationCounter = isc.modification_counter
+              FROM @IncrementalStatsCache AS isc
+             WHERE isc.object_id = @CurrentObjectID
+               AND isc.stats_id  = @CurrentStatisticsID
+               AND isc.partition_number = @CurrentPartitionNumber
+            ;
+            SET @CurrentCommand = ''
           END
           ELSE
           IF (@Version >= 10.504000 AND @Version < 11) OR @Version >= 11.03000
@@ -1880,7 +1904,8 @@ BEGIN
           END
 
           BEGIN TRY
-            EXECUTE @CurrentDatabase_sp_executesql @stmt = @CurrentCommand, @params = N'@ParamObjectID int, @ParamStatisticsID int, @ParamPartitionNumber int, @ParamRowCount bigint OUTPUT, @ParamModificationCounter bigint OUTPUT', @ParamObjectID = @CurrentObjectID, @ParamStatisticsID = @CurrentStatisticsID, @ParamPartitionNumber = @CurrentPartitionNumber, @ParamRowCount = @CurrentRowCount OUTPUT, @ParamModificationCounter = @CurrentModificationCounter OUTPUT
+            IF @CurrentCommand <> ''
+               EXECUTE @CurrentDatabase_sp_executesql @stmt = @CurrentCommand, @params = N'@ParamObjectID int, @ParamStatisticsID int, @ParamPartitionNumber int, @ParamRowCount bigint OUTPUT, @ParamModificationCounter bigint OUTPUT', @ParamObjectID = @CurrentObjectID, @ParamStatisticsID = @CurrentStatisticsID, @ParamPartitionNumber = @CurrentPartitionNumber, @ParamRowCount = @CurrentRowCount OUTPUT, @ParamModificationCounter = @CurrentModificationCounter OUTPUT
 
             IF @CurrentRowCount IS NULL SET @CurrentRowCount = 0
             IF @CurrentModificationCounter IS NULL SET @CurrentModificationCounter = 0
@@ -2433,15 +2458,3 @@ BEGIN
 END
 
 GO
-
-EXEC LOGGING.journal_check.usp_upd_failure_journal @failure_journal_id = 155545
-                                                 , @failure_journal_status_id = 3 -- 1 - Open, 2 - In Progress, 3 - Closed, 4 - On Hold
-                                                 , @ticket_nr = 'RABA-9732'
-                                                 , @user_description = 'Probleme im Zusammenhang mit der Umstellung auf neue Version'
-;
-SELECT message_time,event_message_id,MESSAGE,package_name,event_name,message_source_name,package_path,execution_path,message_type,message_source_type,q.extended_info_id,q.subcomponent_name,q.operation_id
-FROM   (SELECT  em.*
-        FROM    SSISDB.catalog.event_messages em
-        WHERE    em.operation_id =    634052 
-        AND event_name NOT LIKE '%Validate%')q
-ORDER BY message_time asc
