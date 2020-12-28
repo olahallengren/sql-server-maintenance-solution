@@ -1622,7 +1622,7 @@ BEGIN
 
         IF (EXISTS(SELECT * FROM @ActionsPreferred) AND @UpdateStatistics = 'COLUMNS') OR @UpdateStatistics = 'ALL'
         BEGIN
-          SET @CurrentCommand = @CurrentCommand + ' UNION ALL'
+          SET @CurrentCommand = @CurrentCommand + ' UNION ALL '
         END
 
         IF @UpdateStatistics IN('ALL','COLUMNS')
