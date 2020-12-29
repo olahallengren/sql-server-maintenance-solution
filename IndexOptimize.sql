@@ -62,19 +62,6 @@ BEGIN
 
   SET NUMERIC_ROUNDABORT OFF
 
-  IF OBJECT_ID(N'tempdb..#IncrementalStatsCache', N'U') IS NOT NULL DROP TABLE #IncrementalStatsCache;
-  CREATE TABLE #IncrementalStatsCache ([partition_number] int PRIMARY KEY,
-                                       [last_updated] datetime2,
-                                       [rows] bigint,
-                                       [rows_sampled] bigint,
-                                       [steps] int,
-                                       [unfiltered_rows] bigint,
-                                       [modification_counter] bigint);
-
-  DECLARE @IncStatsCacheObjectID        int = 0;
-  DECLARE @IncStatsCacheStatisticsID    int = 0;
-  DECLARE @GetIncStatsCacheCommand      nvarchar(max);
-
   DECLARE @StartMessage nvarchar(max)
   DECLARE @EndMessage nvarchar(max)
   DECLARE @DatabaseMessage nvarchar(max)
@@ -221,6 +208,13 @@ BEGIN
                                        Selected bit,
                                        Completed bit,
                                        PRIMARY KEY(Selected, Completed, [Order], ID))
+
+  DECLARE @tmpStatisticsCache TABLE (ObjectID int NOT NULL,
+                                     StatisticsID int NOT NULL,
+                                     PartitionNumber int NOT NULL DEFAULT 0,
+                                     [Rows] bigint NULL DEFAULT 0,
+                                     ModificationCounter bigint NULL DEFAULT 0,
+                                     PRIMARY KEY(ObjectID, StatisticsID, PartitionNumber))
 
   DECLARE @SelectedDatabases TABLE (DatabaseName nvarchar(max),
                                     DatabaseType nvarchar(max),
@@ -1880,41 +1874,34 @@ BEGIN
 
           IF @PartitionLevelStatistics = 1 AND @CurrentIsIncremental = 1
           BEGIN
-            IF (@IncStatsCacheObjectID <> @CurrentObjectID OR @IncStatsCacheStatisticsID <> @CurrentStatisticsID)
-            BEGIN
-              SET @GetIncStatsCacheCommand = N'USE ' + QUOTENAME(@CurrentDatabaseName) + '; ' +
-                  N'TRUNCATE TABLE #IncrementalStatsCache; ' +
-				  N'INSERT INTO #IncrementalStatsCache ([partition_number], [last_updated], [rows], [rows_sampled],	[steps], [unfiltered_rows], [modification_counter]) ' +
-                  N'SELECT [partition_number], [last_updated], [rows], [rows_sampled],	[steps], [unfiltered_rows], [modification_counter] FROM sys.dm_db_incremental_stats_properties (@ParamObjectID, @ParamStatisticsID);';
-
-              BEGIN TRY
-                EXECUTE sp_executesql @statement = @GetIncStatsCacheCommand, @params = N'@ParamObjectID int, @ParamStatisticsID int', @ParamObjectID = @CurrentObjectID, @ParamStatisticsID = @CurrentStatisticsID;
-                SET @IncStatsCacheObjectID = @CurrentObjectID;
-                SET @IncStatsCacheStatisticsID = @CurrentStatisticsID;
-              END TRY
-              BEGIN CATCH
-                SET @ErrorMessage = 'Msg ' + CAST(ERROR_NUMBER() AS nvarchar) + ', ' + ISNULL(ERROR_MESSAGE(),'');
-                SET @Severity = 16;
-                RAISERROR('%s',@Severity,1,@ErrorMessage) WITH NOWAIT;
-                RAISERROR(@EmptyLine,10,1) WITH NOWAIT;
-              END CATCH
-            END
-
-            SET @CurrentCommand += 'SELECT @ParamRowCount = [rows], @ParamModificationCounter = modification_counter FROM #IncrementalStatsCache WHERE partition_number = @ParamPartitionNumber'
+            SET @CurrentCommand += 'SELECT object_id, stats_id, partition_number, [rows], modification_counter FROM sys.dm_db_incremental_stats_properties (@ParamObjectID, @ParamStatisticsID)'
           END
           ELSE
           IF (@Version >= 10.504000 AND @Version < 11) OR @Version >= 11.03000
           BEGIN
-            SET @CurrentCommand += 'SELECT @ParamRowCount = [rows], @ParamModificationCounter = modification_counter FROM sys.dm_db_stats_properties (@ParamObjectID, @ParamStatisticsID)'
+            SET @CurrentCommand += 'SELECT object_id, stats_id, 0 AS partition_number, [rows], modification_counter FROM sys.dm_db_stats_properties (@ParamObjectID, @ParamStatisticsID)'
           END
           ELSE
           BEGIN
-            SET @CurrentCommand += 'SELECT @ParamRowCount = rowcnt, @ParamModificationCounter = rowmodctr FROM sys.sysindexes sysindexes WHERE sysindexes.[id] = @ParamObjectID AND sysindexes.[indid] = @ParamStatisticsID'
+            SET @CurrentCommand += 'SELECT id, indid, 0 AS partition_number, rowcnt, rowmodctr FROM sys.sysindexes sysindexes WHERE sysindexes.[id] = @ParamObjectID AND sysindexes.[indid] = @ParamStatisticsID'
           END
 
           BEGIN TRY
-            EXECUTE @CurrentDatabase_sp_executesql @stmt = @CurrentCommand, @params = N'@ParamObjectID int, @ParamStatisticsID int, @ParamPartitionNumber int, @ParamRowCount bigint OUTPUT, @ParamModificationCounter bigint OUTPUT', @ParamObjectID = @CurrentObjectID, @ParamStatisticsID = @CurrentStatisticsID, @ParamPartitionNumber = @CurrentPartitionNumber, @ParamRowCount = @CurrentRowCount OUTPUT, @ParamModificationCounter = @CurrentModificationCounter OUTPUT
-
+            IF NOT EXISTS (SELECT * FROM @tmpStatisticsCache WHERE ObjectID = @CurrentObjectID AND StatisticsID = @CurrentStatisticsID)
+            BEGIN
+                DELETE FROM @tmpStatisticsCache
+                
+                INSERT INTO @tmpStatisticsCache (ObjectID, StatisticsID, PartitionNumber, [Rows], ModificationCounter)
+                EXECUTE @CurrentDatabase_sp_executesql @stmt = @CurrentCommand, @params = N'@ParamObjectID int, @ParamStatisticsID int', @ParamObjectID = @CurrentObjectID, @ParamStatisticsID = @CurrentStatisticsID
+            END
+            
+            SELECT TOP (1) @CurrentRowCount = [Rows],
+                           @CurrentModificationCounter = ModificationCounter
+            FROM @tmpStatisticsCache
+            WHERE ObjectID = @CurrentObjectID
+              AND StatisticsID = @CurrentStatisticsID
+              AND PartitionNumber = ISNULL(@CurrentPartitionNumber, 0)
+            
             IF @CurrentRowCount IS NULL SET @CurrentRowCount = 0
             IF @CurrentModificationCounter IS NULL SET @CurrentModificationCounter = 0
           END TRY
@@ -2443,6 +2430,7 @@ BEGIN
     SET @CurrentCommand = NULL
 
     DELETE FROM @tmpIndexesStatistics
+    DELETE FROM @tmpStatisticsCache
 
   END
 
