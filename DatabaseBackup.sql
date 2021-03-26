@@ -27,6 +27,7 @@ ALTER PROCEDURE [dbo].[DatabaseBackup]
 @MinBackupSizeForMultipleFiles int = NULL,
 @MaxFileSize int = NULL,
 @CompressionLevel int = NULL,
+@Name nvarchar(max) = NULL,
 @Description nvarchar(max) = NULL,
 @Threads int = NULL,
 @Throttle int = NULL,
@@ -289,6 +290,7 @@ BEGIN
   SET @Parameters += ', @MinBackupSizeForMultipleFiles = ' + ISNULL(CAST(@MinBackupSizeForMultipleFiles AS nvarchar),'NULL')
   SET @Parameters += ', @MaxFileSize = ' + ISNULL(CAST(@MaxFileSize AS nvarchar),'NULL')
   SET @Parameters += ', @CompressionLevel = ' + ISNULL(CAST(@CompressionLevel AS nvarchar),'NULL')
+  SET @Parameters += ', @Name = ' + ISNULL('''' + REPLACE(@Name,'''','''''') + '''','NULL')
   SET @Parameters += ', @Description = ' + ISNULL('''' + REPLACE(@Description,'''','''''') + '''','NULL')
   SET @Parameters += ', @Threads = ' + ISNULL(CAST(@Threads AS nvarchar),'NULL')
   SET @Parameters += ', @Throttle = ' + ISNULL(CAST(@Throttle AS nvarchar),'NULL')
@@ -1473,6 +1475,38 @@ BEGIN
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
     SELECT 'The value for the parameter @CompressionLevel is not supported.', 16, 5
+  END
+
+  ----------------------------------------------------------------------------------------------------
+
+  IF @BackupSoftware IS NULL AND LEN(@Name) > 128
+  BEGIN
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'The value for the parameter @Name is not supported.', 16, 1
+  END
+
+  IF @BackupSoftware = 'LITESPEED' AND @Name IS NOT NULL
+  BEGIN
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'The value for the parameter @Name is not supported.', 16, 2
+  END
+
+  IF @BackupSoftware = 'SQLBACKUP' AND @Name IS NOT NULL
+  BEGIN
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'The value for the parameter @Name is not supported.', 16, 3
+  END
+
+  IF @BackupSoftware = 'SQLSAFE' AND @Name IS NOT NULL
+  BEGIN
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'The value for the parameter @Name is not supported.', 16, 4
+  END
+  
+  IF @BackupSoftware = 'DATA_DOMAIN_BOOST' AND @Name IS NOT NULL
+  BEGIN
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'The value for the parameter @Name is not supported.', 16, 3
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -3548,6 +3582,35 @@ BEGIN
           IF @Encrypt = 'Y' AND @ServerAsymmetricKey IS NOT NULL SET @CurrentCommand += 'SERVER ASYMMETRIC KEY = ' + QUOTENAME(@ServerAsymmetricKey)
           IF @Encrypt = 'Y' SET @CurrentCommand += ')'
           IF @URL IS NOT NULL AND @Credential IS NOT NULL SET @CurrentCommand += ', CREDENTIAL = N''' + REPLACE(@Credential,'''','''''') + ''''
+
+
+		  DECLARE @CurrentBackupSetName nvarchar(max)
+		  SET @CurrentBackupSetName = NULL
+		  IF @Name IS NOT NULL 
+		  BEGIN
+			  SET @CurrentBackupSetName = @Name
+			  SET @CurrentBackupSetName = REPLACE(@CurrentBackupSetName,'{ServerName}',CASE WHEN SERVERPROPERTY('EngineEdition') = 8 THEN LEFT(CAST(SERVERPROPERTY('ServerName') AS nvarchar(max)),CHARINDEX('.',CAST(SERVERPROPERTY('ServerName') AS nvarchar(max))) - 1) ELSE CAST(SERVERPROPERTY('MachineName') AS nvarchar(max)) END)
+			  SET @CurrentBackupSetName = REPLACE(@CurrentBackupSetName,'{InstanceName}',ISNULL(CAST(SERVERPROPERTY('InstanceName') AS nvarchar(max)),''))
+			  SET @CurrentBackupSetName = REPLACE(@CurrentBackupSetName,'{ServiceName}',ISNULL(@@SERVICENAME,''))
+			  SET @CurrentBackupSetName = REPLACE(@CurrentBackupSetName,'{ClusterName}',ISNULL(@Cluster,''))
+			  SET @CurrentBackupSetName = REPLACE(@CurrentBackupSetName,'{AvailabilityGroupName}',ISNULL(@CurrentAvailabilityGroup,''))
+			  SET @CurrentBackupSetName = REPLACE(@CurrentBackupSetName,'{DatabaseName}',@CurrentDatabaseNameFS)
+			  SET @CurrentBackupSetName = REPLACE(@CurrentBackupSetName,'{BackupType}',@CurrentBackupType)
+			  SET @CurrentBackupSetName = REPLACE(@CurrentBackupSetName,'{Partial}','PARTIAL')
+			  SET @CurrentBackupSetName = REPLACE(@CurrentBackupSetName,'{CopyOnly}','COPY_ONLY')
+			  SET @CurrentBackupSetName = REPLACE(@CurrentBackupSetName,'{Year}',CAST(DATEPART(YEAR,@CurrentDate) AS nvarchar))
+			  SET @CurrentBackupSetName = REPLACE(@CurrentBackupSetName,'{Month}',RIGHT('0' + CAST(DATEPART(MONTH,@CurrentDate) AS nvarchar),2))
+			  SET @CurrentBackupSetName = REPLACE(@CurrentBackupSetName,'{Day}',RIGHT('0' + CAST(DATEPART(DAY,@CurrentDate) AS nvarchar),2))
+			  SET @CurrentBackupSetName = REPLACE(@CurrentBackupSetName,'{Hour}',RIGHT('0' + CAST(DATEPART(HOUR,@CurrentDate) AS nvarchar),2))
+			  SET @CurrentBackupSetName = REPLACE(@CurrentBackupSetName,'{Minute}',RIGHT('0' + CAST(DATEPART(MINUTE,@CurrentDate) AS nvarchar),2))
+			  SET @CurrentBackupSetName = REPLACE(@CurrentBackupSetName,'{Second}',RIGHT('0' + CAST(DATEPART(SECOND,@CurrentDate) AS nvarchar),2))
+			  SET @CurrentBackupSetName = REPLACE(@CurrentBackupSetName,'{Millisecond}',RIGHT('00' + CAST(DATEPART(MILLISECOND,@CurrentDate) AS nvarchar),3))
+			  SET @CurrentBackupSetName = REPLACE(@CurrentBackupSetName,'{Microsecond}',RIGHT('00000' + CAST(DATEPART(MICROSECOND,@CurrentDate) AS nvarchar),6))
+			  SET @CurrentBackupSetName = REPLACE(@CurrentBackupSetName,'{MajorVersion}',ISNULL(CAST(SERVERPROPERTY('ProductMajorVersion') AS nvarchar),PARSENAME(CAST(SERVERPROPERTY('ProductVersion') AS nvarchar),4)))
+			  SET @CurrentBackupSetName = REPLACE(@CurrentBackupSetName,'{MinorVersion}',ISNULL(CAST(SERVERPROPERTY('ProductMinorVersion') AS nvarchar),PARSENAME(CAST(SERVERPROPERTY('ProductVersion') AS nvarchar),3)))
+		  END
+		  IF @CurrentBackupSetName IS NOT NULL SET @CurrentCommand += ', NAME = N''' + LEFT(REPLACE(@CurrentBackupSetName,'''',''''''), 128) + ''''
+
         END
 
         IF @BackupSoftware = 'LITESPEED'
