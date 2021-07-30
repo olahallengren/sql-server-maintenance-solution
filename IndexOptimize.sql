@@ -43,7 +43,8 @@ ALTER PROCEDURE [dbo].[IndexOptimize]
 @DatabasesInParallel nvarchar(max) = 'N',
 @ExecuteAsUser nvarchar(max) = NULL,
 @LogToTable nvarchar(max) = 'N',
-@Execute nvarchar(max) = 'Y'
+@Execute nvarchar(max) = 'Y',
+@Verbose nvarchar(max) = 'Y'
 
 AS
 
@@ -316,31 +317,34 @@ BEGIN
   SET @StartMessage = 'Date and time: ' + CONVERT(nvarchar,@StartTime,120)
   RAISERROR('%s',10,1,@StartMessage) WITH NOWAIT
 
-  SET @StartMessage = 'Server: ' + CAST(SERVERPROPERTY('ServerName') AS nvarchar(max))
-  RAISERROR('%s',10,1,@StartMessage) WITH NOWAIT
+  IF (@Verbose = 'Y')
+  BEGIN
+    SET @StartMessage = 'Server: ' + CAST(SERVERPROPERTY('ServerName') AS nvarchar(max))
+    RAISERROR('%s',10,1,@StartMessage) WITH NOWAIT
 
-  SET @StartMessage = 'Version: ' + CAST(SERVERPROPERTY('ProductVersion') AS nvarchar(max))
-  RAISERROR('%s',10,1,@StartMessage) WITH NOWAIT
+    SET @StartMessage = 'Version: ' + CAST(SERVERPROPERTY('ProductVersion') AS nvarchar(max))
+    RAISERROR('%s',10,1,@StartMessage) WITH NOWAIT
 
-  SET @StartMessage = 'Edition: ' + CAST(SERVERPROPERTY('Edition') AS nvarchar(max))
-  RAISERROR('%s',10,1,@StartMessage) WITH NOWAIT
+    SET @StartMessage = 'Edition: ' + CAST(SERVERPROPERTY('Edition') AS nvarchar(max))
+    RAISERROR('%s',10,1,@StartMessage) WITH NOWAIT
 
-  SET @StartMessage = 'Platform: ' + @HostPlatform
-  RAISERROR('%s',10,1,@StartMessage) WITH NOWAIT
+    SET @StartMessage = 'Platform: ' + @HostPlatform
+    RAISERROR('%s',10,1,@StartMessage) WITH NOWAIT
 
-  SET @StartMessage = 'Procedure: ' + QUOTENAME(DB_NAME(DB_ID())) + '.' + QUOTENAME(@SchemaName) + '.' + QUOTENAME(@ObjectName)
-  RAISERROR('%s',10,1,@StartMessage) WITH NOWAIT
+    SET @StartMessage = 'Procedure: ' + QUOTENAME(DB_NAME(DB_ID())) + '.' + QUOTENAME(@SchemaName) + '.' + QUOTENAME(@ObjectName)
+    RAISERROR('%s',10,1,@StartMessage) WITH NOWAIT
 
-  SET @StartMessage = 'Parameters: ' + @Parameters
-  RAISERROR('%s',10,1,@StartMessage) WITH NOWAIT
+    SET @StartMessage = 'Parameters: ' + @Parameters
+    RAISERROR('%s',10,1,@StartMessage) WITH NOWAIT
 
-  SET @StartMessage = 'Version: ' + @VersionTimestamp
-  RAISERROR('%s',10,1,@StartMessage) WITH NOWAIT
+    SET @StartMessage = 'Version: ' + @VersionTimestamp
+    RAISERROR('%s',10,1,@StartMessage) WITH NOWAIT
 
-  SET @StartMessage = 'Source: https://ola.hallengren.com'
-  RAISERROR('%s',10,1,@StartMessage) WITH NOWAIT
+    SET @StartMessage = 'Source: https://ola.hallengren.com'
+    RAISERROR('%s',10,1,@StartMessage) WITH NOWAIT
 
-  RAISERROR(@EmptyLine,10,1) WITH NOWAIT
+    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
+  END
 
   ----------------------------------------------------------------------------------------------------
   --// Check core requirements                                                                    //--
@@ -1438,6 +1442,7 @@ BEGIN
       EXECUTE @CurrentDatabase_sp_executesql @stmt = @CurrentCommand, @params = N'@ParamExecuteAsUser sysname, @ParamExecuteAsUserExists bit OUTPUT', @ParamExecuteAsUser = @ExecuteAsUser, @ParamExecuteAsUserExists = @CurrentExecuteAsUserExists OUTPUT
     END
 
+	IF (@Verbose = 'Y')
     BEGIN
       SET @DatabaseMessage = 'Date and time: ' + CONVERT(nvarchar,SYSDATETIME(),120)
       RAISERROR('%s',10,1,@DatabaseMessage) WITH NOWAIT
@@ -1454,6 +1459,7 @@ BEGIN
     FROM sys.databases
     WHERE [name] = @CurrentDatabaseName
 
+	IF (@Verbose = 'Y')
     BEGIN
       SET @DatabaseMessage = 'State: ' + @CurrentDatabaseState
       RAISERROR('%s',10,1,@DatabaseMessage) WITH NOWAIT
@@ -1510,28 +1516,31 @@ BEGIN
       WHERE database_id = DB_ID(@CurrentDatabaseName)
     END
 
-    IF @CurrentIsDatabaseAccessible IS NOT NULL
-    BEGIN
-      SET @DatabaseMessage = 'Is accessible: ' + CASE WHEN @CurrentIsDatabaseAccessible = 1 THEN 'Yes' ELSE 'No' END
-      RAISERROR('%s',10,1,@DatabaseMessage) WITH NOWAIT
-    END
+    IF (@Verbose = 'Y')
+	BEGIN
+	  IF @CurrentIsDatabaseAccessible IS NOT NULL
+      BEGIN
+        SET @DatabaseMessage = 'Is accessible: ' + CASE WHEN @CurrentIsDatabaseAccessible = 1 THEN 'Yes' ELSE 'No' END
+        RAISERROR('%s',10,1,@DatabaseMessage) WITH NOWAIT
+      END
 
-    IF @CurrentAvailabilityGroup IS NOT NULL
-    BEGIN
-      SET @DatabaseMessage = 'Availability group: ' + ISNULL(@CurrentAvailabilityGroup,'N/A')
-      RAISERROR('%s',10,1,@DatabaseMessage) WITH NOWAIT
+      IF @CurrentAvailabilityGroup IS NOT NULL
+      BEGIN
+        SET @DatabaseMessage = 'Availability group: ' + ISNULL(@CurrentAvailabilityGroup,'N/A')
+        RAISERROR('%s',10,1,@DatabaseMessage) WITH NOWAIT
 
-      SET @DatabaseMessage = 'Availability group role: ' + ISNULL(@CurrentAvailabilityGroupRole,'N/A')
-      RAISERROR('%s',10,1,@DatabaseMessage) WITH NOWAIT
-    END
+        SET @DatabaseMessage = 'Availability group role: ' + ISNULL(@CurrentAvailabilityGroupRole,'N/A')
+        RAISERROR('%s',10,1,@DatabaseMessage) WITH NOWAIT
+      END
 
-    IF @CurrentDatabaseMirroringRole IS NOT NULL
-    BEGIN
-      SET @DatabaseMessage = 'Database mirroring role: ' + @CurrentDatabaseMirroringRole
-      RAISERROR('%s',10,1,@DatabaseMessage) WITH NOWAIT
-    END
+      IF @CurrentDatabaseMirroringRole IS NOT NULL
+      BEGIN
+        SET @DatabaseMessage = 'Database mirroring role: ' + @CurrentDatabaseMirroringRole
+        RAISERROR('%s',10,1,@DatabaseMessage) WITH NOWAIT
+      END
 
-    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
+      RAISERROR(@EmptyLine,10,1) WITH NOWAIT
+	END
 
     IF @CurrentExecuteAsUserExists = 0
     BEGIN
@@ -1725,7 +1734,7 @@ BEGIN
       AND ObjectName NOT LIKE '%[%]%'
       AND IndexName LIKE '%[%]%'
       AND NOT EXISTS (SELECT * FROM @tmpIndexesStatistics WHERE SchemaName = SelectedIndexes.SchemaName AND ObjectName = SelectedIndexes.ObjectName)
-      IF @@ROWCOUNT > 0
+      IF (@@ROWCOUNT > 0 AND @Verbose = 'Y')
       BEGIN
         SET @ErrorMessage = 'The following objects in the @Indexes parameter do not exist: ' + LEFT(@ErrorMessage,LEN(@ErrorMessage)-1) + '.'
         RAISERROR('%s',10,1,@ErrorMessage) WITH NOWAIT
@@ -1741,7 +1750,7 @@ BEGIN
       AND ObjectName NOT LIKE '%[%]%'
       AND IndexName NOT LIKE '%[%]%'
       AND NOT EXISTS (SELECT * FROM @tmpIndexesStatistics WHERE SchemaName = SelectedIndexes.SchemaName AND ObjectName = SelectedIndexes.ObjectName AND IndexName = SelectedIndexes.IndexName)
-      IF @@ROWCOUNT > 0
+      IF (@@ROWCOUNT > 0 AND @Verbose = 'Y')
       BEGIN
         SET @ErrorMessage = 'The following indexes in the @Indexes parameter do not exist: ' + LEFT(@ErrorMessage,LEN(@ErrorMessage)-1) + '.'
         RAISERROR('%s',10,1,@ErrorMessage) WITH NOWAIT
