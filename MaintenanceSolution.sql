@@ -10,7 +10,7 @@ License: https://ola.hallengren.com/license.html
 
 GitHub: https://github.com/olahallengren/sql-server-maintenance-solution
 
-Version: 2021-12-30 19:45:09
+Version: 2021-12-31 19:48:31
 
 You can contact me by e-mail at ola@hallengren.com.
 
@@ -123,7 +123,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2021-12-30 19:45:09                                                               //--
+  --// Version: 2021-12-31 19:48:31                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -459,7 +459,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2021-12-30 19:45:09                                                               //--
+  --// Version: 2021-12-31 19:48:31                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -2228,13 +2228,13 @@ BEGIN
   IF @ModificationLevel IS NOT NULL AND @ChangeBackupType = 'N'
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @ModificationLevel is not supported.', 16, 2
+    SELECT 'The parameter @ModificationLevel can only be used together with @ChangeBackupType = ''Y''.', 16, 2
   END
 
   IF @ModificationLevel IS NOT NULL AND @BackupType <> 'DIFF'
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @ModificationLevel is not supported.', 16, 3
+    SELECT 'The parameter @ModificationLevel can only be used for differential backups.', 16, 3
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -2991,7 +2991,7 @@ BEGIN
 
     SELECT @CurrentMaxTransferSize = CASE
     WHEN @MaxTransferSize IS NOT NULL THEN @MaxTransferSize
-    WHEN @MaxTransferSize IS NULL AND @Compress = 'Y' AND @CurrentIsEncrypted = 1 AND @BackupSoftware IS NULL AND (@Version >= 13 AND @Version < 15.0404316) THEN 65537
+    WHEN @MaxTransferSize IS NULL AND @Compress = 'Y' AND @CurrentIsEncrypted = 1 AND @BackupSoftware IS NULL AND (@Version >= 13 AND @Version < 15.0404316) AND @Credential IS NULL THEN 65537
     END
 
     IF @CurrentDatabaseState = 'ONLINE'
@@ -3046,6 +3046,8 @@ BEGIN
     END
 
     IF @CurrentDatabaseState = 'ONLINE' AND EXISTS(SELECT * FROM sys.all_columns WHERE object_id = OBJECT_ID('sys.dm_db_file_space_usage') AND name = 'modified_extent_page_count') AND (@CurrentAvailabilityGroupRole = 'PRIMARY' OR @CurrentAvailabilityGroupRole IS NULL)
+    AND (@BackupType IN('DIFF','FULL') OR (@ChangeBackupType = 'Y' AND @CurrentBackupType = 'LOG' AND @CurrentRecoveryModel IN('FULL','BULK_LOGGED') AND @CurrentLogLSN IS NULL AND @CurrentDatabaseName <> 'master'))
+    AND (@ModificationLevel IS NOT NULL OR @MinBackupSizeForMultipleFiles IS NOT NULL OR @MaxFileSize IS NOT NULL)
     BEGIN
       SET @CurrentCommand = 'SELECT @ParamAllocatedExtentPageCount = SUM(allocated_extent_page_count), @ParamModifiedExtentPageCount = SUM(modified_extent_page_count) FROM sys.dm_db_file_space_usage'
 
@@ -4509,7 +4511,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2021-12-30 19:45:09                                                               //--
+  --// Version: 2021-12-31 19:48:31                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -5827,7 +5829,7 @@ BEGIN
       RAISERROR('%s',10,1,@DatabaseMessage) WITH NOWAIT
     END
 
-    IF @CurrentDatabaseState = 'ONLINE' AND SERVERPROPERTY('EngineEdition') <> 5
+    IF @CurrentDatabaseState IN('ONLINE','EMERGENCY') AND SERVERPROPERTY('EngineEdition') <> 5
     BEGIN
       IF EXISTS (SELECT * FROM sys.database_recovery_status WHERE database_id = DB_ID(@CurrentDatabaseName) AND database_guid IS NOT NULL)
       BEGIN
@@ -5911,7 +5913,7 @@ BEGIN
 
     RAISERROR(@EmptyLine,10,1) WITH NOWAIT
 
-    IF @CurrentDatabaseState = 'ONLINE'
+    IF @CurrentDatabaseState IN('ONLINE','EMERGENCY')
     AND NOT (@CurrentUserAccess = 'SINGLE_USER' AND @CurrentIsDatabaseAccessible = 0)
     AND (@CurrentAvailabilityGroupRole = 'PRIMARY' OR @CurrentAvailabilityGroupRole IS NULL OR SERVERPROPERTY('EngineEdition') = 3)
     AND ((@AvailabilityGroupReplicas = 'PRIMARY' AND @CurrentAvailabilityGroupRole = 'PRIMARY') OR (@AvailabilityGroupReplicas = 'SECONDARY' AND @CurrentAvailabilityGroupRole = 'SECONDARY') OR (@AvailabilityGroupReplicas = 'PREFERRED_BACKUP_REPLICA' AND @CurrentIsPreferredBackupReplica = 1) OR @AvailabilityGroupReplicas = 'ALL' OR @CurrentAvailabilityGroupRole IS NULL)
@@ -6411,7 +6413,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2021-12-30 19:45:09                                                               //--
+  --// Version: 2021-12-31 19:48:31                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
