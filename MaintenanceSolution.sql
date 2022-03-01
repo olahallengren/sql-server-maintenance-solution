@@ -17,6 +17,8 @@ You can contact me by e-mail at ola@hallengren.com.
 Ola Hallengren
 https://ola.hallengren.com
 
+Forked by Azility at https://github.com/azility-co/sql-server-maintenance-solution
+
 */
 
 USE [master] -- Specify the database in which the objects will be created.
@@ -24,8 +26,8 @@ USE [master] -- Specify the database in which the objects will be created.
 SET NOCOUNT ON
 
 DECLARE @CreateJobs nvarchar(max)          = 'Y'         -- Specify whether jobs should be created.
-DECLARE @BackupDirectory nvarchar(max)     = NULL        -- Specify the backup root directory. If no directory is specified, the default backup directory is used.
-DECLARE @CleanupTime int                   = NULL        -- Time in hours, after which backup files are deleted. If no time is specified, then no backup files are deleted.
+DECLARE @BackupDirectory nvarchar(max)     = 'E:\databases'        -- Specify the backup root directory. If no directory is specified, the default backup directory is used.
+DECLARE @CleanupTime int                   = 168        -- Time in hours, after which backup files are deleted. If no time is specified, then no backup files are deleted.
 DECLARE @OutputFileDirectory nvarchar(max) = NULL        -- Specify the output file directory. If no directory is specified, then the SQL Server error log directory is used.
 DECLARE @LogToTable nvarchar(max)          = 'Y'         -- Log commands to a table.
 
