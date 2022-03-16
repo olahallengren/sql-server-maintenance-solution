@@ -18,6 +18,7 @@ ALTER PROCEDURE [dbo].[IndexOptimize]
 @MinNumberOfPages int = 1000,
 @MaxNumberOfPages int = NULL,
 @SortInTempdb nvarchar(max) = 'N',
+@CompressAllRowGroups nvarchar(max) = 'Y',
 @MaxDOP int = NULL,
 @FillFactor int = NULL,
 @PadIndex nvarchar(max) = NULL,
@@ -289,6 +290,7 @@ BEGIN
   SET @Parameters += ', @MaxDOP = ' + ISNULL(CAST(@MaxDOP AS nvarchar),'NULL')
   SET @Parameters += ', @FillFactor = ' + ISNULL(CAST(@FillFactor AS nvarchar),'NULL')
   SET @Parameters += ', @PadIndex = ' + ISNULL('''' + REPLACE(@PadIndex,'''','''''') + '''','NULL')
+  SET @Parameters += ', @CompressAllRowGroups = ' + ISNULL('''' + REPLACE(@CompressAllRowGroups,'''','''''') + '''','NULL')    
   SET @Parameters += ', @LOBCompaction = ' + ISNULL('''' + REPLACE(@LOBCompaction,'''','''''') + '''','NULL')
   SET @Parameters += ', @UpdateStatistics = ' + ISNULL('''' + REPLACE(@UpdateStatistics,'''','''''') + '''','NULL')
   SET @Parameters += ', @OnlyModifiedStatistics = ' + ISNULL('''' + REPLACE(@OnlyModifiedStatistics,'''','''''') + '''','NULL')
@@ -884,6 +886,14 @@ BEGIN
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
     SELECT 'The value for the parameter @LOBCompaction is not supported.', 16, 1
+  END
+
+  ----------------------------------------------------------------------------------------------------
+  
+  IF @CompressAllRowGroups NOT IN('Y','N') OR @CompressAllRowGroups IS NULL
+  BEGIN
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'The value for the parameter @CompressAllRowGroups is not supported.', 16, 1
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -1943,7 +1953,7 @@ BEGIN
         -- Which actions are allowed?
         IF @CurrentIndexID IS NOT NULL AND EXISTS(SELECT * FROM @ActionsPreferred)
         BEGIN
-          IF @CurrentOnReadOnlyFileGroup = 0 AND @CurrentIndexType IN (1,2,3,4,5) AND (@CurrentIsMemoryOptimized = 0 OR @CurrentIsMemoryOptimized IS NULL) AND (@CurrentAllowPageLocks = 1 OR @CurrentIndexType = 5)
+     		  IF @CurrentOnReadOnlyFileGroup = 0 AND @CurrentIndexType IN (1,2,3,4,5,6) AND (@CurrentIsMemoryOptimized = 0 OR @CurrentIsMemoryOptimized IS NULL) AND (@CurrentAllowPageLocks = 1 OR @CurrentIndexType IN (5,6))
           BEGIN
             INSERT INTO @CurrentActionsAllowed ([Action])
             VALUES ('INDEX_REORGANIZE')
@@ -1953,7 +1963,7 @@ BEGIN
             INSERT INTO @CurrentActionsAllowed ([Action])
             VALUES ('INDEX_REBUILD_OFFLINE')
           END
-          IF @CurrentOnReadOnlyFileGroup = 0
+          IF ( @CurrentOnReadOnlyFileGroup = 0
           AND (@CurrentIsMemoryOptimized = 0 OR @CurrentIsMemoryOptimized IS NULL)
           AND (@CurrentIsPartition = 0 OR @Version >= 12)
           AND ((@CurrentIndexType = 1 AND @CurrentIsImageText = 0 AND @CurrentIsNewLOB = 0)
@@ -1962,6 +1972,14 @@ BEGIN
           OR (@CurrentIndexType = 2 AND @Version >= 11))
           AND (@CurrentIsColumnStore = 0 OR @Version < 11)
           AND SERVERPROPERTY('EngineEdition') IN (3,5,8)
+            )
+            -- Modified for Columnstore (for 2019+ version) 
+            OR (@CurrentOnReadOnlyFileGroup = 0
+            AND (@CurrentIsMemoryOptimized = 0 OR @CurrentIsMemoryOptimized IS NULL)
+            AND (@CurrentIsPartition = 0 OR @Version >= 12)
+            AND @CurrentIndexType IN (5,6) AND @Version >= 15
+            AND SERVERPROPERTY('EngineEdition') IN (3,5,8)
+            )         
           BEGIN
             INSERT INTO @CurrentActionsAllowed ([Action])
             VALUES ('INDEX_REBUILD_ONLINE')
@@ -2133,16 +2151,28 @@ BEGIN
             SELECT 'MAX_DURATION = ' + CAST(DATEDIFF(MINUTE,SYSDATETIME(),DATEADD(SECOND,@TimeLimit,@StartTime)) AS nvarchar(max))
           END
 
-          IF @CurrentAction IN('INDEX_REORGANIZE') AND @LOBCompaction = 'Y'
+          IF @CurrentAction IN('INDEX_REORGANIZE') AND @LOBCompaction = 'Y' AND @CurrentIsColumnStore = 0
           BEGIN
             INSERT INTO @CurrentAlterIndexWithClauseArguments (Argument)
             SELECT 'LOB_COMPACTION = ON'
           END
 
-          IF @CurrentAction IN('INDEX_REORGANIZE') AND @LOBCompaction = 'N'
+          IF @CurrentAction IN('INDEX_REORGANIZE') AND @LOBCompaction = 'N' AND @CurrentIsColumnStore = 0
           BEGIN
             INSERT INTO @CurrentAlterIndexWithClauseArguments (Argument)
             SELECT 'LOB_COMPACTION = OFF'
+          END
+
+          IF @CurrentAction IN('INDEX_REORGANIZE') AND @CompressAllRowGroups = 'Y' AND @CurrentIsColumnStore = 1
+          BEGIN
+            INSERT INTO @CurrentAlterIndexWithClauseArguments (Argument)
+            SELECT 'COMPRESS_ALL_ROW_GROUPS = ON'
+          END
+
+          IF @CurrentAction IN('INDEX_REORGANIZE') AND @CompressAllRowGroups = 'N' AND @CurrentIsColumnStore = 1
+          BEGIN
+            INSERT INTO @CurrentAlterIndexWithClauseArguments (Argument)
+            SELECT 'COMPRESS_ALL_ROW_GROUPS = OFF'
           END
 
           IF EXISTS (SELECT * FROM @CurrentAlterIndexWithClauseArguments)
