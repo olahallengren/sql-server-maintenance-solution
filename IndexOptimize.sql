@@ -32,6 +32,7 @@ ALTER PROCEDURE [dbo].[IndexOptimize]
 @Indexes nvarchar(max) = NULL,
 @TimeLimit int = NULL,
 @Delay int = NULL,
+@TimeLimitEstimateCommandDuration nvarchar(MAX) = NULL,
 @WaitAtLowPriorityMaxDuration int = NULL,
 @WaitAtLowPriorityAbortAfterWait nvarchar(max) = NULL,
 @Resumable nvarchar(max) = 'N',
@@ -157,6 +158,8 @@ BEGIN
   DECLARE @CurrentStatisticsSample int
   DECLARE @CurrentStatisticsResample nvarchar(max)
   DECLARE @CurrentDelay datetime
+  DECLARE @CurrentCommandDurationSecAlterIndex bigint
+  DECLARE @CurrentCommandDurationSecUpdateStatistics bigint
 
   DECLARE @tmpDatabases TABLE (ID int IDENTITY,
                                DatabaseName nvarchar(max),
@@ -300,6 +303,7 @@ BEGIN
   SET @Parameters += ', @Indexes = ' + ISNULL('''' + REPLACE(@Indexes,'''','''''') + '''','NULL')
   SET @Parameters += ', @TimeLimit = ' + ISNULL(CAST(@TimeLimit AS nvarchar),'NULL')
   SET @Parameters += ', @Delay = ' + ISNULL(CAST(@Delay AS nvarchar),'NULL')
+  SET @Parameters += ', @TimeLimitEstimateCommandDuration = ' + ISNULL('''' + REPLACE(@TimeLimitEstimateCommandDuration,'''','''''') + '''','NULL')
   SET @Parameters += ', @WaitAtLowPriorityMaxDuration = ' + ISNULL(CAST(@WaitAtLowPriorityMaxDuration AS nvarchar),'NULL')
   SET @Parameters += ', @WaitAtLowPriorityAbortAfterWait = ' + ISNULL('''' + REPLACE(@WaitAtLowPriorityAbortAfterWait,'''','''''') + '''','NULL')
   SET @Parameters += ', @Resumable = ' + ISNULL('''' + REPLACE(@Resumable,'''','''''') + '''','NULL')
@@ -988,6 +992,14 @@ BEGIN
 
   ----------------------------------------------------------------------------------------------------
 
+  IF @TimeLimitEstimateCommandDuration IS NOT NULL AND @TimeLimitEstimateCommandDuration NOT IN ('AVG', 'MIN', 'MAX')
+  BEGIN 
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'The value for the parameter @TimeLimitEstimateCommandDuration is not supported.', 16, 1
+  END
+
+  ----------------------------------------------------------------------------------------------------
+
   IF @WaitAtLowPriorityMaxDuration < 0
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
@@ -1547,7 +1559,7 @@ BEGIN
     BEGIN
 
       -- Select indexes in the current database
-      IF (EXISTS(SELECT * FROM @ActionsPreferred) OR @UpdateStatistics IS NOT NULL) AND (SYSDATETIME() < DATEADD(SECOND,@TimeLimit,@StartTime) OR @TimeLimit IS NULL)
+      IF (EXISTS(SELECT * FROM @ActionsPreferred) OR @UpdateStatistics IS NOT NULL)
       BEGIN
         SET @CurrentCommand = 'SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;'
                               + ' SELECT SchemaID, SchemaName, ObjectID, ObjectName, ObjectType, IsMemoryOptimized, IndexID, IndexName, IndexType, AllowPageLocks, IsImageText, IsNewLOB, IsFileStream, IsColumnStore, IsComputed, IsTimestamp, OnReadOnlyFileGroup, ResumableIndexOperation, StatisticsID, StatisticsName, NoRecompute, IsIncremental, PartitionID, PartitionNumber, PartitionCount, [Order], Selected, Completed'
@@ -1825,6 +1837,32 @@ BEGIN
           END CATCH
         END
 
+        -- Try to obtain Current Command Duration for ALTER_INDEX using historic performance
+        IF @CurrentIndexID IS NOT NULL AND @LogToTable = 'Y' AND @TimeLimitEstimateCommandDuration IS NOT NULL
+        BEGIN
+          SET @CurrentCommand = ''
+
+          IF @CurrentIsPartition = 0 SET @CurrentCommand = 'SELECT @ParamCommandDurationSec = ISNULL( CASE @ParamTimeLimitEstimateCommandDuration WHEN ''AVG'' THEN AVG( DATEDIFF(SECOND, StartTime, EndTime) ) WHEN ''MIN'' THEN MIN( DATEDIFF(SECOND, StartTime, EndTime) ) WHEN ''MAX'' THEN MAX( DATEDIFF(SECOND, StartTime, EndTime) )    ELSE 0 END, 0 ) FROM [dbo].[CommandLog] AS cl WHERE cl.CommandType = @ParamCommandType AND cl.DatabaseName = @ParamDatabaseName AND cl.SchemaName = @ParamSchemaName AND cl.ObjectName = @ParamObjectName AND cl.ObjectType = @ParamObjectType AND cl.IndexName = @ParamIndexName AND cl.IndexType = @ParamIndexType AND cl.ErrorNumber = 0'
+          IF @CurrentIsPartition = 1 SET @CurrentCommand = 'SELECT @ParamCommandDurationSec = ISNULL( CASE @ParamTimeLimitEstimateCommandDuration WHEN ''AVG'' THEN AVG( DATEDIFF(SECOND, StartTime, EndTime) ) WHEN ''MIN'' THEN MIN( DATEDIFF(SECOND, StartTime, EndTime) ) WHEN ''MAX'' THEN MAX( DATEDIFF(SECOND, StartTime, EndTime) )    ELSE 0 END, 0 ) FROM [dbo].[CommandLog] AS cl WHERE cl.CommandType = @ParamCommandType AND cl.DatabaseName = @ParamDatabaseName AND cl.SchemaName = @ParamSchemaName AND cl.ObjectName = @ParamObjectName AND cl.ObjectType = @ParamObjectType AND cl.IndexName = @ParamIndexName AND cl.IndexType = @ParamIndexType AND cl.ErrorNumber = 0 AND cl.PartitionNumber = @ParamPartitionNumber'
+            
+          BEGIN TRY
+            EXECUTE sys.sp_executesql @stmt = @CurrentCommand, @params = N'@ParamTimeLimitEstimateCommandDuration nvarchar(60), @ParamCommandType NVARCHAR(60), @ParamDatabaseName sysname, @ParamSchemaName sysname, @ParamObjectName sysname, @ParamObjectType char(2), @ParamIndexName sysname, @ParamIndexType tinyint, @ParamPartitionNumber int, @ParamCommandDurationSec bigint OUTPUT', @ParamTimeLimitEstimateCommandDuration = @TimeLimitEstimateCommandDuration, @ParamCommandType = 'ALTER_INDEX', @ParamDatabaseName = @CurrentDatabaseName, @ParamSchemaName = @CurrentSchemaName, @ParamObjectName = @CurrentObjectName, @ParamObjectType = @CurrentObjectType, @ParamIndexName = @CurrentIndexName, @ParamIndexType = @CurrentIndexType, @ParamPartitionNumber = @CurrentPartitionNumber, @ParamCommandDurationSec = @CurrentCommandDurationSecAlterIndex OUTPUT
+          END TRY
+          BEGIN CATCH
+            SET @ErrorMessage = 'Msg ' + CAST(ERROR_NUMBER() AS nvarchar) + ', ' + ISNULL(ERROR_MESSAGE(),'') + CASE WHEN ERROR_NUMBER() = 1222 THEN ' The duration information for index ' + QUOTENAME(@CurrentIndexName) + ' on the object ' + QUOTENAME(@CurrentDatabaseName) + '.' + QUOTENAME(@CurrentSchemaName) + '.' + QUOTENAME(@CurrentObjectName) + ' could not be determined.' ELSE '' END
+            SET @Severity = CASE WHEN ERROR_NUMBER() IN(1205,1222) THEN @LockMessageSeverity ELSE 16 END
+            RAISERROR('%s',@Severity,1,@ErrorMessage) WITH NOWAIT
+            RAISERROR(@EmptyLine,10,1) WITH NOWAIT
+
+            IF NOT (ERROR_NUMBER() IN(1205,1222) AND @LockMessageSeverity = 10)
+            BEGIN
+              SET @ReturnCode = ERROR_NUMBER()
+            END
+
+            GOTO NoAction
+          END CATCH
+        END
+
         -- Does the statistics exist?
         IF @CurrentStatisticsID IS NOT NULL AND @UpdateStatistics IS NOT NULL
         BEGIN
@@ -1887,6 +1925,30 @@ BEGIN
           END TRY
           BEGIN CATCH
             SET @ErrorMessage = 'Msg ' + CAST(ERROR_NUMBER() AS nvarchar) + ', ' + ISNULL(ERROR_MESSAGE(),'') + CASE WHEN ERROR_NUMBER() = 1222 THEN ' The statistics ' + QUOTENAME(@CurrentStatisticsName) + ' on the object ' + QUOTENAME(@CurrentDatabaseName) + '.' + QUOTENAME(@CurrentSchemaName) + '.' + QUOTENAME(@CurrentObjectName) + ' is locked. The rows and modification_counter could not be checked.' ELSE '' END
+            SET @Severity = CASE WHEN ERROR_NUMBER() IN(1205,1222) THEN @LockMessageSeverity ELSE 16 END
+            RAISERROR('%s',@Severity,1,@ErrorMessage) WITH NOWAIT
+            RAISERROR(@EmptyLine,10,1) WITH NOWAIT
+
+            IF NOT (ERROR_NUMBER() IN(1205,1222) AND @LockMessageSeverity = 10)
+            BEGIN
+              SET @ReturnCode = ERROR_NUMBER()
+            END
+
+            GOTO NoAction
+          END CATCH
+        END
+
+        -- Try to obtain Current Command Duration for UPDATE_STATISTICS using historic performance
+        IF @CurrentStatisticsID IS NOT NULL AND @UpdateStatistics IS NOT NULL AND @LogToTable = 'Y' AND @TimeLimitEstimateCommandDuration IS NOT NULL
+        BEGIN
+          SET @CurrentCommand = ''
+          SET @CurrentCommand = 'SELECT @ParamCommandDurationSec = ISNULL( CASE @ParamTimeLimitEstimateCommandDuration WHEN ''AVG'' THEN AVG( DATEDIFF(SECOND, StartTime, EndTime) ) WHEN ''MIN'' THEN MIN( DATEDIFF(SECOND, StartTime, EndTime) ) WHEN ''MAX'' THEN MAX( DATEDIFF(SECOND, StartTime, EndTime) )    ELSE 0 END, 0 ) FROM [dbo].[CommandLog] AS cl WHERE cl.CommandType = @ParamCommandType AND cl.DatabaseName = @ParamDatabaseName AND cl.SchemaName = @ParamSchemaName AND cl.ObjectName = @ParamObjectName AND cl.ObjectType = @ParamObjectType AND cl.StatisticsName = @ParamStatisticsName AND cl.ErrorNumber = 0'
+        
+          BEGIN TRY
+            EXECUTE sys.sp_executesql @stmt = @CurrentCommand, @params = N'@ParamTimeLimitEstimateCommandDuration nvarchar(60), @ParamCommandType NVARCHAR(60), @ParamDatabaseName sysname, @ParamSchemaName sysname, @ParamObjectName sysname, @ParamObjectType char(2), @ParamStatisticsName sysname, @ParamCommandDurationSec bigint OUTPUT', @ParamTimeLimitEstimateCommandDuration = @TimeLimitEstimateCommandDuration, @ParamCommandType = 'UPDATE_STATISTICS', @ParamDatabaseName = @CurrentDatabaseName, @ParamSchemaName = @CurrentSchemaName, @ParamObjectName = @CurrentObjectName, @ParamObjectType = @CurrentObjectType, @ParamStatisticsName = @CurrentStatisticsName, @ParamCommandDurationSec = @CurrentCommandDurationSecUpdateStatistics OUTPUT
+          END TRY
+          BEGIN CATCH
+            SET @ErrorMessage = 'Msg ' + CAST(ERROR_NUMBER() AS nvarchar) + ', ' + ISNULL(ERROR_MESSAGE(),'') + CASE WHEN ERROR_NUMBER() = 1222 THEN ' The duration information for statistics ' + QUOTENAME(@CurrentStatisticsName) + ' on the object ' + QUOTENAME(@CurrentDatabaseName) + '.' + QUOTENAME(@CurrentSchemaName) + '.' + QUOTENAME(@CurrentObjectName) + ' could not be determined.' ELSE '' END
             SET @Severity = CASE WHEN ERROR_NUMBER() IN(1205,1222) THEN @LockMessageSeverity ELSE 16 END
             RAISERROR('%s',@Severity,1,@ErrorMessage) WITH NOWAIT
             RAISERROR(@EmptyLine,10,1) WITH NOWAIT
@@ -2065,7 +2127,15 @@ BEGIN
                                     ) ExtendedInfo FOR XML RAW('ExtendedInfo'), ELEMENTS)
         END
 
-        IF @CurrentIndexID IS NOT NULL AND @CurrentAction IS NOT NULL AND (SYSDATETIME() < DATEADD(SECOND,@TimeLimit,@StartTime) OR @TimeLimit IS NULL)
+        /*If a Time Limit is set check if potentially the index to be processed could run over - if so log skip*/
+        IF @CurrentIndexID IS NOT NULL AND @CurrentAction IS NOT NULL AND @TimeLimit IS NOT NULL AND DATEADD(SECOND,ISNULL(@CurrentCommandDurationSecAlterIndex,0),SYSDATETIME()) > DATEADD(SECOND,@TimeLimit,@StartTime)
+        BEGIN
+          SET @DatabaseMessage = 'Skipping Index: ' + QUOTENAME(@CurrentIndexName) + ' on the object ' + QUOTENAME(@CurrentDatabaseName) + '.' + QUOTENAME(@CurrentSchemaName) + '.' + QUOTENAME(@CurrentObjectName)+' as processing could take '+ CONVERT(nvarchar,ISNULL(@CurrentCommandDurationSecAlterIndex,0)) +' seconds ('+@TimeLimitEstimateCommandDuration+') - longer than time limit specified.'
+          RAISERROR('%s',10,1,@DatabaseMessage) WITH NOWAIT
+          RAISERROR(@EmptyLine,10,1) WITH NOWAIT
+        END
+
+        IF @CurrentIndexID IS NOT NULL AND @CurrentAction IS NOT NULL AND (DATEADD(SECOND,ISNULL(@CurrentCommandDurationSecAlterIndex,0),SYSDATETIME()) < DATEADD(SECOND,@TimeLimit,@StartTime) OR @TimeLimit IS NULL)
         BEGIN
           SET @CurrentDatabaseContext = @CurrentDatabaseName
 
@@ -2211,7 +2281,15 @@ BEGIN
                                     ) ExtendedInfo FOR XML RAW('ExtendedInfo'), ELEMENTS)
         END
 
-        IF @CurrentStatisticsID IS NOT NULL AND @CurrentUpdateStatistics = 'Y' AND (SYSDATETIME() < DATEADD(SECOND,@TimeLimit,@StartTime) OR @TimeLimit IS NULL)
+        /*If a Time Limit is set check if potentially the statistic to be processed could run over - if so log skip*/
+        IF @CurrentStatisticsID IS NOT NULL AND @CurrentUpdateStatistics = 'Y' AND @TimeLimit IS NOT NULL AND DATEADD(SECOND, ISNULL(@CurrentCommandDurationSecUpdateStatistics,0),SYSDATETIME()) > DATEADD(SECOND,@TimeLimit,@StartTime)
+        BEGIN
+          SET @DatabaseMessage = 'Skipping Statistic: ' + QUOTENAME(@CurrentStatisticsName) + ' on the object ' + QUOTENAME(@CurrentDatabaseName) + '.' + QUOTENAME(@CurrentSchemaName) + '.' + QUOTENAME(@CurrentObjectName)+' as processing could take '+ CONVERT(nvarchar,ISNULL(@CurrentCommandDurationSecUpdateStatistics,0)) +' seconds ('+@TimeLimitEstimateCommandDuration+') - longer than time limit specified.'
+          RAISERROR('%s',10,1,@DatabaseMessage) WITH NOWAIT
+          RAISERROR(@EmptyLine,10,1) WITH NOWAIT
+		END
+
+        IF @CurrentStatisticsID IS NOT NULL AND @CurrentUpdateStatistics = 'Y' AND (DATEADD(SECOND, ISNULL(@CurrentCommandDurationSecUpdateStatistics,0),SYSDATETIME()) < DATEADD(SECOND,@TimeLimit,@StartTime) OR @TimeLimit IS NULL)
         BEGIN
           SET @CurrentDatabaseContext = @CurrentDatabaseName
 
@@ -2353,6 +2431,8 @@ BEGIN
         SET @CurrentUpdateStatisticsArgumentID = NULL
         SET @CurrentUpdateStatisticsArgument = NULL
         SET @CurrentUpdateStatisticsWithClause = NULL
+        SET @CurrentCommandDurationSecAlterIndex = NULL
+        SET @CurrentCommandDurationSecUpdateStatistics = NULL
 
         DELETE FROM @CurrentActionsAllowed
         DELETE FROM @CurrentAlterIndexWithClauseArguments
