@@ -1,4 +1,7 @@
-﻿SET ANSI_NULLS ON
+﻿use master
+go
+
+SET ANSI_NULLS ON
 GO
 SET QUOTED_IDENTIFIER ON
 GO
@@ -2256,25 +2259,31 @@ BEGIN
 		  ELSE IF @CurrentIsExtenalTable = 1 AND @ExternalTables = 'REBUILD' AND @Version >= 13
 		  BEGIN
 
-			SET @ExternalTableColumnListCommand = @ExternalTableColumnListCommand + 'SELECT columns.name '
-																				  + 'FROM sys.external_tables as external_tables '
-																				  + 'INNER JOIN SYS.external_table_columns AS external_table_columns ON external_tables.object_id = external_table_columns.object_id '
-																				  + 'INNER JOIN sys.columns as columns on external_table_columns.column_id = columns.column_id '
-																				  + 'AND external_tables.object_id = columns.object_id '
-																				  + 'WHERE external_tables.name = ' + QUOTENAME(@CurrentObjectName, '''') + ' '
-																				  + 'AND external_tables.schema_id = ' + CAST(@CurrentSchemaID AS varchar(100)) +';'
-
-
+			SET @ExternalTableColumnListCommand =  'SELECT columns.name '
+													+ 'FROM sys.external_tables as external_tables '
+													+ 'INNER JOIN SYS.external_table_columns AS external_table_columns ON external_tables.object_id = external_table_columns.object_id '
+													+ 'INNER JOIN sys.columns as columns on external_table_columns.column_id = columns.column_id '
+													+ 'AND external_tables.object_id = columns.object_id '
+													+ 'INNER JOIN sys.stats AS stats on external_tables.object_id = stats.object_id '
+													+ 'INNER JOIN sys.stats_columns AS stats_columns on stats.object_id = stats_columns.object_id '
+													+ 'AND columns.column_id = stats_columns.column_id '
+													+ 'AND stats.stats_id = stats_columns.stats_id '
+													+ 'WHERE external_tables.name = ' + QUOTENAME(@CurrentObjectName, '''') + ' '
+													+ 'AND external_tables.schema_id = ' + CAST(@CurrentSchemaID AS varchar(100)) 
+													+ 'AND stats.name = ' + QUOTENAME(@CurrentStatisticsName,'''') +';'
 
 		   INSERT INTO @tmpExternalTableColumnList (ColumnName)
            EXECUTE @CurrentDatabase_sp_executesql @stmt = @ExternalTableColumnListCommand
-		   
+
 		   SET @CurrentCommand += 'DROP STATISTICS ' + QUOTENAME(@CurrentSchemaName) + '.' + QUOTENAME(@CurrentObjectName) + '.' + QUOTENAME(@CurrentStatisticsName) + ';'
 		   SET @CurrentCommand += 'CREATE STATISTICS ' + QUOTENAME(@CurrentStatisticsName) + ' ON ' + QUOTENAME(@CurrentSchemaName) + '.' + QUOTENAME(@CurrentObjectName) + '(' 
+
 		   SELECT @CurrentCommand += QUOTENAME(T.ColumnName) + ','
 		   FROM @tmpExternalTableColumnList AS T
 
 		   SET @CurrentCommand = LEFT(@CurrentCommand, LEN(@CurrentCommand)-1) + ') '
+
+		   DELETE FROM @tmpExternalTableColumnList
 
 		  END
 		  
