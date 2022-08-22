@@ -43,6 +43,7 @@ ALTER PROCEDURE [dbo].[IndexOptimize]
 @DatabasesInParallel nvarchar(max) = 'N',
 @ExecuteAsUser nvarchar(max) = NULL,
 @LogToTable nvarchar(max) = 'N',
+@PreserveFillFactor nvarchar(max) = 'N',
 @Execute nvarchar(max) = 'Y'
 
 AS
@@ -311,6 +312,7 @@ BEGIN
   SET @Parameters += ', @DatabasesInParallel = ' + ISNULL('''' + REPLACE(@DatabasesInParallel,'''','''''') + '''','NULL')
   SET @Parameters += ', @ExecuteAsUser = ' + ISNULL('''' + REPLACE(@ExecuteAsUser,'''','''''') + '''','NULL')
   SET @Parameters += ', @LogToTable = ' + ISNULL('''' + REPLACE(@LogToTable,'''','''''') + '''','NULL')
+  SET @Parameters += ', @PreserveFillFactor = ' + ISNULL('''' + REPLACE(@PreserveFillFactor,'''','''''') + '''','NULL')
   SET @Parameters += ', @Execute = ' + ISNULL('''' + REPLACE(@Execute,'''','''''') + '''','NULL')
 
   SET @StartMessage = 'Date and time: ' + CONVERT(nvarchar,@StartTime,120)
@@ -1108,6 +1110,14 @@ BEGIN
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
     SELECT 'The value for the parameter @LogToTable is not supported.', 16, 1
+  END
+
+  ----------------------------------------------------------------------------------------------------
+
+  IF @PreserveFillFactor NOT IN('Y','N') OR @PreserveFillFactor IS NULL
+  BEGIN
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'The value for the parameter @PreserveFillFactor is not supported.', 16, 1
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -2039,6 +2049,40 @@ BEGIN
         BEGIN
           SET @CurrentStatisticsSample = NULL
           SET @CurrentStatisticsResample = 'Y'
+        END
+        
+        -- Check current fill factor
+        IF @PreserveFillFactor = 'Y'
+        BEGIN
+          IF @CurrentIndexID IS NOT NULL
+          AND @CurrentOnReadOnlyFileGroup = 0
+          AND EXISTS(SELECT * FROM @ActionsPreferred)
+          AND (EXISTS(SELECT [Priority], [Action], COUNT(*) FROM @ActionsPreferred GROUP BY [Priority], [Action] HAVING COUNT(*) <> 3) OR @MinNumberOfPages > 0 OR @MaxNumberOfPages IS NOT NULL)
+          BEGIN
+            SET @CurrentCommand = ''
+
+            IF @LockTimeout IS NOT NULL SET @CurrentCommand = 'SET LOCK_TIMEOUT ' + CAST(@LockTimeout * 1000 AS nvarchar) + '; '
+
+            IF @MeasureInternalFragmentation IS NOT NULL SET @CurrentCommand += 'SELECT @ParamFillFactor = CASE WHEN i.fill_factor = 0 THEN 100 ELSE i.fill_factor END FROM sys.dm_db_index_physical_stats(DB_ID(@ParamDatabaseName), @ParamObjectID, @ParamIndexID, @ParamPartitionNumber, ''SAMPLED'') ips INNER JOIN ' + @CurrentDatabaseName + '.sys.indexes i ON (ips.object_id = i.object_id) AND ips.index_id = i.index_id WHERE ips.alloc_unit_type_desc = ''IN_ROW_DATA'' AND ips.index_level = 0'
+
+            BEGIN TRY
+              EXECUTE sp_executesql @stmt = @CurrentCommand, @params = N'@ParamDatabaseName nvarchar(max), @ParamObjectID int, @ParamIndexID int, @ParamPartitionNumber int, @ParamFillFactor int OUTPUT', @ParamDatabaseName = @CurrentDatabaseName, @ParamObjectID = @CurrentObjectID, @ParamIndexID = @CurrentIndexID, @ParamPartitionNumber = @CurrentPartitionNumber, @ParamFillFactor = @CurrentFillFactor OUTPUT
+              SET @FillFactor = @CurrentFillFactor
+            END TRY
+            BEGIN CATCH
+              SET @ErrorMessage = 'Msg ' + CAST(ERROR_NUMBER() AS nvarchar) + ', ' + ISNULL(ERROR_MESSAGE(),'') + CASE WHEN ERROR_NUMBER() = 1222 THEN ' The index ' + QUOTENAME(@CurrentIndexName) + ' on the object ' + QUOTENAME(@CurrentDatabaseName) + '.' + QUOTENAME(@CurrentSchemaName) + '.' + QUOTENAME(@CurrentObjectName) + ' is locked. The page_count and avg_fragmentation_in_percent could not be checked.' ELSE '' END
+              SET @Severity = CASE WHEN ERROR_NUMBER() IN(1205,1222) THEN @LockMessageSeverity ELSE 16 END
+              RAISERROR('%s',@Severity,1,@ErrorMessage) WITH NOWAIT
+              RAISERROR(@EmptyLine,10,1) WITH NOWAIT
+
+              IF NOT (ERROR_NUMBER() IN(1205,1222) AND @LockMessageSeverity = 10)
+              BEGIN
+                SET @ReturnCode = ERROR_NUMBER()
+              END
+
+              GOTO NoAction
+            END CATCH
+          END
         END
 
         -- Create index comment
