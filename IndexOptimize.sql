@@ -1,4 +1,4 @@
-﻿SET ANSI_NULLS ON
+SET ANSI_NULLS ON
 GO
 SET QUOTED_IDENTIFIER ON
 GO
@@ -43,6 +43,7 @@ ALTER PROCEDURE [dbo].[IndexOptimize]
 @DatabasesInParallel nvarchar(max) = 'N',
 @ExecuteAsUser nvarchar(max) = NULL,
 @LogToTable nvarchar(max) = 'N',
+@MeasureInternalFragmentation nvarchar(max) = 'N',
 @Execute nvarchar(max) = 'Y'
 
 AS
@@ -311,6 +312,7 @@ BEGIN
   SET @Parameters += ', @DatabasesInParallel = ' + ISNULL('''' + REPLACE(@DatabasesInParallel,'''','''''') + '''','NULL')
   SET @Parameters += ', @ExecuteAsUser = ' + ISNULL('''' + REPLACE(@ExecuteAsUser,'''','''''') + '''','NULL')
   SET @Parameters += ', @LogToTable = ' + ISNULL('''' + REPLACE(@LogToTable,'''','''''') + '''','NULL')
+  SET @Parameters += ', @MeasureInternalFragmentation = ' + ISNULL('''' + REPLACE(@MeasureInternalFragmentation,'''','''''') + '''','NULL')
   SET @Parameters += ', @Execute = ' + ISNULL('''' + REPLACE(@Execute,'''','''''') + '''','NULL')
 
   SET @StartMessage = 'Date and time: ' + CONVERT(nvarchar,@StartTime,120)
@@ -1108,6 +1110,14 @@ BEGIN
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
     SELECT 'The value for the parameter @LogToTable is not supported.', 16, 1
+  END
+
+  ----------------------------------------------------------------------------------------------------
+
+  IF @MeasureInternalFragmentation NOT IN('Y','N') OR @MeasureInternalFragmentation IS NULL
+  BEGIN
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'The value for the parameter @MeasureInternalFragmentation is not supported.', 16, 1
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -1910,10 +1920,12 @@ BEGIN
 
           IF @LockTimeout IS NOT NULL SET @CurrentCommand = 'SET LOCK_TIMEOUT ' + CAST(@LockTimeout * 1000 AS nvarchar) + '; '
 
-          SET @CurrentCommand += 'SELECT @ParamFragmentationLevel = MAX(avg_fragmentation_in_percent), @ParamPageCount = SUM(page_count) FROM sys.dm_db_index_physical_stats(DB_ID(@ParamDatabaseName), @ParamObjectID, @ParamIndexID, @ParamPartitionNumber, ''LIMITED'') WHERE alloc_unit_type_desc = ''IN_ROW_DATA'' AND index_level = 0'
+          IF @MeasureInternalFragmentation IS NOT NULL SET @CurrentCommand += 'SELECT @ParamFragmentationLevel = CASE WHEN i.fill_factor = 0 THEN 100 - ips.avg_page_space_used_in_percent ELSE i.fill_factor - ips.avg_page_space_used_in_percent END, @ParamPageCount = ips.page_count FROM sys.dm_db_index_physical_stats(DB_ID(@ParamDatabaseName), @ParamObjectID, @ParamIndexID, @ParamPartitionNumber, ''SAMPLED'') ips INNER JOIN ' + @CurrentDatabaseName + '.sys.indexes i ON (ips.object_id = i.object_id) AND ips.index_id = i.index_id WHERE ips.alloc_unit_type_desc = ''IN_ROW_DATA'' AND ips.index_level = 0'
+          ELSE SET @CurrentCommand += 'SELECT @ParamFragmentationLevel = MAX(avg_fragmentation_in_percent), @ParamPageCount = SUM(page_count) FROM sys.dm_db_index_physical_stats(DB_ID(@ParamDatabaseName), @ParamObjectID, @ParamIndexID, @ParamPartitionNumber, ''LIMITED'') WHERE alloc_unit_type_desc = ''IN_ROW_DATA'' AND index_level = 0'
 
           BEGIN TRY
             EXECUTE sp_executesql @stmt = @CurrentCommand, @params = N'@ParamDatabaseName nvarchar(max), @ParamObjectID int, @ParamIndexID int, @ParamPartitionNumber int, @ParamFragmentationLevel float OUTPUT, @ParamPageCount bigint OUTPUT', @ParamDatabaseName = @CurrentDatabaseName, @ParamObjectID = @CurrentObjectID, @ParamIndexID = @CurrentIndexID, @ParamPartitionNumber = @CurrentPartitionNumber, @ParamFragmentationLevel = @CurrentFragmentationLevel OUTPUT, @ParamPageCount = @CurrentPageCount OUTPUT
+
           END TRY
           BEGIN CATCH
             SET @ErrorMessage = 'Msg ' + CAST(ERROR_NUMBER() AS nvarchar) + ', ' + ISNULL(ERROR_MESSAGE(),'') + CASE WHEN ERROR_NUMBER() = 1222 THEN ' The index ' + QUOTENAME(@CurrentIndexName) + ' on the object ' + QUOTENAME(@CurrentDatabaseName) + '.' + QUOTENAME(@CurrentSchemaName) + '.' + QUOTENAME(@CurrentObjectName) + ' is locked. The page_count and avg_fragmentation_in_percent could not be checked.' ELSE '' END
@@ -2433,4 +2445,3 @@ BEGIN
 END
 
 GO
-
