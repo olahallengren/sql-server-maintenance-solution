@@ -920,7 +920,7 @@ BEGIN
 
   ----------------------------------------------------------------------------------------------------
 
-  IF @StatisticsSample <= 0 OR @StatisticsSample  > 100
+  IF @StatisticsSample <= -2 OR @StatisticsSample  > 100
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
     SELECT 'The value for the parameter @StatisticsSample is not supported.', 16, 1
@@ -2233,7 +2233,21 @@ BEGIN
             SELECT 'FULLSCAN'
           END
 
-          IF @CurrentStatisticsSample IS NOT NULL AND @CurrentStatisticsSample <> 100
+          IF @CurrentStatisticsSample IS NOT NULL AND @CurrentStatisticsSample = -1
+          BEGIN
+            INSERT INTO @CurrentUpdateStatisticsWithClauseArguments (Argument)
+            SELECT 'SAMPLE ' + CASE
+			        WHEN @CurrentRowCount < 500000 THEN '100 PERCENT'
+			        WHEN @CurrentRowCount < 1000000 THEN '50 PERCENT'
+			        WHEN @CurrentRowCount < 5000000 THEN '25 PERCENT'
+			        WHEN @CurrentRowCount < 10000000 THEN '10 PERCENT'
+			        WHEN @CurrentRowCount < 50000000 THEN '2 PERCENT'
+			        WHEN @CurrentRowCount < 100000000 THEN '1 PERCENT'
+			        ELSE '3000000 ROWS '
+		        END
+          END
+
+          IF @CurrentStatisticsSample IS NOT NULL AND @CurrentStatisticsSample BETWEEN 0 AND 99
           BEGIN
             INSERT INTO @CurrentUpdateStatisticsWithClauseArguments (Argument)
             SELECT 'SAMPLE ' + CAST(@CurrentStatisticsSample AS nvarchar) + ' PERCENT'
