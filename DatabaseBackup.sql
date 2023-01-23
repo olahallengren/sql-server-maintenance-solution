@@ -50,6 +50,7 @@ ALTER PROCEDURE [dbo].[DatabaseBackup]
 @ModificationLevel int = NULL,
 @LogSizeSinceLastLogBackup int = NULL,
 @TimeSinceLastLogBackup int = NULL,
+@DataDomainBoostConfig nvarchar(max) = NULL,
 @DataDomainBoostHost nvarchar(max) = NULL,
 @DataDomainBoostUser nvarchar(max) = NULL,
 @DataDomainBoostDevicePath nvarchar(max) = NULL,
@@ -313,6 +314,7 @@ BEGIN
   SET @Parameters += ', @ModificationLevel = ' + ISNULL(CAST(@ModificationLevel AS nvarchar),'NULL')
   SET @Parameters += ', @LogSizeSinceLastLogBackup = ' + ISNULL(CAST(@LogSizeSinceLastLogBackup AS nvarchar),'NULL')
   SET @Parameters += ', @TimeSinceLastLogBackup = ' + ISNULL(CAST(@TimeSinceLastLogBackup AS nvarchar),'NULL')
+  SET @Parameters += ', @DataDomainBoostConfig = ' + ISNULL('''' + REPLACE(@DataDomainBoostConfig,'''','''''') + '''','NULL')
   SET @Parameters += ', @DataDomainBoostHost = ' + ISNULL('''' + REPLACE(@DataDomainBoostHost,'''','''''') + '''','NULL')
   SET @Parameters += ', @DataDomainBoostUser = ' + ISNULL('''' + REPLACE(@DataDomainBoostUser,'''','''''') + '''','NULL')
   SET @Parameters += ', @DataDomainBoostDevicePath = ' + ISNULL('''' + REPLACE(@DataDomainBoostDevicePath,'''','''''') + '''','NULL')
@@ -1061,6 +1063,34 @@ BEGIN
                             WHEN @BackupSoftware IS NULL AND NOT EXISTS(SELECT * FROM sys.configurations WHERE name = 'backup compression default' AND value_in_use = 1) THEN 'N'
                             WHEN @BackupSoftware IS NOT NULL AND (@CompressionLevel IS NULL OR @CompressionLevel > 0)  THEN 'Y'
                             WHEN @BackupSoftware IS NOT NULL AND @CompressionLevel = 0  THEN 'N' END
+  END
+
+  ----------------------------------------------------------------------------------------------------
+  --// Read Data Domain Boost Configuration                                                       //--
+  ----------------------------------------------------------------------------------------------------
+
+  IF @BackupSoftware = 'DATA_DOMAIN_BOOST' AND @DataDomainBoostConfig IS NOT NULL
+  BEGIN
+    CREATE TABLE #TempDataDomainBoostConfig ([KEY] NVARCHAR(100), [VALUE] NVARCHAR(MAX))
+
+    BEGIN TRY
+      SET @CurrentCommand = 'BULK INSERT #TempDataDomainBoostConfig FROM ' + QUOTENAME(@DataDomainBoostConfig, '''') + ' WITH (FIELDTERMINATOR=''='',ROWTERMINATOR=''\n'')'
+      EXECUTE sp_executesql @statement = @CurrentCommand
+    END TRY
+    BEGIN CATCH
+      SET @ErrorMessage = 'Failed to read the DataDomainBoostConfig file ' + @DataDomainBoostConfig +'. Check the file permissions and format'
+      RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
+      SET @Error = @@ERROR
+      RAISERROR(@EmptyLine,10,1) WITH NOWAIT
+    END CATCH
+    
+    IF @DataDomainBoostLockboxPath IS NULL SET @DataDomainBoostLockboxPath = LTRIM(RTRIM((SELECT [VALUE] FROM #TempDataDomainBoostConfig WHERE [KEY] = 'LOCKBOX_PATH')))
+    IF @DataDomainBoostUser IS NULL SET @DataDomainBoostUser = LTRIM(RTRIM((SELECT [VALUE] FROM #TempDataDomainBoostConfig WHERE [KEY] = 'DDBOOST_USER')))
+    IF @DataDomainBoostHost IS NULL SET @DataDomainBoostHost = LTRIM(RTRIM((SELECT [VALUE] FROM #TempDataDomainBoostConfig WHERE [KEY] = 'DEVICE_HOST')))
+    IF @DataDomainBoostDevicePath IS NULL SET @DataDomainBoostDevicePath = LTRIM(RTRIM((SELECT [VALUE] FROM #TempDataDomainBoostConfig WHERE [KEY] = 'DEVICE_PATH')))
+
+    DROP TABLE #TempDataDomainBoostConfig
+    SET @CurrentCommand = NULL
   END
 
   ----------------------------------------------------------------------------------------------------
