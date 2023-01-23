@@ -28,6 +28,7 @@ ALTER PROCEDURE [dbo].[IndexOptimize]
 @StatisticsSample int = NULL,
 @StatisticsResample nvarchar(max) = 'N',
 @PartitionLevel nvarchar(max) = 'Y',
+@ExcludeRightMostPopulatedPartition nvarchar(max) = 'N',
 @MSShippedObjects nvarchar(max) = 'N',
 @Indexes nvarchar(max) = NULL,
 @TimeLimit int = NULL,
@@ -1610,6 +1611,11 @@ BEGIN
                                                     + CASE WHEN @MSShippedObjects = 'N' THEN ' AND objects.is_ms_shipped = 0' ELSE '' END
                                                     + ' AND indexes.[type] IN(1,2,3,4,5,6,7)'
                                                     + ' AND indexes.is_disabled = 0 AND indexes.is_hypothetical = 0'
+
+            IF @PartitionLevel = 'Y' AND @ExcludeRightMostPopulatedPartition = 'Y'
+            BEGIN
+              SET @CurrentCommand01 = @CurrentCommand01 + ' AND NOT EXISTS ( SELECT * FROM (SELECT rmp.[object_id], rmp.index_id, MAX(rmp.partition_number) AS [maxPartition] FROM sys.partitions rmp WHERE rmp.partition_number > 1 AND rmp.[rows] > 0 GROUP BY rmp.object_id, rmp.index_id) AS r WHERE r.object_id = partitions.[object_id] AND r.index_id = partitions.index_id AND r.maxPartition = partitions.partition_number)'            
+            END                                                    
         END
 
         IF (EXISTS(SELECT * FROM @ActionsPreferred) AND @UpdateStatistics = 'COLUMNS') OR @UpdateStatistics = 'ALL'
