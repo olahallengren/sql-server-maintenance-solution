@@ -1295,7 +1295,13 @@ BEGIN
 
   ----------------------------------------------------------------------------------------------------
 
-  IF @MaxTransferSize < 65536 OR @MaxTransferSize > 4194304
+  IF (@MaxTransferSize < 65536 OR @MaxTransferSize > 4194304) AND (@URL IS NULL OR @URL NOT LIKE 's3://%')
+  BEGIN
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'The value for the parameter @MaxTransferSize is not supported.', 16, 1
+  END
+
+  IF (@MaxTransferSize < 5242880 OR @MaxTransferSize > 20971520 ) AND @URL LIKE 's3://%'
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
     SELECT 'The value for the parameter @MaxTransferSize is not supported.', 16, 1
@@ -1313,7 +1319,7 @@ BEGIN
     SELECT 'The value for the parameter @MaxTransferSize is not supported.', 16, 3
   END
 
-  IF @MaxTransferSize IS NOT NULL AND @URL IS NOT NULL AND @Credential IS NOT NULL
+  IF @MaxTransferSize IS NOT NULL AND @URL IS NOT NULL AND @URL NOT LIKE 's3://%' AND @Credential IS NOT NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
     SELECT 'MAXTRANSFERSIZE is not supported when backing up to URL with page blobs. See https://docs.microsoft.com/en-us/sql/relational-databases/backup-restore/sql-server-backup-to-url', 16, 4
@@ -2106,6 +2112,11 @@ BEGIN
     SELECT 'The value for the parameter @Init is not supported.', 16, 3
   END
 
+  IF @Init = 'Y' AND @URL LIKE 's3://%'
+  BEGIN
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'The value for the parameter @Init is not supported.', 16, 2
+  END
   ----------------------------------------------------------------------------------------------------
 
   IF @Format NOT IN('Y','N') OR @Format IS NULL
