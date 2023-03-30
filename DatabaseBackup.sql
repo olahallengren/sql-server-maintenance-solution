@@ -36,6 +36,7 @@ ALTER PROCEDURE [dbo].[DatabaseBackup]
 @ServerAsymmetricKey nvarchar(max) = NULL,
 @EncryptionKey nvarchar(max) = NULL,
 @ReadWriteFileGroups nvarchar(max) = 'N',
+@FileGroup nvarchar(max) = NULL,
 @OverrideBackupPreference nvarchar(max) = 'N',
 @NoRecovery nvarchar(max) = 'N',
 @URL nvarchar(max) = NULL,
@@ -56,8 +57,8 @@ ALTER PROCEDURE [dbo].[DatabaseBackup]
 @DataDomainBoostLockboxPath nvarchar(max) = NULL,
 @DirectoryStructure nvarchar(max) = '{ServerName}${InstanceName}{DirectorySeparator}{DatabaseName}{DirectorySeparator}{BackupType}_{Partial}_{CopyOnly}',
 @AvailabilityGroupDirectoryStructure nvarchar(max) = '{ClusterName}${AvailabilityGroupName}{DirectorySeparator}{DatabaseName}{DirectorySeparator}{BackupType}_{Partial}_{CopyOnly}',
-@FileName nvarchar(max) = '{ServerName}${InstanceName}_{DatabaseName}_{BackupType}_{Partial}_{CopyOnly}_{Year}{Month}{Day}_{Hour}{Minute}{Second}_{FileNumber}.{FileExtension}',
-@AvailabilityGroupFileName nvarchar(max) = '{ClusterName}${AvailabilityGroupName}_{DatabaseName}_{BackupType}_{Partial}_{CopyOnly}_{Year}{Month}{Day}_{Hour}{Minute}{Second}_{FileNumber}.{FileExtension}',
+@FileName nvarchar(max) = '{ServerName}${InstanceName}_{DatabaseName}_{FileGroup}_{BackupType}_{Partial}_{CopyOnly}_{Year}{Month}{Day}_{Hour}{Minute}{Second}_{FileNumber}.{FileExtension}',
+@AvailabilityGroupFileName nvarchar(max) = '{ClusterName}${AvailabilityGroupName}_{DatabaseName}_{FileGroup}_{BackupType}_{Partial}_{CopyOnly}_{Year}{Month}{Day}_{Hour}{Minute}{Second}_{FileNumber}.{FileExtension}',
 @FileExtensionFull nvarchar(max) = NULL,
 @FileExtensionDiff nvarchar(max) = NULL,
 @FileExtensionLog nvarchar(max) = NULL,
@@ -105,6 +106,8 @@ BEGIN
 
   DECLARE @DefaultDirectory nvarchar(4000)
 
+  DECLARE @FileGroupFS nvarchar(max)
+
   DECLARE @QueueID int
   DECLARE @QueueStartTime datetime2
 
@@ -139,6 +142,9 @@ BEGIN
   DECLARE @CurrentDatabaseFileName nvarchar(max)
   DECLARE @CurrentMaxFilePathLength nvarchar(max)
   DECLARE @CurrentFileName nvarchar(max)
+  DECLARE @CurrentFileGroupAdditional nvarchar(max)
+  DECLARE @CurrentFileGroupPrimaryIsIncluded bit
+  DECLARE @CurrentFileGroupsAreReadWrite bit
   DECLARE @CurrentDirectoryID int
   DECLARE @CurrentDirectoryPath nvarchar(max)
   DECLARE @CurrentFilePath nvarchar(max)
@@ -150,6 +156,7 @@ BEGIN
   DECLARE @CurrentAvailabilityGroup nvarchar(max)
   DECLARE @CurrentAvailabilityGroupRole nvarchar(max)
   DECLARE @CurrentAvailabilityGroupBackupPreference nvarchar(max)
+  DECLARE @CurrentAvailabilityGroupSecondaryAllowConnections nvarchar(max)
   DECLARE @CurrentIsPreferredBackupReplica bit
   DECLARE @CurrentDatabaseMirroringRole nvarchar(max)
   DECLARE @CurrentLogShippingRole nvarchar(max)
@@ -299,6 +306,7 @@ BEGIN
   SET @Parameters += ', @ServerAsymmetricKey = ' + ISNULL('''' + REPLACE(@ServerAsymmetricKey,'''','''''') + '''','NULL')
   SET @Parameters += ', @EncryptionKey = ' + ISNULL('''' + REPLACE(@EncryptionKey,'''','''''') + '''','NULL')
   SET @Parameters += ', @ReadWriteFileGroups = ' + ISNULL('''' + REPLACE(@ReadWriteFileGroups,'''','''''') + '''','NULL')
+  SET @Parameters += ', @FileGroup = ' + ISNULL('''' + REPLACE(@FileGroup,'''','''''') + '''','NULL')
   SET @Parameters += ', @OverrideBackupPreference = ' + ISNULL('''' + REPLACE(@OverrideBackupPreference,'''','''''') + '''','NULL')
   SET @Parameters += ', @NoRecovery = ' + ISNULL('''' + REPLACE(@NoRecovery,'''','''''') + '''','NULL')
   SET @Parameters += ', @URL = ' + ISNULL('''' + REPLACE(@URL,'''','''''') + '''','NULL')
@@ -691,6 +699,21 @@ BEGIN
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
     SELECT 'The names of the following databases are not unique in the file system: ' + LEFT(@ErrorMessage,LEN(@ErrorMessage)-1) + '.', 16, 1
+  END
+
+  ----------------------------------------------------------------------------------------------------
+  --// Check filegroup name                                                                       //--
+  ----------------------------------------------------------------------------------------------------
+  IF @FileGroup IS NOT NULL
+  BEGIN
+    SELECT @FileGroupFS = RTRIM(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(@FileGroup,'\',''),'/',''),':',''),'*',''),'?',''),'"',''),'<',''),'>',''),'|',''));
+    IF @FileGroupFS = ''
+    BEGIN
+      SET @ErrorMessage = 'The name of the following filegroup is not supported: ' + QUOTENAME(@FileGroup)
+      RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
+      SET @Error = @@ERROR
+      RAISERROR(@EmptyLine,10,1) WITH NOWAIT
+    END
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -1986,6 +2009,11 @@ BEGIN
     SELECT 'The value for the parameter @FileName is not supported.', 16, 6
   END
 
+  IF @FileGroup IS NOT NULL AND (@BackupType = 'LOG' OR @ReadWriteFileGroups = 'Y' OR (@BackupSoftware IS NOT NULL AND @BackupSoftware NOT IN ('SQLBACKUP')))
+  BEGIN
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'The value for the parameter @FileGroup is not supported.', 16, 6
+  END
   ----------------------------------------------------------------------------------------------------
 
   IF (SERVERPROPERTY('IsHadrEnabled') = 1 AND @AvailabilityGroupFileName IS NULL)
@@ -2032,7 +2060,7 @@ BEGIN
 
   ----------------------------------------------------------------------------------------------------
 
-  IF EXISTS (SELECT * FROM (SELECT REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(@DirectoryStructure,'{DirectorySeparator}',''),'{ServerName}',''),'{InstanceName}',''),'{ServiceName}',''),'{ClusterName}',''),'{AvailabilityGroupName}',''),'{DatabaseName}',''),'{BackupType}',''),'{Partial}',''),'{CopyOnly}',''),'{Description}',''),'{Year}',''),'{Month}',''),'{Day}',''),'{Week}',''),'{Hour}',''),'{Minute}',''),'{Second}',''),'{Millisecond}',''),'{Microsecond}',''),'{MajorVersion}',''),'{MinorVersion}','') AS DirectoryStructure) Temp WHERE DirectoryStructure LIKE '%{%' OR DirectoryStructure LIKE '%}%')
+  IF EXISTS (SELECT * FROM (SELECT REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(@DirectoryStructure,'{DirectorySeparator}',''),'{ServerName}',''),'{InstanceName}',''),'{ServiceName}',''),'{ClusterName}',''),'{AvailabilityGroupName}',''),'{DatabaseName}',''),'{FileGroup}',''),'{BackupType}',''),'{Partial}',''),'{CopyOnly}',''),'{Description}',''),'{Year}',''),'{Month}',''),'{Day}',''),'{Week}',''),'{Hour}',''),'{Minute}',''),'{Second}',''),'{Millisecond}',''),'{Microsecond}',''),'{MajorVersion}',''),'{MinorVersion}','') AS DirectoryStructure) Temp WHERE DirectoryStructure LIKE '%{%' OR DirectoryStructure LIKE '%}%')
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
     SELECT 'The parameter @DirectoryStructure contains one or more tokens that are not supported.', 16, 1
@@ -2040,7 +2068,7 @@ BEGIN
 
   ----------------------------------------------------------------------------------------------------
 
-  IF EXISTS (SELECT * FROM (SELECT REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(@AvailabilityGroupDirectoryStructure,'{DirectorySeparator}',''),'{ServerName}',''),'{InstanceName}',''),'{ServiceName}',''),'{ClusterName}',''),'{AvailabilityGroupName}',''),'{DatabaseName}',''),'{BackupType}',''),'{Partial}',''),'{CopyOnly}',''),'{Description}',''),'{Year}',''),'{Month}',''),'{Day}',''),'{Week}',''),'{Hour}',''),'{Minute}',''),'{Second}',''),'{Millisecond}',''),'{Microsecond}',''),'{MajorVersion}',''),'{MinorVersion}','') AS AvailabilityGroupDirectoryStructure) Temp WHERE AvailabilityGroupDirectoryStructure LIKE '%{%' OR AvailabilityGroupDirectoryStructure LIKE '%}%')
+  IF EXISTS (SELECT * FROM (SELECT REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(@AvailabilityGroupDirectoryStructure,'{DirectorySeparator}',''),'{ServerName}',''),'{InstanceName}',''),'{ServiceName}',''),'{ClusterName}',''),'{AvailabilityGroupName}',''),'{DatabaseName}',''),'{FileGroup}',''),'{BackupType}',''),'{Partial}',''),'{CopyOnly}',''),'{Description}',''),'{Year}',''),'{Month}',''),'{Day}',''),'{Week}',''),'{Hour}',''),'{Minute}',''),'{Second}',''),'{Millisecond}',''),'{Microsecond}',''),'{MajorVersion}',''),'{MinorVersion}','') AS AvailabilityGroupDirectoryStructure) Temp WHERE AvailabilityGroupDirectoryStructure LIKE '%{%' OR AvailabilityGroupDirectoryStructure LIKE '%}%')
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
     SELECT 'The parameter @AvailabilityGroupDirectoryStructure contains one or more tokens that are not supported.', 16, 1
@@ -2048,7 +2076,7 @@ BEGIN
 
   ----------------------------------------------------------------------------------------------------
 
-  IF EXISTS (SELECT * FROM (SELECT REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(@FileName,'{DirectorySeparator}',''),'{ServerName}',''),'{InstanceName}',''),'{ServiceName}',''),'{ClusterName}',''),'{AvailabilityGroupName}',''),'{DatabaseName}',''),'{BackupType}',''),'{Partial}',''),'{CopyOnly}',''),'{Description}',''),'{Year}',''),'{Month}',''),'{Day}',''),'{Week}',''),'{Hour}',''),'{Minute}',''),'{Second}',''),'{Millisecond}',''),'{Microsecond}',''),'{FileNumber}',''),'{NumberOfFiles}',''),'{FileExtension}',''),'{MajorVersion}',''),'{MinorVersion}','') AS [FileName]) Temp WHERE [FileName] LIKE '%{%' OR [FileName] LIKE '%}%')
+  IF EXISTS (SELECT * FROM (SELECT REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(@FileName,'{DirectorySeparator}',''),'{ServerName}',''),'{InstanceName}',''),'{ServiceName}',''),'{ClusterName}',''),'{AvailabilityGroupName}',''),'{DatabaseName}',''),'{FileGroup}',''),'{BackupType}',''),'{Partial}',''),'{CopyOnly}',''),'{Description}',''),'{Year}',''),'{Month}',''),'{Day}',''),'{Week}',''),'{Hour}',''),'{Minute}',''),'{Second}',''),'{Millisecond}',''),'{Microsecond}',''),'{FileNumber}',''),'{NumberOfFiles}',''),'{FileExtension}',''),'{MajorVersion}',''),'{MinorVersion}','') AS [FileName]) Temp WHERE [FileName] LIKE '%{%' OR [FileName] LIKE '%}%')
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
     SELECT 'The parameter @FileName contains one or more tokens that are not supported.', 16, 1
@@ -2056,7 +2084,7 @@ BEGIN
 
   ----------------------------------------------------------------------------------------------------
 
-  IF EXISTS (SELECT * FROM (SELECT REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(@AvailabilityGroupFileName,'{DirectorySeparator}',''),'{ServerName}',''),'{InstanceName}',''),'{ServiceName}',''),'{ClusterName}',''),'{AvailabilityGroupName}',''),'{DatabaseName}',''),'{BackupType}',''),'{Partial}',''),'{CopyOnly}',''),'{Description}',''),'{Year}',''),'{Month}',''),'{Day}',''),'{Week}',''),'{Hour}',''),'{Minute}',''),'{Second}',''),'{Millisecond}',''),'{Microsecond}',''),'{FileNumber}',''),'{NumberOfFiles}',''),'{FileExtension}',''),'{MajorVersion}',''),'{MinorVersion}','') AS AvailabilityGroupFileName) Temp WHERE AvailabilityGroupFileName LIKE '%{%' OR AvailabilityGroupFileName LIKE '%}%')
+  IF EXISTS (SELECT * FROM (SELECT REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(@AvailabilityGroupFileName,'{DirectorySeparator}',''),'{ServerName}',''),'{InstanceName}',''),'{ServiceName}',''),'{ClusterName}',''),'{AvailabilityGroupName}',''),'{DatabaseName}',''),'{FileGroup}',''),'{BackupType}',''),'{Partial}',''),'{CopyOnly}',''),'{Description}',''),'{Year}',''),'{Month}',''),'{Day}',''),'{Week}',''),'{Hour}',''),'{Minute}',''),'{Second}',''),'{Millisecond}',''),'{Microsecond}',''),'{FileNumber}',''),'{NumberOfFiles}',''),'{FileExtension}',''),'{MajorVersion}',''),'{MinorVersion}','') AS AvailabilityGroupFileName) Temp WHERE AvailabilityGroupFileName LIKE '%{%' OR AvailabilityGroupFileName LIKE '%}%')
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
     SELECT 'The parameter @AvailabilityGroupFileName contains one or more tokens that are not supported.', 16, 1
@@ -2634,6 +2662,9 @@ BEGIN
              @CurrentAvailabilityGroupBackupPreference = UPPER(automated_backup_preference_desc)
       FROM sys.availability_groups
       WHERE group_id = @CurrentAvailabilityGroupID
+
+      SELECT @CurrentAvailabilityGroupSecondaryAllowConnections = secondary_role_allow_connections_desc
+      FROM sys.availability_replicas
     END
 
     IF @Version >= 11 AND SERVERPROPERTY('IsHadrEnabled') = 1 AND @CurrentAvailabilityGroup IS NOT NULL
@@ -2663,6 +2694,34 @@ BEGIN
       SET @CurrentCommand = 'SELECT @ParamAllocatedExtentPageCount = SUM(allocated_extent_page_count), @ParamModifiedExtentPageCount = SUM(modified_extent_page_count) FROM sys.dm_db_file_space_usage'
 
       EXECUTE @CurrentDatabase_sp_executesql @stmt = @CurrentCommand, @params = N'@ParamAllocatedExtentPageCount bigint OUTPUT, @ParamModifiedExtentPageCount bigint OUTPUT', @ParamAllocatedExtentPageCount = @CurrentAllocatedExtentPageCount OUTPUT, @ParamModifiedExtentPageCount = @CurrentModifiedExtentPageCount OUTPUT
+    END
+
+    SET @CurrentFileGroupAdditional = NULL
+    IF @FileGroup IS NOT NULL AND @CurrentDatabaseState = 'ONLINE' AND @CurrentIsDatabaseAccessible = 1 AND (@CurrentAvailabilityGroupRole = 'PRIMARY' OR @CurrentAvailabilityGroupRole IS NULL OR (@CurrentAvailabilityGroupRole = 'SECONDARY' AND @CurrentAvailabilityGroupSecondaryAllowConnections <> 'NO')) 
+    BEGIN
+      IF UPPER(@FileGroup) = 'PRIMARY'
+      BEGIN
+        SET @CurrentCommand = 'SELECT TOP 1 @CurrentFileGroupAdditional = name FROM ' + QUOTENAME(@CurrentDatabaseName) + '.sys.filegroups WHERE type = ''FX'''
+      END
+      ELSE
+      BEGIN
+        SET @CurrentCommand = 'IF EXISTS(SELECT * FROM ' + QUOTENAME(@CurrentDatabaseName) + '.sys.filegroups WHERE type = ''FX'' AND name = @FileGroup) SET @CurrentFileGroupAdditional = ''PRIMARY'''
+      END
+
+      EXECUTE sp_executesql @stmt = @CurrentCommand, @params = N'@FileGroup nvarchar(max), @CurrentFileGroupAdditional nvarchar(max) OUTPUT', @FileGroup = @FileGroup, @CurrentFileGroupAdditional = @CurrentFileGroupAdditional OUTPUT
+    END
+
+    SET @CurrentFileGroupPrimaryIsIncluded = 0
+    IF @FileGroup IS NOT NULL AND @CurrentDatabaseState = 'ONLINE' AND @CurrentIsDatabaseAccessible = 1 AND (@CurrentAvailabilityGroupRole = 'PRIMARY' OR @CurrentAvailabilityGroupRole IS NULL OR (@CurrentAvailabilityGroupRole = 'SECONDARY' AND @CurrentAvailabilityGroupSecondaryAllowConnections <> 'NO')) 
+    BEGIN
+      IF @FileGroup = 'PRIMARY' OR ISNULL(@CurrentFileGroupAdditional, '') = 'PRIMARY' SET @CurrentFileGroupPrimaryIsIncluded = 1
+    END
+
+    SET @CurrentFileGroupsAreReadWrite = 0
+    IF @FileGroup IS NOT NULL AND @CurrentDatabaseState = 'ONLINE' AND @CurrentIsDatabaseAccessible = 1 AND (@CurrentAvailabilityGroupRole = 'PRIMARY' OR @CurrentAvailabilityGroupRole IS NULL OR (@CurrentAvailabilityGroupRole = 'SECONDARY' AND @CurrentAvailabilityGroupSecondaryAllowConnections <> 'NO')) 
+    BEGIN
+      SET @CurrentCommand = 'IF EXISTS(SELECT * FROM ' + QUOTENAME(@CurrentDatabaseName) + '.sys.filegroups WHERE is_read_only = 0 AND name IN (@FileGroup' + CASE WHEN @CurrentFileGroupAdditional IS NULL THEN N'' ELSE N', @CurrentFileGroupAdditional' END + N')) SET @CurrentFileGroupsAreReadWrite = 1'
+      EXECUTE sp_executesql @stmt = @CurrentCommand, @params = N'@FileGroup nvarchar(max), @CurrentFileGroupAdditional nvarchar(max), @CurrentFileGroupsAreReadWrite bit OUTPUT', @FileGroup = @FileGroup, @CurrentFileGroupAdditional = @CurrentFileGroupAdditional, @CurrentFileGroupsAreReadWrite = @CurrentFileGroupsAreReadWrite OUTPUT
     END
 
     SET @CurrentBackupType = @BackupType
@@ -2760,6 +2819,9 @@ BEGIN
       SET @DatabaseMessage = 'Availability group backup preference: ' + ISNULL(@CurrentAvailabilityGroupBackupPreference,'N/A')
       RAISERROR('%s',10,1,@DatabaseMessage) WITH NOWAIT
 
+      SET @DatabaseMessage = 'Availability group secondary allows connections: ' + ISNULL(@CurrentAvailabilityGroupSecondaryAllowConnections, 'N/A')
+      RAISERROR('%s',10,1,@DatabaseMessage) WITH NOWAIT
+
       SET @DatabaseMessage = 'Is preferred backup replica: ' + CASE WHEN @CurrentIsPreferredBackupReplica = 1 THEN 'Yes' WHEN @CurrentIsPreferredBackupReplica = 0 THEN 'No' ELSE 'N/A' END
       RAISERROR('%s',10,1,@DatabaseMessage) WITH NOWAIT
     END
@@ -2825,6 +2887,8 @@ BEGIN
     AND NOT (@CurrentIsReadOnly = 0 AND @Updateability = 'READ_ONLY')
     AND NOT (@CurrentBackupType = 'LOG' AND @LogSizeSinceLastLogBackup IS NOT NULL AND @TimeSinceLastLogBackup IS NOT NULL AND NOT(@CurrentLogSizeSinceLastLogBackup >= @LogSizeSinceLastLogBackup OR @CurrentLogSizeSinceLastLogBackup IS NULL OR DATEDIFF(SECOND,@CurrentLastLogBackup,SYSDATETIME()) >= @TimeSinceLastLogBackup OR @CurrentLastLogBackup IS NULL))
     AND NOT (@CurrentBackupType = 'LOG' AND @Updateability = 'READ_ONLY' AND @BackupSoftware = 'DATA_DOMAIN_BOOST')
+    AND NOT (@FileGroup IS NOT NULL AND @CurrentFileGroupPrimaryIsIncluded = 1 AND @CurrentRecoveryModel = 'SIMPLE')
+    AND NOT (@FileGroup IS NOT NULL AND @CurrentFileGroupsAreReadWrite = 1 AND @CurrentRecoveryModel = 'SIMPLE' AND @CurrentBackupType = 'DIFF')
     BEGIN
 
       IF @CurrentBackupType = 'LOG' AND (@CleanupTime IS NOT NULL OR @MirrorCleanupTime IS NOT NULL)
@@ -2856,7 +2920,8 @@ BEGIN
       IF @CurrentDirectoryStructure IS NOT NULL
       BEGIN
       -- Directory structure - remove tokens that are not needed
-        IF @ReadWriteFileGroups = 'N' SET @CurrentDirectoryStructure = REPLACE(@CurrentDirectoryStructure,'{Partial}','')
+        IF @ReadWriteFileGroups = 'N' AND @FileGroup IS NULL SET @CurrentDirectoryStructure = REPLACE(@CurrentDirectoryStructure,'{Partial}','')
+        IF @FileGroup IS NULL SET @CurrentDirectoryStructure = REPLACE(@CurrentDirectoryStructure,'{FileGroup}','')
         IF @CopyOnly = 'N' SET @CurrentDirectoryStructure = REPLACE(@CurrentDirectoryStructure,'{CopyOnly}','')
         IF @Cluster IS NULL SET @CurrentDirectoryStructure = REPLACE(@CurrentDirectoryStructure,'{ClusterName}','')
         IF @CurrentAvailabilityGroup IS NULL SET @CurrentDirectoryStructure = REPLACE(@CurrentDirectoryStructure,'{AvailabilityGroupName}','')
@@ -3016,6 +3081,7 @@ BEGIN
         SET @CurrentDirectoryStructure = REPLACE(@CurrentDirectoryStructure,'{ClusterName}',ISNULL(@Cluster,''))
         SET @CurrentDirectoryStructure = REPLACE(@CurrentDirectoryStructure,'{AvailabilityGroupName}',ISNULL(@CurrentAvailabilityGroup,''))
         SET @CurrentDirectoryStructure = REPLACE(@CurrentDirectoryStructure,'{DatabaseName}',@CurrentDatabaseNameFS)
+        SET @CurrentDirectoryStructure = REPLACE(@CurrentDirectoryStructure,'{FileGroup}',ISNULL(@FileGroupFS, ''))
         SET @CurrentDirectoryStructure = REPLACE(@CurrentDirectoryStructure,'{BackupType}',@CurrentBackupType)
         SET @CurrentDirectoryStructure = REPLACE(@CurrentDirectoryStructure,'{Partial}','PARTIAL')
         SET @CurrentDirectoryStructure = REPLACE(@CurrentDirectoryStructure,'{CopyOnly}','COPY_ONLY')
@@ -3057,7 +3123,8 @@ BEGIN
       END
 
       -- File name - remove tokens that are not needed
-      IF @ReadWriteFileGroups = 'N' SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'{Partial}','')
+      IF @ReadWriteFileGroups = 'N' AND @FileGroup IS NULL SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'{Partial}','')
+      IF @FileGroup IS NULL SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'{FileGroup}','')
       IF @CopyOnly = 'N' SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'{CopyOnly}','')
       IF @Cluster IS NULL SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'{ClusterName}','')
       IF @CurrentAvailabilityGroup IS NULL SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'{AvailabilityGroupName}','')
@@ -3171,6 +3238,7 @@ BEGIN
       SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'{ServiceName}',ISNULL(@@SERVICENAME,''))
       SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'{ClusterName}',ISNULL(@Cluster,''))
       SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'{AvailabilityGroupName}',ISNULL(@CurrentAvailabilityGroup,''))
+      SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'{FileGroup}',ISNULL(@FileGroupFS, ''))
       SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'{BackupType}',@CurrentBackupType)
       SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'{Partial}','PARTIAL')
       SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'{CopyOnly}','COPY_ONLY')
@@ -3505,6 +3573,8 @@ BEGIN
           END
 
           IF @ReadWriteFileGroups = 'Y' AND @CurrentDatabaseName <> 'master' SET @CurrentCommand += ' READ_WRITE_FILEGROUPS'
+          IF @FileGroup IS NOT NULL AND @CurrentDatabaseName <> 'master' AND @ReadWriteFileGroups = 'N' SET @CurrentCommand += ' FILEGROUP = N''' + @FileGroup + N''''
+          IF @CurrentFileGroupAdditional IS NOT NULL AND @FileGroup IS NOT NULL AND @CurrentDatabaseName <> 'master' AND @ReadWriteFileGroups = 'N' SET @CurrentCommand += ', FILEGROUP = N''' + @CurrentFileGroupAdditional + N''''
 
           SET @CurrentCommand += ' TO'
 
@@ -3590,6 +3660,8 @@ BEGIN
           IF @BlockSize IS NOT NULL SET @CurrentCommand += ', BLOCKSIZE = ' + CAST(@BlockSize AS nvarchar)
           SET @CurrentCommand += ''''
           IF @ReadWriteFileGroups = 'Y' AND @CurrentDatabaseName <> 'master' SET @CurrentCommand += ', @read_write_filegroups = 1'
+          -- TODO: How do we handle providing multiple filegroups to LITESPEED (in case of in-memory filegroups + PRIMARY that need to be backed up together)?
+          -- IF @FileGroup IS NOT NULL AND @CurrentDatabaseName <> 'master' AND @ReadWriteFileGroups = 'N' SET @CurrentCommand += ', @filegroup = N''' + @FileGroup + N''''
           IF @CompressionLevel IS NOT NULL SET @CurrentCommand += ', @compressionlevel = ' + CAST(@CompressionLevel AS nvarchar)
           IF @AdaptiveCompression IS NOT NULL SET @CurrentCommand += ', @adaptivecompression = ''' + CASE WHEN @AdaptiveCompression = 'SIZE' THEN 'Size' WHEN @AdaptiveCompression = 'SPEED' THEN 'Speed' END + ''''
           IF @BufferCount IS NOT NULL SET @CurrentCommand += ', @buffercount = ' + CAST(@BufferCount AS nvarchar)
@@ -3629,6 +3701,8 @@ BEGIN
           END
 
           IF @ReadWriteFileGroups = 'Y' AND @CurrentDatabaseName <> 'master' SET @CurrentCommand += ' READ_WRITE_FILEGROUPS'
+          IF @FileGroup IS NOT NULL AND @CurrentDatabaseName <> 'master' AND @ReadWriteFileGroups = 'N' SET @CurrentCommand += ' FILEGROUP = N''' + @FileGroup + N''''
+          IF @CurrentFileGroupAdditional IS NOT NULL AND  @FileGroup IS NOT NULL AND @CurrentDatabaseName <> 'master' AND @ReadWriteFileGroups = 'N' SET @CurrentCommand += ', FILEGROUP = N''' + @CurrentFileGroupAdditional + N''''
 
           SET @CurrentCommand += ' TO'
 
@@ -3685,6 +3759,8 @@ BEGIN
 
           SET @CurrentCommand += ', @backuptype = ' + CASE WHEN @CurrentBackupType = 'FULL' THEN '''Full''' WHEN @CurrentBackupType = 'DIFF' THEN '''Differential''' WHEN @CurrentBackupType = 'LOG' THEN '''Log''' END
           IF @ReadWriteFileGroups = 'Y' AND @CurrentDatabaseName <> 'master' SET @CurrentCommand += ', @readwritefilegroups = 1'
+          -- TODO: How do we handle providing multiple filegroups to SQLSAFE (in case of in-memory filegroups + PRIMARY that need to be backed up together)?
+          -- IF @FileGroup IS NOT NULL AND @CurrentDatabaseName <> 'master' AND @ReadWriteFileGroups = 'N' SET @CurrentCommand += ', @filegroup = N''' + @FileGroup + N''''
           SET @CurrentCommand += ', @checksum = ' + CASE WHEN @CheckSum = 'Y' THEN '1' WHEN @CheckSum = 'N' THEN '0' END
           SET @CurrentCommand += ', @copyonly = ' + CASE WHEN @CopyOnly = 'Y' THEN '1' WHEN @CopyOnly = 'N' THEN '0' END
           IF @CompressionLevel IS NOT NULL SET @CurrentCommand += ', @compressionlevel = ' + CAST(@CompressionLevel AS nvarchar)
@@ -3730,6 +3806,7 @@ BEGIN
           IF @BufferCount IS NOT NULL SET @CurrentCommand += ' -O "BUFFERCOUNT=' + CAST(@BufferCount AS nvarchar) + '"'
 
           IF @ReadWriteFileGroups = 'Y' AND @CurrentDatabaseName <> 'master' SET @CurrentCommand += ' -O "READ_WRITE_FILEGROUPS"'
+          -- TODO: How do we handle @FileGroup for Data Domain Boost?
 
           IF @DataDomainBoostHost IS NOT NULL SET @CurrentCommand += ' -a "NSR_DFA_SI_DD_HOST=' + REPLACE(@DataDomainBoostHost,'''','''''') + '"'
           IF @DataDomainBoostUser IS NOT NULL SET @CurrentCommand += ' -a "NSR_DFA_SI_DD_USER=' + REPLACE(@DataDomainBoostUser,'''','''''') + '"'
@@ -3983,6 +4060,22 @@ BEGIN
     IF @CurrentDatabaseState = 'SUSPECT'
     BEGIN
       SET @ErrorMessage = 'The database ' + QUOTENAME(@CurrentDatabaseName) + ' is in a SUSPECT state.'
+      RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
+      SET @Error = @@ERROR
+      RAISERROR(@EmptyLine,10,1) WITH NOWAIT
+    END
+
+    IF @FileGroup IS NOT NULL AND @CurrentFileGroupPrimaryIsIncluded = 1 AND @CurrentRecoveryModel = 'SIMPLE'
+    BEGIN
+      SET @ErrorMessage = 'The database ' + QUOTENAME(@CurrentDatabaseName) + ' is in SIMPLE recovery model and the PRIMARY filegroup has been included in the filegroup backup: ' + QUOTENAME(@FileGroup) + ' (explicitly)' + CASE WHEN @CurrentFileGroupAdditional IS NULL THEN '' ELSE ' or ' + QUOTENAME(@CurrentFileGroupAdditional) + ' (implicitly)' END
+      RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
+      SET @Error = @@ERROR
+      RAISERROR(@EmptyLine,10,1) WITH NOWAIT
+    END
+
+    IF @FileGroup IS NOT NULL AND @CurrentFileGroupsAreReadWrite = 1 AND @CurrentRecoveryModel = 'SIMPLE' AND @CurrentBackupType = 'DIFF'
+    BEGIN
+      SET @ErrorMessage = 'The database ' + QUOTENAME(@CurrentDatabaseName) + ' is in SIMPLE recovery model and a read/write filegroup has been included in a differential filegroup backup: ' + QUOTENAME(@FileGroup) + ' (explicitly)' + CASE WHEN @CurrentFileGroupAdditional IS NULL THEN '' ELSE ' or ' + QUOTENAME(@CurrentFileGroupAdditional) + ' (implicitly)' END
       RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
       SET @Error = @@ERROR
       RAISERROR(@EmptyLine,10,1) WITH NOWAIT
