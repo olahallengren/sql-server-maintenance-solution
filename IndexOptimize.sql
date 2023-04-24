@@ -100,7 +100,6 @@ BEGIN
   DECLARE @CurrentAvailabilityGroupRole nvarchar(max)
   DECLARE @CurrentDatabaseMirroringRole nvarchar(max)
 
-  DECLARE @CurrentDatabaseContext nvarchar(max)
   DECLARE @CurrentCommand nvarchar(max)
   DECLARE @CurrentCommandOutput int
   DECLARE @CurrentCommandType nvarchar(max)
@@ -270,8 +269,6 @@ BEGIN
   BEGIN
     SET @HostPlatform = 'Windows'
   END
-
-  DECLARE @AmazonRDS bit = CASE WHEN DB_ID('rdsadmin') IS NOT NULL AND SUSER_SNAME(0x01) = 'rdsa' THEN 1 ELSE 0 END
 
   ----------------------------------------------------------------------------------------------------
   --// Log initial information                                                                    //--
@@ -2067,8 +2064,6 @@ BEGIN
 
         IF @CurrentIndexID IS NOT NULL AND @CurrentAction IS NOT NULL AND (SYSDATETIME() < DATEADD(SECOND,@TimeLimit,@StartTime) OR @TimeLimit IS NULL)
         BEGIN
-          SET @CurrentDatabaseContext = @CurrentDatabaseName
-
           SET @CurrentCommandType = 'ALTER_INDEX'
 
           SET @CurrentCommand = ''
@@ -2213,8 +2208,6 @@ BEGIN
 
         IF @CurrentStatisticsID IS NOT NULL AND @CurrentUpdateStatistics = 'Y' AND (SYSDATETIME() < DATEADD(SECOND,@TimeLimit,@StartTime) OR @TimeLimit IS NULL)
         BEGIN
-          SET @CurrentDatabaseContext = @CurrentDatabaseName
-
           SET @CurrentCommandType = 'UPDATE_STATISTICS'
 
           SET @CurrentCommand = ''
@@ -2299,8 +2292,6 @@ BEGIN
         AND ID = @CurrentIxID
 
         -- Clear variables
-        SET @CurrentDatabaseContext = NULL
-
         SET @CurrentCommand = NULL
         SET @CurrentCommandOutput = NULL
         SET @CurrentCommandType = NULL
