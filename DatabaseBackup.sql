@@ -1,13 +1,10 @@
-﻿SET ANSI_NULLS ON
+SET ANSI_NULLS ON
 GO
+
 SET QUOTED_IDENTIFIER ON
 GO
-IF NOT EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'[dbo].[DatabaseBackup]') AND type in (N'P', N'PC'))
-BEGIN
-EXEC dbo.sp_executesql @statement = N'CREATE PROCEDURE [dbo].[DatabaseBackup] AS'
-END
-GO
-ALTER PROCEDURE [dbo].[DatabaseBackup]
+
+CREATE PROCEDURE [dbo].[DatabaseBackup]
 
 @Databases nvarchar(max) = NULL,
 @Directory nvarchar(max) = NULL,
@@ -3354,7 +3351,7 @@ BEGIN
 
           SET @CurrentCommandType = 'xp_create_subdir'
 
-          SET @CurrentCommand = 'DECLARE @ReturnCode int EXECUTE @ReturnCode = dbo.xp_create_subdir N''' + REPLACE(@CurrentDirectoryPath,'''','''''') + ''' IF @ReturnCode <> 0 RAISERROR(''Error creating directory.'', 16, 1)'
+          SET @CurrentCommand = 'DECLARE @t TABLE (msg NVARCHAR(MAX)) DECLARE @returncode INT INSERT INTO @t (msg) DECLARE @ReturnCode int EXECUTE @ReturnCode = dbo.xp_create_subdir N''' + REPLACE(@CurrentDirectoryPath,'''','''''') + ''' IF @ReturnCode <> 0 RAISERROR(''Error creating directory.'', 16, 1)'
 
           EXECUTE @CurrentCommandOutput = dbo.CommandExecute @DatabaseContext = @CurrentDatabaseContext, @Command = @CurrentCommand, @CommandType = @CurrentCommandType, @Mode = 1, @DatabaseName = @CurrentDatabaseName, @LogToTable = @LogToTable, @Execute = @Execute
           SET @Error = @@ERROR
@@ -3706,8 +3703,14 @@ BEGIN
           SET @CurrentDatabaseContext = 'master'
 
           SET @CurrentCommandType = 'emc_run_backup'
-
-          SET @CurrentCommand = 'DECLARE @ReturnCode int EXECUTE @ReturnCode = dbo.emc_run_backup '''
+		  /* 
+		   Fix for error
+		   Error: Msg 0, Sev 0, State 1: Unknown token received from SQL Server [SQLSTATE HY000]
+		   String data, right truncation [SQLSTATE 01004]
+		   Msg 16389, Sev 16, State 1: The connection is no longer usable because the server response for a previously executed statement was incorrectly formatted. [SQLSTATE 08S01]
+		   https://github.com/olahallengren/sql-server-maintenance-solution/issues/658		  
+		  */
+          SET @CurrentCommand = 'DECLARE @t TABLE (msg NVARCHAR(MAX)) DECLARE @returncode INT INSERT INTO @t (msg) EXECUTE @ReturnCode = dbo.emc_run_backup '''
 
           SET @CurrentCommand += ' -c ' + CASE WHEN @CurrentAvailabilityGroup IS NOT NULL THEN @Cluster ELSE CAST(SERVERPROPERTY('MachineName') AS nvarchar) END
 
@@ -4082,4 +4085,3 @@ BEGIN
 
 END
 GO
-
