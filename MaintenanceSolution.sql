@@ -8984,10 +8984,22 @@ BEGIN
          @DatabaseName,
          'CommandLogCleanup'
 
-  INSERT INTO @Jobs ([Name], CommandCmdExec, OutputFileNamePart01)
-  SELECT 'Output File Cleanup',
+  IF @HostPlatform = 'Linux' AND @Version >= 14.032573
+  BEGIN
+    -- Compatable with SQL Server 2017 CU18+.  Slower than the cmd version, but works all platforms.
+    INSERT INTO @Jobs ([Name], CommandTSQL, DatabaseName, OutputFileNamePart01)
+    SELECT 'Output File Cleanup',
+           'DECLARE @files TABLE (id int identity(1,1), full_filesystem_path nvarchar(2000) NOT NULL)' + CHAR(13) + CHAR(10) + 'DECLARE @file_path nvarchar(2000)' + CHAR(13) + CHAR(10) + 'INSERT INTO @files(full_filesystem_path)' + CHAR(13) + CHAR(10) + 'SELECT full_filesystem_path FROM sys.dm_os_enumerate_filesystem(''' + COALESCE(@OutputFileDirectory,@TokenLogDirectory,@LogDirectory) + ''',''*_*_*_*.txt'') WHERE last_write_time < DATEADD(DAY,-30,GETDATE()) AND is_directory = 0' + CHAR(13) + CHAR(10) + 'DECLARE @rMax int = @@ROWCOUNT' + CHAR(13) + CHAR(10) + 'DECLARE @r int = 1' + CHAR(13) + CHAR(10) + 'WHILE (@r<=@rMax)' + CHAR(13) + CHAR(10) + 'BEGIN' + CHAR(13) + CHAR(10) + '	SELECT @file_path = full_filesystem_path FROM @files WHERE id = @r' + CHAR(13) + CHAR(10) + CHAR(9) + 'EXEC sys.xp_delete_files @file_path' + CHAR(13) + CHAR(10) + CHAR(9) + 'SET @r = @r + 1' + CHAR(13) + CHAR(10) + 'END',
+           NULL,
+           'OutputFileCleanup'
+  END
+  ELSE IF @HostPlatform = 'Windows'
+  BEGIN
+    INSERT INTO @Jobs ([Name], CommandCmdExec, OutputFileNamePart01)
+    SELECT 'Output File Cleanup',
          'cmd /q /c "For /F "tokens=1 delims=" %v In (''ForFiles /P "' + COALESCE(@OutputFileDirectory,@TokenLogDirectory,@LogDirectory) + '" /m *_*_*_*.txt /d -30 2^>^&1'') do if EXIST "' + COALESCE(@OutputFileDirectory,@TokenLogDirectory,@LogDirectory) + '"\%v echo del "' + COALESCE(@OutputFileDirectory,@TokenLogDirectory,@LogDirectory) + '"\%v& del "' + COALESCE(@OutputFileDirectory,@TokenLogDirectory,@LogDirectory) + '"\%v"',
          'OutputFileCleanup'
+  END
 
   IF @AmazonRDS = 1
   BEGIN
