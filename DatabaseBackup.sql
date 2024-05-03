@@ -70,6 +70,7 @@ ALTER PROCEDURE [dbo].[DatabaseBackup]
 @DatabaseOrder nvarchar(max) = NULL,
 @DatabasesInParallel nvarchar(max) = 'N',
 @LogToTable nvarchar(max) = 'N',
+@StatsOutput INT = NULL,/*Percentage complete output for feedback in backup and retore commands*/
 @Execute nvarchar(max) = 'Y'
 
 AS
@@ -81,6 +82,7 @@ BEGIN
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
   --// Version: 2022-12-03 17:23:44                                                               //--
+  --// Version: 2024-05-03 11:31:44  update to include STATS output of backups and restore        //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -3523,10 +3525,15 @@ BEGIN
             ORDER BY FilePath ASC
           END
 
-          SET @CurrentCommand += ' WITH '
-          IF @CheckSum = 'Y' SET @CurrentCommand += 'CHECKSUM'
+          SET @CurrentCommand += ' WITH '          
+		  
+		      IF @CheckSum = 'Y' SET @CurrentCommand += 'CHECKSUM'
           IF @CheckSum = 'N' SET @CurrentCommand += 'NO_CHECKSUM'
 
+          /*SCHRODERS STATS OUTPUT MODIFICATION */
+          IF ((@StatsOutput IS NOT NULL) AND (@StatsOutput BETWEEN 1 AND 100))
+          SET @CurrentCommand += ' , STATS = '+ CAST(@StatsOutput AS CHAR(3)) 
+          
           IF @Version >= 10
           BEGIN
             SET @CurrentCommand += CASE WHEN @Compress = 'Y' AND (@CurrentIsEncrypted = 0 OR (@CurrentIsEncrypted = 1 AND ((@Version >= 13 AND @CurrentMaxTransferSize >= 65537) OR @Version >= 15.0404316 OR SERVERPROPERTY('EngineEdition') = 8))) THEN ', COMPRESSION' ELSE ', NO_COMPRESSION' END
@@ -3583,8 +3590,10 @@ BEGIN
 
           SET @CurrentCommand += ', @with = '''
           IF @CheckSum = 'Y' SET @CurrentCommand += 'CHECKSUM'
-          IF @CheckSum = 'N' SET @CurrentCommand += 'NO_CHECKSUM'
-          IF @CurrentBackupType = 'DIFF' SET @CurrentCommand += ', DIFFERENTIAL'
+          IF @CheckSum = 'N' SET @CurrentCommand += 'NO_CHECKSUM'          
+		      -- LiteSpeed stats not added: IF ((@StatsOutput IS NOT NULL) AND (@StatsOutput BETWEEN 1 AND 100)) SET @CurrentCommand += ' , STATS = ' + CAST(@StatsOutput AS CHAR(3)) 		
+		  
+		  IF @CurrentBackupType = 'DIFF' SET @CurrentCommand += ', DIFFERENTIAL'
           IF @CopyOnly = 'Y' SET @CurrentCommand += ', COPY_ONLY'
           IF @NoRecovery = 'Y' AND @CurrentBackupType = 'LOG' SET @CurrentCommand += ', NORECOVERY'
           IF @BlockSize IS NOT NULL SET @CurrentCommand += ', BLOCKSIZE = ' + CAST(@BlockSize AS nvarchar)
@@ -3773,9 +3782,7 @@ BEGIN
           IF @BackupSoftware IS NULL
           BEGIN
             SET @CurrentDatabaseContext = 'master'
-
             SET @CurrentCommandType = 'RESTORE_VERIFYONLY'
-
             SET @CurrentCommand = 'RESTORE VERIFYONLY FROM'
 
             SELECT @CurrentCommand += ' ' + [Type] + ' = N''' + REPLACE(FilePath,'''','''''') + '''' + CASE WHEN ROW_NUMBER() OVER (ORDER BY FilePath ASC) <> @CurrentNumberOfFiles THEN ',' ELSE '' END
@@ -3785,7 +3792,11 @@ BEGIN
 
             SET @CurrentCommand += ' WITH '
             IF @CheckSum = 'Y' SET @CurrentCommand += 'CHECKSUM'
-            IF @CheckSum = 'N' SET @CurrentCommand += 'NO_CHECKSUM'
+            IF @CheckSum = 'N' SET @CurrentCommand += 'NO_CHECKSUM'			
+			
+			      IF ((@StatsOutput IS NOT NULL) AND (@StatsOutput BETWEEN 1 AND 100))
+				    SET @CurrentCommand += ' , STATS = '+ CAST(@StatsOutput AS CHAR(3)) 
+
             IF @URL IS NOT NULL AND @Credential IS NOT NULL SET @CurrentCommand += ', CREDENTIAL = N''' + REPLACE(@Credential,'''','''''') + ''''
           END
 
@@ -3825,8 +3836,11 @@ BEGIN
             ORDER BY FilePath ASC
 
             SET @CurrentCommand += ' WITH '
-            IF @CheckSum = 'Y' SET @CurrentCommand += 'CHECKSUM'
             IF @CheckSum = 'N' SET @CurrentCommand += 'NO_CHECKSUM'
+   
+            IF ((@StatsOutput IS NOT NULL) AND (@StatsOutput BETWEEN 1 AND 100))
+              SET @CurrentCommand += ' , STATS = '+ CAST(@StatsOutput AS CHAR(3)) 
+
             IF @EncryptionKey IS NOT NULL SET @CurrentCommand += ', PASSWORD = N''' + REPLACE(@EncryptionKey,'''','''''') + ''''
 
             SET @CurrentCommand = 'DECLARE @ReturnCode int EXECUTE @ReturnCode = dbo.sqlbackup N''-SQL "' + REPLACE(@CurrentCommand,'''','''''') + '"''' + ' IF @ReturnCode <> 0 RAISERROR(''Error verifying SQLBackup backup.'', 16, 1)'
