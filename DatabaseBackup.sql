@@ -708,7 +708,7 @@ BEGIN
       EXECUTE [master].dbo.xp_instance_regread N'HKEY_LOCAL_MACHINE', N'SOFTWARE\Microsoft\MSSQLServer\MSSQLServer', N'BackupDirectory', @DefaultDirectory OUTPUT
     END
 
-    IF @DefaultDirectory LIKE 'http://%' OR @DefaultDirectory LIKE 'https://%'
+    IF @DefaultDirectory LIKE 'http://%' OR @DefaultDirectory LIKE 'https://%' OR @DefaultDirectory LIKE  's3://%'
     BEGIN
       SET @URL = @DefaultDirectory
     END
@@ -961,7 +961,7 @@ BEGIN
   --// Check URLs                                                                          //--
   ----------------------------------------------------------------------------------------------------
 
-  IF EXISTS(SELECT * FROM @URLs WHERE Mirror = 0 AND DirectoryPath NOT LIKE 'https://%/%')
+  IF EXISTS(SELECT * FROM @URLs WHERE Mirror = 0 AND NOT (DirectoryPath LIKE 'https://%/%' OR (@Version>= 16 and DirectoryPath LIKE 's3://%/%')))
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
     SELECT 'The value for the parameter @URL is not supported.', 16, 1
@@ -981,7 +981,7 @@ BEGIN
 
   ----------------------------------------------------------------------------------------------------
 
-  IF EXISTS(SELECT * FROM @URLs WHERE Mirror = 1 AND DirectoryPath NOT LIKE 'https://%/%')
+  IF EXISTS(SELECT * FROM @URLs WHERE Mirror = 1 AND NOT (DirectoryPath LIKE 'https://%/%' OR (@Version>= 16 and DirectoryPath LIKE 's3://%/%')))
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
     SELECT 'The value for the parameter @MirrorURL is not supported.', 16, 1
@@ -1295,7 +1295,13 @@ BEGIN
 
   ----------------------------------------------------------------------------------------------------
 
-  IF @MaxTransferSize < 65536 OR @MaxTransferSize > 4194304
+  IF (@MaxTransferSize < 65536 OR @MaxTransferSize > 4194304) AND (@URL IS NULL OR @URL NOT LIKE 's3://%')
+  BEGIN
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'The value for the parameter @MaxTransferSize is not supported.', 16, 1
+  END
+
+  IF (@MaxTransferSize < 5242880 OR @MaxTransferSize > 20971520 ) AND @URL LIKE 's3://%'
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
     SELECT 'The value for the parameter @MaxTransferSize is not supported.', 16, 1
@@ -1313,7 +1319,7 @@ BEGIN
     SELECT 'The value for the parameter @MaxTransferSize is not supported.', 16, 3
   END
 
-  IF @MaxTransferSize IS NOT NULL AND @URL IS NOT NULL AND @Credential IS NOT NULL
+  IF @MaxTransferSize IS NOT NULL AND @URL IS NOT NULL AND @URL NOT LIKE 's3://%' AND @Credential IS NOT NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
     SELECT 'MAXTRANSFERSIZE is not supported when backing up to URL with page blobs. See https://docs.microsoft.com/en-us/sql/relational-databases/backup-restore/sql-server-backup-to-url', 16, 4
@@ -1726,7 +1732,7 @@ BEGIN
 
   ----------------------------------------------------------------------------------------------------
 
-  IF @Credential IS NULL AND @URL IS NOT NULL AND NOT (@Version >= 13 OR SERVERPROPERTY('EngineEdition') = 8)
+  IF @Credential IS NULL AND @URL IS NOT NULL AND NOT (@Version >= 13 OR SERVERPROPERTY('EngineEdition') = 8) AND @URL LIKE 'https://%/%'
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
     SELECT 'The value for the parameter @Credential is not supported.', 16, 1
@@ -1738,7 +1744,7 @@ BEGIN
     SELECT 'The value for the parameter @Credential is not supported.', 16, 2
   END
 
-  IF @URL IS NOT NULL AND @Credential IS NULL AND NOT EXISTS(SELECT * FROM sys.credentials WHERE UPPER(credential_identity) = 'SHARED ACCESS SIGNATURE')
+  IF @URL IS NOT NULL AND @Credential IS NULL AND NOT EXISTS(SELECT * FROM sys.credentials WHERE UPPER(credential_identity) = 'SHARED ACCESS SIGNATURE') AND @URL LIKE 'https://%/%'
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
     SELECT 'The value for the parameter @Credential is not supported.', 16, 3
@@ -2106,6 +2112,11 @@ BEGIN
     SELECT 'The value for the parameter @Init is not supported.', 16, 3
   END
 
+  IF @Init = 'Y' AND @URL LIKE 's3://%'
+  BEGIN
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'The value for the parameter @Init is not supported.', 16, 2
+  END
   ----------------------------------------------------------------------------------------------------
 
   IF @Format NOT IN('Y','N') OR @Format IS NULL
