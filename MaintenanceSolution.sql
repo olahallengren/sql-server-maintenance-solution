@@ -10,7 +10,7 @@ License: https://ola.hallengren.com/license.html
 
 GitHub: https://github.com/olahallengren/sql-server-maintenance-solution
 
-Version: 2024-10-19 20:13:17
+Version: 2024-10-25 20:33:03
 
 You can contact me by e-mail at ola@hallengren.com.
 
@@ -123,7 +123,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2024-10-19 20:13:17                                                               //--
+  --// Version: 2024-10-25 20:33:03                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -460,7 +460,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2024-10-19 20:13:17                                                               //--
+  --// Version: 2024-10-25 20:33:03                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -1761,7 +1761,13 @@ BEGIN
     SELECT 'The value for the parameter @NumberOfFiles is not supported.', 16, 9
   END
 
-    ----------------------------------------------------------------------------------------------------
+  IF @NumberOfFiles > 32 AND @URL LIKE 's3%' AND @MirrorURL LIKE 's3%'
+  BEGIN
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'The value for the parameter @NumberOfFiles is not supported. The maximum number of files when performing mirrored backups to S3 storage is 32.', 16, 10
+  END
+
+  ----------------------------------------------------------------------------------------------------
 
   IF @MinBackupSizeForMultipleFiles <= 0
   BEGIN
@@ -4505,7 +4511,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2024-10-19 20:13:17                                                               //--
+  --// Version: 2024-10-25 20:33:03                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -6407,7 +6413,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2024-10-19 20:13:17                                                               //--
+  --// Version: 2024-10-25 20:33:03                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
