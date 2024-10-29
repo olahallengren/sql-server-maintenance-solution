@@ -1,4 +1,7 @@
-﻿SET ANSI_NULLS ON
+﻿use master
+go
+
+SET ANSI_NULLS ON
 GO
 SET QUOTED_IDENTIFIER ON
 GO
@@ -43,7 +46,8 @@ ALTER PROCEDURE [dbo].[IndexOptimize]
 @DatabasesInParallel nvarchar(max) = 'N',
 @ExecuteAsUser nvarchar(max) = NULL,
 @LogToTable nvarchar(max) = 'N',
-@Execute nvarchar(max) = 'Y'
+@Execute nvarchar(max) = 'Y',
+@ExternalTables nvarchar(max) = 'REBUILD'
 
 AS
 
@@ -157,6 +161,7 @@ BEGIN
   DECLARE @CurrentStatisticsSample int
   DECLARE @CurrentStatisticsResample nvarchar(max)
   DECLARE @CurrentDelay datetime
+  DECLARE @CurrentIsExtenalTable  bit
 
   DECLARE @tmpDatabases TABLE (ID int IDENTITY,
                                DatabaseName nvarchar(max),
@@ -204,6 +209,7 @@ BEGIN
                                        PartitionNumber int,
                                        PartitionCount int,
                                        StartPosition int,
+									   isExternalTable bit,
                                        [Order] int,
                                        Selected bit,
                                        Completed bit,
@@ -260,6 +266,11 @@ BEGIN
   DECLARE @EmptyLine nvarchar(max) = CHAR(9)
 
   DECLARE @Version numeric(18,10) = CAST(LEFT(CAST(SERVERPROPERTY('ProductVersion') AS nvarchar(max)),CHARINDEX('.',CAST(SERVERPROPERTY('ProductVersion') AS nvarchar(max))) - 1) + '.' + REPLACE(RIGHT(CAST(SERVERPROPERTY('ProductVersion') AS nvarchar(max)), LEN(CAST(SERVERPROPERTY('ProductVersion') AS nvarchar(max))) - CHARINDEX('.',CAST(SERVERPROPERTY('ProductVersion') AS nvarchar(max)))),'.','') AS numeric(18,10))
+
+
+  DECLARE @tmpExternalTableColumnList TABLE (ColumnName nvarchar(max))
+  DECLARE @ExternalTableColumnListCommand nvarchar(max) = N''
+
 
   IF @Version >= 14
   BEGIN
@@ -1550,7 +1561,7 @@ BEGIN
       IF (EXISTS(SELECT * FROM @ActionsPreferred) OR @UpdateStatistics IS NOT NULL) AND (SYSDATETIME() < DATEADD(SECOND,@TimeLimit,@StartTime) OR @TimeLimit IS NULL)
       BEGIN
         SET @CurrentCommand = 'SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;'
-                              + ' SELECT SchemaID, SchemaName, ObjectID, ObjectName, ObjectType, IsMemoryOptimized, IndexID, IndexName, IndexType, AllowPageLocks, IsImageText, IsNewLOB, IsFileStream, IsColumnStore, IsComputed, IsTimestamp, OnReadOnlyFileGroup, ResumableIndexOperation, StatisticsID, StatisticsName, NoRecompute, IsIncremental, PartitionID, PartitionNumber, PartitionCount, [Order], Selected, Completed'
+                              + ' SELECT SchemaID, SchemaName, ObjectID, ObjectName, ObjectType, IsMemoryOptimized, IndexID, IndexName, IndexType, AllowPageLocks, IsImageText, IsNewLOB, IsFileStream, IsColumnStore, IsComputed, IsTimestamp, OnReadOnlyFileGroup, ResumableIndexOperation, StatisticsID, StatisticsName, NoRecompute, IsIncremental, PartitionID, PartitionNumber, PartitionCount, isExternalTable, [Order], Selected, Completed'
                               + ' FROM ('
 
         IF EXISTS(SELECT * FROM @ActionsPreferred) OR @UpdateStatistics IN('ALL','INDEX')
@@ -1592,7 +1603,8 @@ BEGIN
                                                     + ', ' + CASE WHEN @PartitionLevel = 'Y' THEN 'partitions.partition_id AS PartitionID' WHEN @PartitionLevel = 'N' THEN 'NULL AS PartitionID' END
                                                     + ', ' + CASE WHEN @PartitionLevel = 'Y' THEN 'partitions.partition_number AS PartitionNumber' WHEN @PartitionLevel = 'N' THEN 'NULL AS PartitionNumber' END
                                                     + ', ' + CASE WHEN @PartitionLevel = 'Y' THEN 'IndexPartitions.partition_count AS PartitionCount' WHEN @PartitionLevel = 'N' THEN 'NULL AS PartitionCount' END
-                                                    + ', 0 AS [Order]'
+                                                    + ', ' + CASE WHEN @Version >= 13 THEN 'CASE WHEN external_tables.name IS NULL THEN 0 ELSE 1 END ' ELSE '0 ' END + 'as isExternalTable '
+													+ ', 0 AS [Order]'
                                                     + ', 0 AS Selected'
                                                     + ', 0 AS Completed'
                                                     + ' FROM sys.indexes indexes'
@@ -1600,6 +1612,12 @@ BEGIN
                                                     + ' INNER JOIN sys.schemas schemas ON objects.[schema_id] = schemas.[schema_id]'
                                                     + ' LEFT OUTER JOIN sys.tables tables ON objects.[object_id] = tables.[object_id]'
                                                     + ' LEFT OUTER JOIN sys.stats stats ON indexes.[object_id] = stats.[object_id] AND indexes.[index_id] = stats.[stats_id]'
+
+		  IF @Version >= 13
+		  BEGIN
+			SET @CurrentCommand += ' LEFT OUTER JOIN sys.external_tables external_tables ON objects.[object_id] = external_tables.[object_id] '
+		  END
+
           IF @PartitionLevel = 'Y'
           BEGIN
             SET @CurrentCommand = @CurrentCommand + ' LEFT OUTER JOIN sys.partitions partitions ON indexes.[object_id] = partitions.[object_id] AND indexes.index_id = partitions.index_id'
@@ -1643,6 +1661,7 @@ BEGIN
                                                     + ', NULL AS PartitionID'
                                                     + ', ' + CASE WHEN @PartitionLevelStatistics = 1 THEN 'dm_db_incremental_stats_properties.partition_number' ELSE 'NULL' END + ' AS PartitionNumber'
                                                     + ', NULL AS PartitionCount'
+													+ ', ' + CASE WHEN @Version >= 13 THEN 'CASE WHEN external_tables.name IS NULL THEN 0 ELSE 1 END ' ELSE '0 ' END + 'as isExternalTable '
                                                     + ', 0 AS [Order]'
                                                     + ', 0 AS Selected'
                                                     + ', 0 AS Completed'
@@ -1650,6 +1669,11 @@ BEGIN
                                                     + ' INNER JOIN sys.objects objects ON stats.[object_id] = objects.[object_id]'
                                                     + ' INNER JOIN sys.schemas schemas ON objects.[schema_id] = schemas.[schema_id]'
                                                     + ' LEFT OUTER JOIN sys.tables tables ON objects.[object_id] = tables.[object_id]'
+
+		  IF @Version >= 13
+		  BEGIN
+			SET @CurrentCommand += ' LEFT OUTER JOIN sys.external_tables external_tables ON objects.[object_id] = external_tables.[object_id] '
+		  END
 
           IF @PartitionLevelStatistics = 1
           BEGIN
@@ -1661,9 +1685,16 @@ BEGIN
                                                     + ' AND NOT EXISTS(SELECT * FROM sys.indexes indexes WHERE indexes.[object_id] = stats.[object_id] AND indexes.index_id = stats.stats_id)'
         END
 
-        SET @CurrentCommand = @CurrentCommand + ') IndexesStatistics'
+        SET @CurrentCommand = @CurrentCommand + ') IndexesStatistics '
+		SET @CurrentCommand = @CurrentCommand + 'WHERE 1=1 '
 
-        INSERT INTO @tmpIndexesStatistics (SchemaID, SchemaName, ObjectID, ObjectName, ObjectType, IsMemoryOptimized, IndexID, IndexName, IndexType, AllowPageLocks, IsImageText, IsNewLOB, IsFileStream, IsColumnStore, IsComputed, IsTimestamp, OnReadOnlyFileGroup, ResumableIndexOperation, StatisticsID, StatisticsName, [NoRecompute], IsIncremental, PartitionID, PartitionNumber, PartitionCount, [Order], Selected, Completed)
+		IF @ExternalTables <> 'REBUILD' OR (@ExternalTables = 'REBUILD' AND @Version < 13)
+		BEGIN
+			SET @CurrentCommand = @CurrentCommand + 'AND isExternalTable=0'
+		END
+		SELECT @CurrentCommand
+
+        INSERT INTO @tmpIndexesStatistics (SchemaID, SchemaName, ObjectID, ObjectName, ObjectType, IsMemoryOptimized, IndexID, IndexName, IndexType, AllowPageLocks, IsImageText, IsNewLOB, IsFileStream, IsColumnStore, IsComputed, IsTimestamp, OnReadOnlyFileGroup, ResumableIndexOperation, StatisticsID, StatisticsName, [NoRecompute], IsIncremental, PartitionID, PartitionNumber, PartitionCount, isExternalTable, [Order], Selected, Completed)
         EXECUTE @CurrentDatabase_sp_executesql @stmt = @CurrentCommand
         SET @Error = @@ERROR
         IF @Error <> 0
@@ -1777,7 +1808,8 @@ BEGIN
                      @CurrentIsIncremental = IsIncremental,
                      @CurrentPartitionID = PartitionID,
                      @CurrentPartitionNumber = PartitionNumber,
-                     @CurrentPartitionCount = PartitionCount
+                     @CurrentPartitionCount = PartitionCount,
+					 @CurrentIsExtenalTable = isExternalTable
         FROM @tmpIndexesStatistics
         WHERE Selected = 1
         AND Completed = 0
@@ -2219,33 +2251,67 @@ BEGIN
 
           SET @CurrentCommand = ''
           IF @LockTimeout IS NOT NULL SET @CurrentCommand = 'SET LOCK_TIMEOUT ' + CAST(@LockTimeout * 1000 AS nvarchar) + '; '
-          SET @CurrentCommand += 'UPDATE STATISTICS ' + QUOTENAME(@CurrentSchemaName) + '.' + QUOTENAME(@CurrentObjectName) + ' ' + QUOTENAME(@CurrentStatisticsName)
 
-          IF @CurrentMaxDOP IS NOT NULL AND ((@Version >= 12.06024 AND @Version < 13) OR (@Version >= 13.05026 AND @Version < 14) OR @Version >= 14.030154)
+		  IF @CurrentIsExtenalTable = 0
+		  BEGIN
+			SET @CurrentCommand += 'UPDATE STATISTICS ' + QUOTENAME(@CurrentSchemaName) + '.' + QUOTENAME(@CurrentObjectName) + ' ' + QUOTENAME(@CurrentStatisticsName)
+		  END
+		  ELSE IF @CurrentIsExtenalTable = 1 AND @ExternalTables = 'REBUILD' AND @Version >= 13
+		  BEGIN
+
+			SET @ExternalTableColumnListCommand =  'SELECT columns.name '
+													+ 'FROM sys.external_tables as external_tables '
+													+ 'INNER JOIN SYS.external_table_columns AS external_table_columns ON external_tables.object_id = external_table_columns.object_id '
+													+ 'INNER JOIN sys.columns as columns on external_table_columns.column_id = columns.column_id '
+													+ 'AND external_tables.object_id = columns.object_id '
+													+ 'INNER JOIN sys.stats AS stats on external_tables.object_id = stats.object_id '
+													+ 'INNER JOIN sys.stats_columns AS stats_columns on stats.object_id = stats_columns.object_id '
+													+ 'AND columns.column_id = stats_columns.column_id '
+													+ 'AND stats.stats_id = stats_columns.stats_id '
+													+ 'WHERE external_tables.name = ' + QUOTENAME(@CurrentObjectName, '''') + ' '
+													+ 'AND external_tables.schema_id = ' + CAST(@CurrentSchemaID AS varchar(100)) 
+													+ 'AND stats.name = ' + QUOTENAME(@CurrentStatisticsName,'''') +';'
+
+		   INSERT INTO @tmpExternalTableColumnList (ColumnName)
+           EXECUTE @CurrentDatabase_sp_executesql @stmt = @ExternalTableColumnListCommand
+
+		   SET @CurrentCommand += 'DROP STATISTICS ' + QUOTENAME(@CurrentSchemaName) + '.' + QUOTENAME(@CurrentObjectName) + '.' + QUOTENAME(@CurrentStatisticsName) + ';'
+		   SET @CurrentCommand += 'CREATE STATISTICS ' + QUOTENAME(@CurrentStatisticsName) + ' ON ' + QUOTENAME(@CurrentSchemaName) + '.' + QUOTENAME(@CurrentObjectName) + '(' 
+
+		   SELECT @CurrentCommand += QUOTENAME(T.ColumnName) + ','
+		   FROM @tmpExternalTableColumnList AS T
+
+		   SET @CurrentCommand = LEFT(@CurrentCommand, LEN(@CurrentCommand)-1) + ') '
+
+		   DELETE FROM @tmpExternalTableColumnList
+
+		  END
+		  
+          IF @CurrentMaxDOP IS NOT NULL AND ((@Version >= 12.06024 AND @Version < 13) OR (@Version >= 13.05026 AND @Version < 14) OR @Version >= 14.030154) AND @CurrentIsExtenalTable = 0
           BEGIN
             INSERT INTO @CurrentUpdateStatisticsWithClauseArguments (Argument)
             SELECT 'MAXDOP = ' + CAST(@CurrentMaxDOP AS nvarchar)
           END
 
-          IF @CurrentStatisticsSample = 100
+          IF @CurrentStatisticsSample = 100 
           BEGIN
             INSERT INTO @CurrentUpdateStatisticsWithClauseArguments (Argument)
             SELECT 'FULLSCAN'
           END
 
-          IF @CurrentStatisticsSample IS NOT NULL AND @CurrentStatisticsSample <> 100
+          IF @CurrentStatisticsSample IS NOT NULL AND @CurrentStatisticsSample <> 100 
           BEGIN
             INSERT INTO @CurrentUpdateStatisticsWithClauseArguments (Argument)
             SELECT 'SAMPLE ' + CAST(@CurrentStatisticsSample AS nvarchar) + ' PERCENT'
           END
 
-          IF @CurrentStatisticsResample = 'Y'
+          IF @CurrentStatisticsResample = 'Y' AND @CurrentIsExtenalTable = 0
           BEGIN
             INSERT INTO @CurrentUpdateStatisticsWithClauseArguments (Argument)
             SELECT 'RESAMPLE'
           END
 
-          IF @CurrentNoRecompute = 1
+          IF @CurrentNoRecompute = 1 AND @CurrentIsExtenalTable = 0
           BEGIN
             INSERT INTO @CurrentUpdateStatisticsWithClauseArguments (Argument)
             SELECT 'NORECOMPUTE'
