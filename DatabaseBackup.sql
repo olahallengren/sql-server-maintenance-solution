@@ -81,7 +81,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2024-11-12 03:41:13                                                               //--
+  --// Version: 2024-11-12 14:10:18                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -551,7 +551,7 @@ BEGIN
               GROUP BY tmpDatabases.DatabaseName) SelectedDatabases2
   ON tmpDatabases.DatabaseName = SelectedDatabases2.DatabaseName
 
-  IF @Databases IS NOT NULL AND (NOT EXISTS(SELECT * FROM @SelectedDatabases) OR EXISTS(SELECT * FROM @SelectedDatabases WHERE DatabaseName IS NULL OR DatabaseName = ''))
+  IF @Databases IS NOT NULL AND (NOT EXISTS(SELECT * FROM @SelectedDatabases) OR EXISTS(SELECT * FROM @SelectedDatabases WHERE DatabaseName IS NULL OR DATALENGTH(DatabaseName) = 0))
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
     SELECT 'The value for the parameter @Databases is not supported.', 16, 1
@@ -672,7 +672,7 @@ BEGIN
   SELECT @ErrorMessage = @ErrorMessage + QUOTENAME(DatabaseName) + ', '
   FROM @tmpDatabases
   WHERE Selected = 1
-  AND DatabaseNameFS = ''
+  AND DATALENGTH(DatabaseNameFS) = 0
   ORDER BY DatabaseName ASC
   IF @@ROWCOUNT > 0
   BEGIN
@@ -685,7 +685,7 @@ BEGIN
   FROM @tmpDatabases
   WHERE UPPER(DatabaseNameFS) IN(SELECT UPPER(DatabaseNameFS) FROM @tmpDatabases GROUP BY UPPER(DatabaseNameFS) HAVING COUNT(*) > 1)
   AND UPPER(DatabaseNameFS) IN(SELECT UPPER(DatabaseNameFS) FROM @tmpDatabases WHERE Selected = 1)
-  AND DatabaseNameFS <> ''
+  AND DATALENGTH(DatabaseNameFS) > 0
   ORDER BY DatabaseName ASC
   OPTION (RECOMPILE)
   IF @@ROWCOUNT > 0
