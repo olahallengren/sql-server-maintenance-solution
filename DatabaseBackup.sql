@@ -82,7 +82,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2024-11-13 15:01:20                                                               //--
+  --// Version: 2024-11-13 20:53:37                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -1072,8 +1072,8 @@ BEGIN
 
   IF @CompressionAlgorithm IS NULL AND @BackupSoftware IS NULL AND @Version >= 16
   BEGIN
-    SELECT @CompressionAlgorithm = CASE WHEN @BackupSoftware IS NULL AND EXISTS(SELECT * FROM sys.configurations WHERE name = 'backup compression algorithm' AND value_in_use = 2) THEN 'QAT_DEFLATE'
-                                        WHEN @BackupSoftware IS NULL AND NOT EXISTS(SELECT * FROM sys.configurations WHERE name = 'backup compression algorithm' AND value_in_use = 1) THEN 'MS_XPRESS' END
+    SELECT @CompressionAlgorithm = CASE WHEN @BackupSoftware IS NULL AND EXISTS(SELECT * FROM sys.configurations WHERE name = 'backup compression algorithm' AND value_in_use = 1) THEN 'MS_XPRESS'
+                                        WHEN @BackupSoftware IS NULL AND EXISTS(SELECT * FROM sys.configurations WHERE name = 'backup compression algorithm' AND value_in_use = 2) THEN 'QAT_DEFLATE' END
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -1197,25 +1197,25 @@ BEGIN
   IF @CompressionAlgorithm NOT IN ('MS_XPRESS','QAT_DEFLATE')
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @CompressionAlgorithm is not supported.', 16, 1
+    SELECT 'The value for the parameter @CompressionAlgorithm is not supported. The allowed values are MS_XPRESS and QAT_DEFLATE.', 16, 1
   END
 
   IF @CompressionAlgorithm IS NOT NULL AND NOT (@Version >= 16)
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @CompressionAlgorithm is not supported.', 16, 2
+    SELECT 'The value for the parameter @CompressionAlgorithm is not supported. Specifying the compression algorithm is only supported in SQL Server 2022 and later.', 16, 2
   END
 
   IF @CompressionAlgorithm = 'QAT_DEFLATE' AND NOT (SERVERPROPERTY('EngineEdition') IN(2, 3))
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @CompressionAlgorithm is not supported.', 16, 3
+    SELECT 'The value for the parameter @CompressionAlgorithm is not supported. Setting the compression algorithm to QAT_DEFLATE is only supported in Standard and Enterprise Edition.', 16, 3
   END
 
   IF @CompressionAlgorithm IS NOT NULL AND @BackupSoftware IS NOT NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @CompressionAlgorithm is not supported.', 16, 4
+    SELECT 'The value for the parameter @CompressionAlgorithm is not supported. Setting the compression algorithm is only supported with SQL Server native backup', 16, 4
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -3577,7 +3577,7 @@ BEGIN
             SET @CurrentCommand += CASE WHEN @Compress = 'Y' AND (@CurrentIsEncrypted = 0 OR (@CurrentIsEncrypted = 1 AND ((@Version >= 13 AND @CurrentMaxTransferSize >= 65537) OR @Version >= 15.0404316 OR SERVERPROPERTY('EngineEdition') = 8))) THEN ', COMPRESSION' ELSE ', NO_COMPRESSION' END
           END
 
-          IF @CompressionAlgorithm IS NOT NULL
+          IF @Compress = 'Y' AND @CompressionAlgorithm IS NOT NULL
           BEGIN
             SET @CurrentCommand += ' (ALGORITHM = ' + @CompressionAlgorithm + ')'
           END
