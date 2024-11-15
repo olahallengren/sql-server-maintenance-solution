@@ -10,7 +10,7 @@ License: https://ola.hallengren.com/license.html
 
 GitHub: https://github.com/olahallengren/sql-server-maintenance-solution
 
-Version: 2024-11-14 14:03:14
+Version: 2024-11-15 23:53:05
 
 You can contact me by e-mail at ola@hallengren.com.
 
@@ -123,7 +123,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2024-11-14 14:03:14                                                               //--
+  --// Version: 2024-11-15 23:53:05                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -436,8 +436,10 @@ ALTER PROCEDURE [dbo].[DatabaseBackup]
 @DataDomainBoostLockboxPath nvarchar(max) = NULL,
 @DirectoryStructure nvarchar(max) = '{ServerName}${InstanceName}{DirectorySeparator}{DatabaseName}{DirectorySeparator}{BackupType}_{Partial}_{CopyOnly}',
 @AvailabilityGroupDirectoryStructure nvarchar(max) = '{ClusterName}${AvailabilityGroupName}{DirectorySeparator}{DatabaseName}{DirectorySeparator}{BackupType}_{Partial}_{CopyOnly}',
+@DirectoryStructureCase nvarchar(max) = NULL,
 @FileName nvarchar(max) = '{ServerName}${InstanceName}_{DatabaseName}_{BackupType}_{Partial}_{CopyOnly}_{Year}{Month}{Day}_{Hour}{Minute}{Second}_{FileNumber}.{FileExtension}',
 @AvailabilityGroupFileName nvarchar(max) = '{ClusterName}${AvailabilityGroupName}_{DatabaseName}_{BackupType}_{Partial}_{CopyOnly}_{Year}{Month}{Day}_{Hour}{Minute}{Second}_{FileNumber}.{FileExtension}',
+@FileNameCase nvarchar(max) = NULL,
 @FileExtensionFull nvarchar(max) = NULL,
 @FileExtensionDiff nvarchar(max) = NULL,
 @FileExtensionLog nvarchar(max) = NULL,
@@ -461,7 +463,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2024-11-14 14:03:14                                                               //--
+  --// Version: 2024-11-15 23:53:05                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -701,8 +703,10 @@ BEGIN
   SET @Parameters += ', @DataDomainBoostLockboxPath = ' + ISNULL('''' + REPLACE(@DataDomainBoostLockboxPath,'''','''''') + '''','NULL')
   SET @Parameters += ', @DirectoryStructure = ' + ISNULL('''' + REPLACE(@DirectoryStructure,'''','''''') + '''','NULL')
   SET @Parameters += ', @AvailabilityGroupDirectoryStructure = ' + ISNULL('''' + REPLACE(@AvailabilityGroupDirectoryStructure,'''','''''') + '''','NULL')
+  SET @Parameters += ', @DirectoryStructureCase = ' + ISNULL('''' + REPLACE(@DirectoryStructureCase,'''','''''') + '''','NULL')
   SET @Parameters += ', @FileName = ' + ISNULL('''' + REPLACE(@FileName,'''','''''') + '''','NULL')
   SET @Parameters += ', @AvailabilityGroupFileName = ' + ISNULL('''' + REPLACE(@AvailabilityGroupFileName,'''','''''') + '''','NULL')
+  SET @Parameters += ', @FileNameCase = ' + ISNULL('''' + REPLACE(@FileNameCase,'''','''''') + '''','NULL')
   SET @Parameters += ', @FileExtensionFull = ' + ISNULL('''' + REPLACE(@FileExtensionFull,'''','''''') + '''','NULL')
   SET @Parameters += ', @FileExtensionDiff = ' + ISNULL('''' + REPLACE(@FileExtensionDiff,'''','''''') + '''','NULL')
   SET @Parameters += ', @FileExtensionLog = ' + ISNULL('''' + REPLACE(@FileExtensionLog,'''','''''') + '''','NULL')
@@ -2374,6 +2378,14 @@ BEGIN
 
   ----------------------------------------------------------------------------------------------------
 
+  IF @DirectoryStructureCase NOT IN('LOWER','UPPER')
+  BEGIN
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'The value for the parameter @DirectoryStructureCase is not supported.', 16, 1
+  END
+
+  ----------------------------------------------------------------------------------------------------
+
   IF @FileName IS NULL OR @FileName = ''
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
@@ -2452,6 +2464,14 @@ BEGIN
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
     SELECT 'The value for the parameter @AvailabilityGroupFileName is not supported.', 16, 7
+  END
+
+  ----------------------------------------------------------------------------------------------------
+
+  IF @FileNameCase NOT IN('LOWER','UPPER')
+  BEGIN
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'The value for the parameter @FileNameCase is not supported.', 16, 1
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -3457,6 +3477,12 @@ BEGIN
         SET @CurrentDirectoryStructure = REPLACE(@CurrentDirectoryStructure,'{MinorVersion}',ISNULL(CAST(SERVERPROPERTY('ProductMinorVersion') AS nvarchar),PARSENAME(CAST(SERVERPROPERTY('ProductVersion') AS nvarchar),3)))
       END
 
+      IF @DirectoryStructureCase IS NOT NULL
+      BEGIN
+        SET @CurrentDirectoryStructure = CASE WHEN @DirectoryStructureCase = 'LOWER' THEN LOWER(@CurrentDirectoryStructure)
+                                              WHEN @DirectoryStructureCase = 'UPPER' THEN UPPER(@CurrentDirectoryStructure) END
+      END
+
       INSERT INTO @CurrentDirectories (ID, DirectoryPath, Mirror, DirectoryNumber, CreateCompleted, CleanupCompleted)
       SELECT ROW_NUMBER() OVER (ORDER BY ID),
              DirectoryPath + CASE WHEN DirectoryPath = 'NUL' THEN '' WHEN @CurrentDirectoryStructure IS NOT NULL THEN @DirectorySeparator + @CurrentDirectoryStructure ELSE '' END,
@@ -3627,6 +3653,12 @@ BEGIN
       ELSE
       BEGIN
         SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'{DatabaseName}',@CurrentDatabaseNameFS)
+      END
+
+      IF @FileNameCase IS NOT NULL
+      BEGIN
+        SET @CurrentDatabaseFileName = CASE WHEN @FileNameCase = 'LOWER' THEN LOWER(@CurrentDatabaseFileName)
+                                            WHEN @FileNameCase = 'UPPER' THEN UPPER(@CurrentDatabaseFileName) END
       END
 
       IF EXISTS (SELECT * FROM @CurrentDirectories WHERE Mirror = 0)
@@ -4554,7 +4586,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2024-11-14 14:03:14                                                               //--
+  --// Version: 2024-11-15 23:53:05                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -6456,7 +6488,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2024-11-14 14:03:14                                                               //--
+  --// Version: 2024-11-15 23:53:05                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
