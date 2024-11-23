@@ -10,7 +10,7 @@ License: https://ola.hallengren.com/license.html
 
 GitHub: https://github.com/olahallengren/sql-server-maintenance-solution
 
-Version: 2024-11-21 20:22:23
+Version: 2024-11-23 11:26:51
 
 You can contact me by e-mail at ola@hallengren.com.
 
@@ -25,6 +25,7 @@ SET NOCOUNT ON
 
 DECLARE @CreateJobs nvarchar(max)          = 'Y'         -- Specify whether jobs should be created.
 DECLARE @BackupDirectory nvarchar(max)     = NULL        -- Specify the backup root directory. If no directory is specified, the default backup directory is used.
+DECLARE @BackupURL nvarchar(max)           = NULL        -- Specify the backup root URL.
 DECLARE @CleanupTime int                   = NULL        -- Time in hours, after which backup files are deleted. If no time is specified, then no backup files are deleted.
 DECLARE @OutputFileDirectory nvarchar(max) = NULL        -- Specify the output file directory. If no directory is specified, then the SQL Server error log directory is used.
 DECLARE @LogToTable nvarchar(max)          = 'Y'         -- Log commands to a table.
@@ -43,6 +44,18 @@ BEGIN
   RAISERROR(@ErrorMessage,16,1) WITH NOWAIT
 END
 
+IF @BackupDirectory IS NOT NULL AND @BackupURL IS NOT NULL
+BEGIN
+  SET @ErrorMessage = 'Only one of the variables @BackupDirectory and @BackupURL can be set.'
+  RAISERROR(@ErrorMessage,16,1) WITH NOWAIT
+END
+
+IF @BackupURL IS NOT NULL AND @CleanupTime IS NOT NULL
+BEGIN
+  SET @ErrorMessage = 'The variable @CleanupTime is not supported with backup to URL.'
+  RAISERROR(@ErrorMessage,16,1) WITH NOWAIT
+END
+
 IF OBJECT_ID('tempdb..#Config') IS NOT NULL DROP TABLE #Config
 
 CREATE TABLE #Config ([Name] nvarchar(max),
@@ -50,6 +63,7 @@ CREATE TABLE #Config ([Name] nvarchar(max),
 
 INSERT INTO #Config ([Name], [Value]) VALUES('CreateJobs', @CreateJobs)
 INSERT INTO #Config ([Name], [Value]) VALUES('BackupDirectory', @BackupDirectory)
+INSERT INTO #Config ([Name], [Value]) VALUES('BackupURL', @BackupURL)
 INSERT INTO #Config ([Name], [Value]) VALUES('CleanupTime', @CleanupTime)
 INSERT INTO #Config ([Name], [Value]) VALUES('OutputFileDirectory', @OutputFileDirectory)
 INSERT INTO #Config ([Name], [Value]) VALUES('LogToTable', @LogToTable)
@@ -123,7 +137,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2024-11-21 20:22:23                                                               //--
+  --// Version: 2024-11-23 11:26:51                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -464,7 +478,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2024-11-21 20:22:23                                                               //--
+  --// Version: 2024-11-23 11:26:51                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -4599,7 +4613,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2024-11-21 20:22:23                                                               //--
+  --// Version: 2024-11-23 11:26:51                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -6501,7 +6515,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2024-11-21 20:22:23                                                               //--
+  --// Version: 2024-11-23 11:26:51                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -8881,10 +8895,16 @@ BEGIN
 END
 
 GO
-IF (SELECT [Value] FROM #Config WHERE Name = 'CreateJobs') = 'Y' AND SERVERPROPERTY('EngineEdition') NOT IN(4, 5) AND (IS_SRVROLEMEMBER('sysadmin') = 1 OR (DB_ID('rdsadmin') IS NOT NULL AND SUSER_SNAME(0x01) = 'rdsa')) AND (SELECT [compatibility_level] FROM sys.databases WHERE database_id = DB_ID()) >= 90
+IF (SELECT [Value] FROM #Config WHERE Name = 'CreateJobs') = 'Y'
+    AND SERVERPROPERTY('EngineEdition') NOT IN(4, 5)
+    AND (IS_SRVROLEMEMBER('sysadmin') = 1 OR (DB_ID('rdsadmin') IS NOT NULL AND SUSER_SNAME(0x01) = 'rdsa'))
+    AND (SELECT [compatibility_level] FROM sys.databases WHERE database_id = DB_ID()) >= 90
+    AND NOT (EXISTS (SELECT * FROM #Config WHERE Name = 'BackupDirectory' AND [Value] IS NOT NULL) AND EXISTS (SELECT * FROM #Config WHERE Name = 'BackupURL' AND [Value] IS NOT NULL))
+    AND NOT (EXISTS (SELECT * FROM #Config WHERE Name = 'BackupURL' AND [Value] IS NOT NULL) AND EXISTS (SELECT * FROM #Config WHERE Name = 'CleanupTime' AND [Value] IS NOT NULL))
 BEGIN
 
   DECLARE @BackupDirectory nvarchar(max)
+  DECLARE @BackupURL nvarchar(max)
   DECLARE @CleanupTime int
   DECLARE @OutputFileDirectory nvarchar(max)
   DECLARE @LogToTable nvarchar(max)
@@ -8970,6 +8990,10 @@ BEGIN
   FROM #Config
   WHERE [Name] = 'BackupDirectory'
 
+  SELECT @BackupURL = Value
+  FROM #Config
+  WHERE [Name] = 'BackupURL'
+
   IF @HostPlatform = 'Windows'
   BEGIN
     SELECT @CleanupTime = Value
@@ -9019,28 +9043,28 @@ BEGIN
 
   INSERT INTO @Jobs ([Name], CommandTSQL, DatabaseName, OutputFileNamePart01, OutputFileNamePart02)
   SELECT 'DatabaseBackup - SYSTEM_DATABASES - FULL',
-         'EXECUTE [dbo].[DatabaseBackup]' + CHAR(13) + CHAR(10) + '@Databases = ''SYSTEM_DATABASES'',' + CHAR(13) + CHAR(10) + '@Directory = ' + ISNULL('N''' + REPLACE(@BackupDirectory,'''','''''') + '''','NULL') + ',' + CHAR(13) + CHAR(10) + '@BackupType = ''FULL'',' + CHAR(13) + CHAR(10) + '@Verify = ''Y'',' + CHAR(13) + CHAR(10) + '@CleanupTime = ' + ISNULL(CAST(@CleanupTime AS nvarchar),'NULL') + ',' + CHAR(13) + CHAR(10) + '@CheckSum = ''Y'',' + CHAR(13) + CHAR(10) + '@LogToTable = ''' + @LogToTable + '''',
+         'EXECUTE [dbo].[DatabaseBackup]' + CHAR(13) + CHAR(10) + '@Databases = ''SYSTEM_DATABASES'',' + CHAR(13) + CHAR(10) + CASE WHEN @BackupURL IS NOT NULL THEN '@URL = N''' + REPLACE(@BackupURL,'''','''''') + '''' ELSE '@Directory = ' + ISNULL('N''' + REPLACE(@BackupDirectory,'''','''''') + '''','NULL') END + ',' + CHAR(13) + CHAR(10) + '@BackupType = ''FULL'',' + CHAR(13) + CHAR(10) + '@Verify = ''Y'',' + CHAR(13) + CHAR(10) + '@CleanupTime = ' + ISNULL(CAST(@CleanupTime AS nvarchar),'NULL') + ',' + CHAR(13) + CHAR(10) + '@CheckSum = ''Y'',' + CHAR(13) + CHAR(10) + '@LogToTable = ''' + @LogToTable + '''',
          @DatabaseName,
          'DatabaseBackup',
          'FULL'
 
   INSERT INTO @Jobs ([Name], CommandTSQL, DatabaseName, OutputFileNamePart01, OutputFileNamePart02)
   SELECT 'DatabaseBackup - USER_DATABASES - DIFF',
-         'EXECUTE [dbo].[DatabaseBackup]' + CHAR(13) + CHAR(10) + '@Databases = ''USER_DATABASES'',' + CHAR(13) + CHAR(10) + '@Directory = ' + ISNULL('N''' + REPLACE(@BackupDirectory,'''','''''') + '''','NULL') + ',' + CHAR(13) + CHAR(10) + '@BackupType = ''DIFF'',' + CHAR(13) + CHAR(10) + '@Verify = ''Y'',' + CHAR(13) + CHAR(10) + '@CleanupTime = ' + ISNULL(CAST(@CleanupTime AS nvarchar),'NULL') + ',' + CHAR(13) + CHAR(10) + '@CheckSum = ''Y'',' + CHAR(13) + CHAR(10) + '@LogToTable = ''' + @LogToTable + '''',
+         'EXECUTE [dbo].[DatabaseBackup]' + CHAR(13) + CHAR(10) + '@Databases = ''USER_DATABASES'',' + CHAR(13) + CHAR(10) + CASE WHEN @BackupURL IS NOT NULL THEN '@URL = N''' + REPLACE(@BackupURL,'''','''''') + '''' ELSE '@Directory = ' + ISNULL('N''' + REPLACE(@BackupDirectory,'''','''''') + '''','NULL') END + ',' + CHAR(13) + CHAR(10) + '@BackupType = ''DIFF'',' + CHAR(13) + CHAR(10) + '@Verify = ''Y'',' + CHAR(13) + CHAR(10) + '@CleanupTime = ' + ISNULL(CAST(@CleanupTime AS nvarchar),'NULL') + ',' + CHAR(13) + CHAR(10) + '@CheckSum = ''Y'',' + CHAR(13) + CHAR(10) + '@LogToTable = ''' + @LogToTable + '''',
           @DatabaseName,
          'DatabaseBackup',
          'DIFF'
 
   INSERT INTO @Jobs ([Name], CommandTSQL, DatabaseName, OutputFileNamePart01, OutputFileNamePart02)
   SELECT 'DatabaseBackup - USER_DATABASES - FULL',
-         'EXECUTE [dbo].[DatabaseBackup]' + CHAR(13) + CHAR(10) + '@Databases = ''USER_DATABASES'',' + CHAR(13) + CHAR(10) + '@Directory = ' + ISNULL('N''' + REPLACE(@BackupDirectory,'''','''''') + '''','NULL') + ',' + CHAR(13) + CHAR(10) + '@BackupType = ''FULL'',' + CHAR(13) + CHAR(10) + '@Verify = ''Y'',' + CHAR(13) + CHAR(10) + '@CleanupTime = ' + ISNULL(CAST(@CleanupTime AS nvarchar),'NULL') + ',' + CHAR(13) + CHAR(10) + '@CheckSum = ''Y'',' + CHAR(13) + CHAR(10) + '@LogToTable = ''' + @LogToTable + '''',
+         'EXECUTE [dbo].[DatabaseBackup]' + CHAR(13) + CHAR(10) + '@Databases = ''USER_DATABASES'',' + CHAR(13) + CHAR(10) + CASE WHEN @BackupURL IS NOT NULL THEN '@URL = N''' + REPLACE(@BackupURL,'''','''''') + '''' ELSE '@Directory = ' + ISNULL('N''' + REPLACE(@BackupDirectory,'''','''''') + '''','NULL') END + ',' + CHAR(13) + CHAR(10) + '@BackupType = ''FULL'',' + CHAR(13) + CHAR(10) + '@Verify = ''Y'',' + CHAR(13) + CHAR(10) + '@CleanupTime = ' + ISNULL(CAST(@CleanupTime AS nvarchar),'NULL') + ',' + CHAR(13) + CHAR(10) + '@CheckSum = ''Y'',' + CHAR(13) + CHAR(10) + '@LogToTable = ''' + @LogToTable + '''',
          @DatabaseName,
          'DatabaseBackup',
          'FULL'
 
   INSERT INTO @Jobs ([Name], CommandTSQL, DatabaseName, OutputFileNamePart01, OutputFileNamePart02)
   SELECT 'DatabaseBackup - USER_DATABASES - LOG',
-         'EXECUTE [dbo].[DatabaseBackup]' + CHAR(13) + CHAR(10) + '@Databases = ''USER_DATABASES'',' + CHAR(13) + CHAR(10) + '@Directory = ' + ISNULL('N''' + REPLACE(@BackupDirectory,'''','''''') + '''','NULL') + ',' + CHAR(13) + CHAR(10) + '@BackupType = ''LOG'',' + CHAR(13) + CHAR(10) + '@Verify = ''Y'',' + CHAR(13) + CHAR(10) + '@CleanupTime = ' + ISNULL(CAST(@CleanupTime AS nvarchar),'NULL') + ',' + CHAR(13) + CHAR(10) + '@CheckSum = ''Y'',' + CHAR(13) + CHAR(10) + '@LogToTable = ''' + @LogToTable + '''',
+         'EXECUTE [dbo].[DatabaseBackup]' + CHAR(13) + CHAR(10) + '@Databases = ''USER_DATABASES'',' + CHAR(13) + CHAR(10) + CASE WHEN @BackupURL IS NOT NULL THEN '@URL = N''' + REPLACE(@BackupURL,'''','''''') + '''' ELSE '@Directory = ' + ISNULL('N''' + REPLACE(@BackupDirectory,'''','''''') + '''','NULL') END + ',' + CHAR(13) + CHAR(10) + '@BackupType = ''LOG'',' + CHAR(13) + CHAR(10) + '@Verify = ''Y'',' + CHAR(13) + CHAR(10) + '@CleanupTime = ' + ISNULL(CAST(@CleanupTime AS nvarchar),'NULL') + ',' + CHAR(13) + CHAR(10) + '@CheckSum = ''Y'',' + CHAR(13) + CHAR(10) + '@LogToTable = ''' + @LogToTable + '''',
          @DatabaseName,
          'DatabaseBackup',
          'LOG'
