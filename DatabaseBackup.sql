@@ -85,7 +85,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2024-11-24 11:04:48                                                               //--
+  --// Version: 2024-12-14 16:29:02                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -3498,7 +3498,7 @@ BEGIN
       END
 
       -- Delete old backup files, before backup
-      IF NOT EXISTS (SELECT * FROM @CurrentDirectories WHERE CreateOutput <> 0 OR CreateOutput IS NULL)
+      IF (NOT EXISTS (SELECT * FROM @CurrentDirectories WHERE CreateOutput <> 0 OR CreateOutput IS NULL) OR @HostPlatform = 'Linux')
       AND (@BackupSoftware <> 'DATA_DOMAIN_BOOST' OR @BackupSoftware IS NULL)
       AND @CurrentBackupType = @BackupType
       BEGIN
