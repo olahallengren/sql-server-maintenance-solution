@@ -23,6 +23,8 @@ You can also download the objects as separate scripts:
  - [IndexOptimize](/IndexOptimize.sql): SQL Server Index and Statistics Maintenance
  - [CommandExecute](/CommandExecute.sql): Stored procedure to execute and log commands
  - [CommandLog](/CommandLog.sql): Table to log commands
+ 
+ [Amazon RD](/AmazonRDSBackupHelp.md)
 
 Note that you always need CommandExecute; DatabaseBackup, DatabaseIntegrityCheck, and IndexOptimize are using it.
 You need CommandLog if you are going to use the option to log commands to a table.
