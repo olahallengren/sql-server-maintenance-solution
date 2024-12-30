@@ -35,7 +35,7 @@ Supported versions: SQL Server 2008, SQL Server 2008 R2, SQL Server 2012, SQL Se
 <li>Backup: https://ola.hallengren.com/sql-server-backup.html</li>
 <li>Integrity Check: https://ola.hallengren.com/sql-server-integrity-check.html</li>
 <li>Index and Statistics Maintenance: https://ola.hallengren.com/sql-server-index-and-statistics-maintenance.html</li>
-<li>Amazon RDS for SQL Server Backup Integration: https://github.com/fill-e/Ola-Updates/blob/main/AmazonRDSBackupHelp.md</li>
+<li>Amazon RDS for SQL Server Backup Integration: https://github.com/amazon-contributing/aws-sql-server-maintenance-solution/blob/release-2024-12-30/AmazonRDSBackupHelp.md</li>
 </ul>
 
 [licence badge]:https://img.shields.io/badge/license-MIT-blue.svg
