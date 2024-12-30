@@ -1,1 +1,0 @@
-** Link to Launch Blog will replace this **
