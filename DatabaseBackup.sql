@@ -74,6 +74,14 @@ ALTER PROCEDURE [dbo].[DatabaseBackup]
 @StringDelimiter nvarchar(max) = ',',
 @DatabaseOrder nvarchar(max) = NULL,
 @DatabasesInParallel nvarchar(max) = 'N',
+
+  ----------------------------------------------------------------------------------------------------
+  --// Original Copyright 2024 Ola Hallengren. Licensed under the MIT License.                    //-- 
+  --// Modifications Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.           //-- 
+@S3BucketArn nvarchar(255) = NULL,  
+@kms_master_key_arn nvarchar(max) = NULL, 
+  ----------------------------------------------------------------------------------------------------
+
 @LogToTable nvarchar(max) = 'N',
 @Execute nvarchar(max) = 'Y'
 
@@ -86,6 +94,8 @@ BEGIN
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
   --// Version: 2024-12-27 18:10:28                                                               //--
+  --//                                                                                            //--
+  --// Modifications Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.           //-- 
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -150,6 +160,7 @@ BEGIN
   DECLARE @CurrentDate datetime2
   DECLARE @CurrentDateUTC datetime2
   DECLARE @CurrentCleanupDate datetime2
+
   DECLARE @CurrentReplicaID uniqueidentifier
   DECLARE @CurrentAvailabilityGroupID uniqueidentifier
   DECLARE @CurrentAvailabilityGroup nvarchar(max)
@@ -261,6 +272,15 @@ BEGIN
 
   DECLARE @Version numeric(18,10) = CAST(LEFT(CAST(SERVERPROPERTY('ProductVersion') AS nvarchar(max)),CHARINDEX('.',CAST(SERVERPROPERTY('ProductVersion') AS nvarchar(max))) - 1) + '.' + REPLACE(RIGHT(CAST(SERVERPROPERTY('ProductVersion') AS nvarchar(max)), LEN(CAST(SERVERPROPERTY('ProductVersion') AS nvarchar(max))) - CHARINDEX('.',CAST(SERVERPROPERTY('ProductVersion') AS nvarchar(max)))),'.','') AS numeric(18,10))
 
+  ----------------------------------------------------------------------------------------------------
+  --// Original Copyright 2024 Ola Hallengren. Licensed under the MIT License.                    //-- 
+  --// Modifications Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.           //-- 
+  DECLARE @CurrentRDSBackupType nvarchar(20)
+  DECLARE @CurrentRDSDatabaseFileName nvarchar(4000)
+
+  DECLARE @ServerName nvarchar(max) = CASE WHEN SERVERPROPERTY('EngineEdition') = 8 THEN LEFT(CAST(SERVERPROPERTY('ServerName') AS nvarchar(max)),CHARINDEX('.',CAST(SERVERPROPERTY('ServerName') AS nvarchar(max))) - 1) ELSE CAST(SERVERPROPERTY('MachineName') AS nvarchar(max)) END		  
+  ----------------------------------------------------------------------------------------------------
+
   IF @Version >= 14
   BEGIN
     SELECT @HostPlatform = host_platform
@@ -343,6 +363,13 @@ BEGIN
   SET @Parameters += ', @DatabasesInParallel = ' + ISNULL('''' + REPLACE(@DatabasesInParallel,'''','''''') + '''','NULL')
   SET @Parameters += ', @LogToTable = ' + ISNULL('''' + REPLACE(@LogToTable,'''','''''') + '''','NULL')
   SET @Parameters += ', @Execute = ' + ISNULL('''' + REPLACE(@Execute,'''','''''') + '''','NULL')
+
+  ----------------------------------------------------------------------------------------------------
+  --// Original Copyright 2024 Ola Hallengren. Licensed under the MIT License.                    //-- 
+  --// Modifications Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.           //-- 
+  SET @Parameters += ', @S3BucketArn = ' + ISNULL('''' + REPLACE(@S3BucketArn,'''','''''') + '''','NULL')
+  SET @Parameters += ', @kms_master_key_arn = ' + ISNULL('''' + REPLACE(@kms_master_key_arn,'''','''''') + '''','NULL')
+  ----------------------------------------------------------------------------------------------------
 
   SET @StartMessage = 'Date and time: ' + CONVERT(nvarchar,@StartTime,120)
   RAISERROR('%s',10,1,@StartMessage) WITH NOWAIT
@@ -431,11 +458,30 @@ BEGIN
     SELECT 'The transaction count is not 0.', 16, 1
   END
 
-  IF @AmazonRDS = 1
+  ----------------------------------------------------------------------------------------------------
+  --// Original Copyright 2024 Ola Hallengren. Licensed under the MIT License.                    //-- 
+  --// Modifications Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.           //-- 
+  IF (@AmazonRDS = 1)
   BEGIN
-    INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The stored procedure DatabaseBackup is not supported on Amazon RDS.', 16, 1
+    IF (@AmazonRDS = 1 AND @S3BucketArn IS NULL) OR (@AmazonRDS = 1 AND @S3BucketArn = '')
+    BEGIN
+      INSERT INTO @Errors ([Message], Severity, [State])
+      SELECT 'The parameter @S3BucketArn is a required for Amazon RDS backups.', 16, 1
+    END  
+    
+    IF (@S3BucketArn NOT LIKE 'arn:aws:s3:%' AND @S3BucketArn != '')
+    BEGIN
+      INSERT INTO @Errors ([Message], Severity, [State])
+      SELECT 'The parameter @S3BucketArn is invalid.', 16, 1
+    END 
+    
+    IF (@kms_master_key_arn NOT LIKE 'arn:aws:kms:%' AND @kms_master_key_arn != '')
+    BEGIN
+      INSERT INTO @Errors ([Message], Severity, [State])
+      SELECT 'The parameter @kms_master_key_arn is invalid.', 16, 1
+    END 
   END
+  ----------------------------------------------------------------------------------------------------
 
   ----------------------------------------------------------------------------------------------------
   --// Select databases                                                                           //--
@@ -886,14 +932,21 @@ BEGIN
         BREAK
       END
 
-      INSERT INTO @DirectoryInfo (FileExists, FileIsADirectory, ParentDirectoryExists)
-      EXECUTE [master].dbo.xp_fileexist @CurrentRootDirectoryPath
+  ----------------------------------------------------------------------------------------------------
+  --// Original Copyright 2024 Ola Hallengren. Licensed under the MIT License.                    //-- 
+  --// Modifications Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.           //-- 
+      IF @AmazonRDS = 0
+      BEGIN				
+        INSERT INTO @DirectoryInfo (FileExists, FileIsADirectory, ParentDirectoryExists)
+        EXECUTE [master].dbo.xp_fileexist @CurrentRootDirectoryPath
 
-      IF NOT EXISTS (SELECT * FROM @DirectoryInfo WHERE FileExists = 0 AND FileIsADirectory = 1 AND ParentDirectoryExists = 1)
-      BEGIN
-        INSERT INTO @Errors ([Message], Severity, [State])
-        SELECT 'The directory ' + @CurrentRootDirectoryPath + ' does not exist.', 16, 1
-      END
+        IF NOT EXISTS (SELECT * FROM @DirectoryInfo WHERE FileExists = 0 AND FileIsADirectory = 1 AND ParentDirectoryExists = 1)
+        BEGIN
+          INSERT INTO @Errors ([Message], Severity, [State])
+          SELECT 'The directory ' + @CurrentRootDirectoryPath + ' does not exist.', 16, 1
+        END
+      END    
+  ----------------------------------------------------------------------------------------------------
 
       UPDATE @Directories
       SET Completed = 1
@@ -1137,7 +1190,11 @@ BEGIN
   IF @CleanupTime IS NOT NULL AND @URL IS NOT NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @CleanupTime is not supported. Cleanup is not supported on Azure Blob Storage.', 16, 2
+  ----------------------------------------------------------------------------------------------------
+  --// Original Copyright 2024 Ola Hallengren. Licensed under the MIT License.                    //-- 
+  --// Modifications Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.           //--     
+    SELECT 'The value for the parameter @CleanupTime is not supported. Cleanup is not supported on Amazon S3 or Azure Blob Storage.', 16, 2
+  ----------------------------------------------------------------------------------------------------    
   END
 
   IF @CleanupTime IS NOT NULL AND EXISTS(SELECT * FROM @Directories WHERE DirectoryPath = 'NUL')
@@ -1431,6 +1488,16 @@ BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
     SELECT 'The value for the parameter @NumberOfFiles is not supported. The maximum number of files when performing mirrored backups to S3 storage is 32.', 16, 10
   END
+
+  ----------------------------------------------------------------------------------------------------
+  --// Original Copyright 2024 Ola Hallengren. Licensed under the MIT License.                    //-- 
+  --// Modifications Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.           //--  
+  IF @NumberOfFiles > 10 AND @AmazonRDS = 1
+  BEGIN
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'The value for the parameter @NumberOfFiles is not supported. The maximum number of files when performing Amazon RDS backups is 10.', 16, 10
+  END
+  ----------------------------------------------------------------------------------------------------
 
   ----------------------------------------------------------------------------------------------------
 
@@ -2796,15 +2863,22 @@ BEGIN
     FROM sys.database_mirroring
     WHERE database_id = DB_ID(@CurrentDatabaseName)
 
-    IF EXISTS (SELECT * FROM msdb.dbo.log_shipping_primary_databases WHERE primary_database = @CurrentDatabaseName)
+  ----------------------------------------------------------------------------------------------------
+  --// Original Copyright 2024 Ola Hallengren. Licensed under the MIT License.                    //-- 
+  --// Modifications Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.           //-- 
+	IF @AmazonRDS = 0																									   																									   
     BEGIN
-      SET @CurrentLogShippingRole = 'PRIMARY'
-    END
-    ELSE
-    IF EXISTS (SELECT * FROM msdb.dbo.log_shipping_secondary_databases WHERE secondary_database = @CurrentDatabaseName)
-    BEGIN
-      SET @CurrentLogShippingRole = 'SECONDARY'
-    END
+	  IF EXISTS (SELECT * FROM msdb.dbo.log_shipping_primary_databases WHERE primary_database = @CurrentDatabaseName)
+      BEGIN
+		SET @CurrentLogShippingRole = 'PRIMARY'
+	  END
+	  ELSE
+	  IF EXISTS (SELECT * FROM msdb.dbo.log_shipping_secondary_databases WHERE secondary_database = @CurrentDatabaseName)
+	  BEGIN
+		SET @CurrentLogShippingRole = 'SECONDARY'
+	  END
+	END  
+  ----------------------------------------------------------------------------------------------------	
 
     IF @CurrentAvailabilityGroup IS NOT NULL
     BEGIN
@@ -3405,6 +3479,13 @@ BEGIN
       -- Create directory
       IF @HostPlatform = 'Windows'
       AND (@BackupSoftware <> 'DATA_DOMAIN_BOOST' OR @BackupSoftware IS NULL)
+	  
+  ----------------------------------------------------------------------------------------------------
+  --// Original Copyright 2024 Ola Hallengren. Licensed under the MIT License.                    //-- 
+  --// Modifications Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.           //-- 
+		AND (@AmazonRDS = 0)   
+  ----------------------------------------------------------------------------------------------------	
+
       AND NOT EXISTS(SELECT * FROM @CurrentDirectories WHERE DirectoryPath = 'NUL' OR DirectoryPath IN(SELECT DirectoryPath FROM @Directories))
       BEGIN
         WHILE (1 = 1)
@@ -3558,76 +3639,110 @@ BEGIN
 
       -- Perform a backup
       IF NOT EXISTS (SELECT * FROM @CurrentDirectories WHERE DirectoryPath <> 'NUL' AND DirectoryPath NOT IN(SELECT DirectoryPath FROM @Directories) AND (CreateOutput <> 0 OR CreateOutput IS NULL))
-      OR @HostPlatform = 'Linux'
+  ----------------------------------------------------------------------------------------------------
+  --// Original Copyright 2024 Ola Hallengren. Licensed under the MIT License.                    //-- 
+  --// Modifications Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.           //--        
+      OR @HostPlatform = 'Linux' OR @AmazonRDS = 1
       BEGIN
         IF @BackupSoftware IS NULL
+
         BEGIN
-          SET @CurrentDatabaseContext = 'master'
+		  IF @AmazonRDS = 1
+	        BEGIN
+			  SET @CurrentDatabaseContext = 'master'
 
-          SELECT @CurrentCommandType = CASE
-          WHEN @CurrentBackupType IN('DIFF','FULL') THEN 'BACKUP_DATABASE'
-          WHEN @CurrentBackupType = 'LOG' THEN 'BACKUP_LOG'
-          END
+			  SELECT @CurrentCommandType = CASE
+				WHEN @CurrentBackupType IN('DIFF','FULL') THEN 'BACKUP_DATABASE'
+														   
+			  END
 
-          SELECT @CurrentCommand = CASE
-          WHEN @CurrentBackupType IN('DIFF','FULL') THEN 'BACKUP DATABASE ' + QUOTENAME(@CurrentDatabaseName)
-          WHEN @CurrentBackupType = 'LOG' THEN 'BACKUP LOG ' + QUOTENAME(@CurrentDatabaseName)
-          END
+			  SELECT @CurrentRDSBackupType = CASE
+			    WHEN @CurrentBackupType = 'DIFF' THEN 'DIFFERENTIAL'
+			    WHEN @CurrentBackupType = 'FULL' THEN 'FULL'
+			  END
 
-          IF @ReadWriteFileGroups = 'Y' AND @CurrentDatabaseName <> 'master' SET @CurrentCommand += ' READ_WRITE_FILEGROUPS'
+			  IF @CurrentNumberOfFiles > 10 SET @CurrentNumberOfFiles = 10
 
-          SET @CurrentCommand += ' TO'
+			  SET @CurrentDatabaseFileName = @ServerName + '/' + @CurrentDatabaseFileName
 
-          SELECT @CurrentCommand += ' ' + [Type] + ' = N''' + REPLACE(FilePath,'''','''''') + '''' + CASE WHEN ROW_NUMBER() OVER (ORDER BY FilePath ASC) <> @CurrentNumberOfFiles THEN ',' ELSE '' END
-          FROM @CurrentFiles
-          WHERE Mirror = 0
-          ORDER BY FilePath ASC
+			  IF @CurrentNumberOfFiles > 1
+			    SELECT @CurrentDatabaseFileName=REPLACE(@CurrentDatabaseFileName,'_{FileNumber}','*'); 
 
-          IF EXISTS(SELECT * FROM @CurrentFiles WHERE Mirror = 1)
-          BEGIN
-            SET @CurrentCommand += ' MIRROR TO'
+			  IF (@kms_master_key_arn  IS NULL)
+				SET @kms_master_key_arn = ''                
+			 
+			  SET @CurrentCommand = 'EXEC msdb.dbo.rds_backup_database @source_db_name = ' + QUOTENAME(@CurrentDatabaseName) + ', @s3_arn_to_backup_to = ' + '''' + @S3BucketArn + '/' + @CurrentDatabaseFileName + '''' + ', @kms_master_key_arn = ' + '''' + @kms_master_key_arn + '''' + ', @overwrite_s3_backup_file=1 ' + ', @type=' + '''' + @CurrentRDSBackupType + '''' + ', @number_of_files= ' + CAST(@CurrentNumberOfFiles AS VarChar(2)) + ';'
+	        END
+		  ELSE
+  ----------------------------------------------------------------------------------------------------           
+            BEGIN
+			  SET @CurrentDatabaseContext = 'master'
 
-            SELECT @CurrentCommand += ' ' + [Type] + ' = N''' + REPLACE(FilePath,'''','''''') + '''' + CASE WHEN ROW_NUMBER() OVER (ORDER BY FilePath ASC) <> @CurrentNumberOfFiles THEN ',' ELSE '' END
-            FROM @CurrentFiles
-            WHERE Mirror = 1
-            ORDER BY FilePath ASC
-          END
+			  SELECT @CurrentCommandType = CASE
+			  WHEN @CurrentBackupType IN('DIFF','FULL') THEN 'BACKUP_DATABASE'
+			  WHEN @CurrentBackupType = 'LOG' THEN 'BACKUP_LOG'
+			  END
 
-          SET @CurrentCommand += ' WITH '
-          IF @CheckSum = 'Y' SET @CurrentCommand += 'CHECKSUM'
-          IF @CheckSum = 'N' SET @CurrentCommand += 'NO_CHECKSUM'
+			  SELECT @CurrentCommand = CASE
+			  WHEN @CurrentBackupType IN('DIFF','FULL') THEN 'BACKUP DATABASE ' + QUOTENAME(@CurrentDatabaseName)
+			  WHEN @CurrentBackupType = 'LOG' THEN 'BACKUP LOG ' + QUOTENAME(@CurrentDatabaseName)
+              END
+              
+              IF @ReadWriteFileGroups = 'Y' AND @CurrentDatabaseName <> 'master' SET @CurrentCommand += ' READ_WRITE_FILEGROUPS'
 
-          IF @Version >= 10
-          BEGIN
-            SET @CurrentCommand += CASE WHEN @Compress = 'Y' AND (@CurrentIsEncrypted = 0 OR (@CurrentIsEncrypted = 1 AND ((@Version >= 13 AND @CurrentMaxTransferSize >= 65537) OR @Version >= 15.0404316 OR SERVERPROPERTY('EngineEdition') = 8))) THEN ', COMPRESSION' ELSE ', NO_COMPRESSION' END
-          END
+              SET @CurrentCommand += ' TO'
 
-          IF @Compress = 'Y' AND @CompressionAlgorithm IS NOT NULL
-          BEGIN
-            SET @CurrentCommand += ' (ALGORITHM = ' + @CompressionAlgorithm + ')'
-          END
-
-          IF @CurrentBackupType = 'DIFF' SET @CurrentCommand += ', DIFFERENTIAL'
-
-          IF EXISTS(SELECT * FROM @CurrentFiles WHERE Mirror = 1)
-          BEGIN
-            SET @CurrentCommand += ', FORMAT'
-          END
-
-          IF @CopyOnly = 'Y' SET @CurrentCommand += ', COPY_ONLY'
-          IF @NoRecovery = 'Y' AND @CurrentBackupType = 'LOG' SET @CurrentCommand += ', NORECOVERY'
-          IF @Init = 'Y' SET @CurrentCommand += ', INIT'
-          IF @Format = 'Y' SET @CurrentCommand += ', FORMAT'
-          IF @BlockSize IS NOT NULL SET @CurrentCommand += ', BLOCKSIZE = ' + CAST(@BlockSize AS nvarchar)
-          IF @BufferCount IS NOT NULL SET @CurrentCommand += ', BUFFERCOUNT = ' + CAST(@BufferCount AS nvarchar)
-          IF @CurrentMaxTransferSize IS NOT NULL SET @CurrentCommand += ', MAXTRANSFERSIZE = ' + CAST(@CurrentMaxTransferSize AS nvarchar)
-          IF @Description IS NOT NULL SET @CurrentCommand += ', DESCRIPTION = N''' + REPLACE(@Description,'''','''''') + ''''
-          IF @BackupOptions IS NOT NULL SET @CurrentCommand += ', BACKUP_OPTIONS = N''' + REPLACE(@BackupOptions,'''','''''') + ''''
-          IF @Encrypt = 'Y' SET @CurrentCommand += ', ENCRYPTION (ALGORITHM = ' + UPPER(@EncryptionAlgorithm) + ', '
-          IF @Encrypt = 'Y' AND @ServerCertificate IS NOT NULL SET @CurrentCommand += 'SERVER CERTIFICATE = ' + QUOTENAME(@ServerCertificate)
-          IF @Encrypt = 'Y' AND @ServerAsymmetricKey IS NOT NULL SET @CurrentCommand += 'SERVER ASYMMETRIC KEY = ' + QUOTENAME(@ServerAsymmetricKey)
-          IF @Encrypt = 'Y' SET @CurrentCommand += ')'
-          IF @URL IS NOT NULL AND @Credential IS NOT NULL SET @CurrentCommand += ', CREDENTIAL = N''' + REPLACE(@Credential,'''','''''') + ''''
+              SELECT @CurrentCommand += ' ' + [Type] + ' = N''' + REPLACE(FilePath,'''','''''') + '''' + CASE WHEN ROW_NUMBER() OVER (ORDER BY FilePath ASC) <> @CurrentNumberOfFiles THEN ',' ELSE '' END
+              FROM @CurrentFiles
+              WHERE Mirror = 0
+              ORDER BY FilePath ASC
+    
+              IF EXISTS(SELECT * FROM @CurrentFiles WHERE Mirror = 1)
+              BEGIN
+                SET @CurrentCommand += ' MIRROR TO'
+    
+                SELECT @CurrentCommand += ' ' + [Type] + ' = N''' + REPLACE(FilePath,'''','''''') + '''' + CASE WHEN ROW_NUMBER() OVER (ORDER BY FilePath ASC) <> @CurrentNumberOfFiles THEN ',' ELSE '' END
+                FROM @CurrentFiles
+                WHERE Mirror = 1
+                ORDER BY FilePath ASC
+              END
+    
+              SET @CurrentCommand += ' WITH '
+              IF @CheckSum = 'Y' SET @CurrentCommand += 'CHECKSUM'
+              IF @CheckSum = 'N' SET @CurrentCommand += 'NO_CHECKSUM'
+    
+              IF @Version >= 10
+              BEGIN
+                SET @CurrentCommand += CASE WHEN @Compress = 'Y' AND (@CurrentIsEncrypted = 0 OR (@CurrentIsEncrypted = 1 AND ((@Version >= 13 AND @CurrentMaxTransferSize >= 65537) OR @Version >= 15.0404316 OR SERVERPROPERTY('EngineEdition') = 8))) THEN ', COMPRESSION' ELSE ', NO_COMPRESSION' END
+              END
+    
+              IF @Compress = 'Y' AND @CompressionAlgorithm IS NOT NULL
+              BEGIN
+                SET @CurrentCommand += ' (ALGORITHM = ' + @CompressionAlgorithm + ')'
+              END
+    
+              IF @CurrentBackupType = 'DIFF' SET @CurrentCommand += ', DIFFERENTIAL'
+    
+              IF EXISTS(SELECT * FROM @CurrentFiles WHERE Mirror = 1)
+              BEGIN
+                SET @CurrentCommand += ', FORMAT'
+              END
+    
+              IF @CopyOnly = 'Y' SET @CurrentCommand += ', COPY_ONLY'
+              IF @NoRecovery = 'Y' AND @CurrentBackupType = 'LOG' SET @CurrentCommand += ', NORECOVERY'
+              IF @Init = 'Y' SET @CurrentCommand += ', INIT'
+              IF @Format = 'Y' SET @CurrentCommand += ', FORMAT'
+              IF @BlockSize IS NOT NULL SET @CurrentCommand += ', BLOCKSIZE = ' + CAST(@BlockSize AS nvarchar)
+              IF @BufferCount IS NOT NULL SET @CurrentCommand += ', BUFFERCOUNT = ' + CAST(@BufferCount AS nvarchar)
+              IF @CurrentMaxTransferSize IS NOT NULL SET @CurrentCommand += ', MAXTRANSFERSIZE = ' + CAST(@CurrentMaxTransferSize AS nvarchar)
+              IF @Description IS NOT NULL SET @CurrentCommand += ', DESCRIPTION = N''' + REPLACE(@Description,'''','''''') + ''''
+              IF @BackupOptions IS NOT NULL SET @CurrentCommand += ', BACKUP_OPTIONS = N''' + REPLACE(@BackupOptions,'''','''''') + ''''
+              IF @Encrypt = 'Y' SET @CurrentCommand += ', ENCRYPTION (ALGORITHM = ' + UPPER(@EncryptionAlgorithm) + ', '
+              IF @Encrypt = 'Y' AND @ServerCertificate IS NOT NULL SET @CurrentCommand += 'SERVER CERTIFICATE = ' + QUOTENAME(@ServerCertificate)
+              IF @Encrypt = 'Y' AND @ServerAsymmetricKey IS NOT NULL SET @CurrentCommand += 'SERVER ASYMMETRIC KEY = ' + QUOTENAME(@ServerAsymmetricKey)
+              IF @Encrypt = 'Y' SET @CurrentCommand += ')'
+              IF @URL IS NOT NULL AND @Credential IS NOT NULL SET @CurrentCommand += ', CREDENTIAL = N''' + REPLACE(@Credential,'''','''''') + ''''
+            END
         END
 
         IF @BackupSoftware = 'LITESPEED'
@@ -3831,7 +3946,11 @@ BEGIN
       END
 
       -- Verify the backup
-      IF @CurrentBackupOutput = 0 AND @Verify = 'Y'
+  ----------------------------------------------------------------------------------------------------
+  --// Original Copyright 2024 Ola Hallengren. Licensed under the MIT License.                    //-- 
+  --// Modifications Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.           //-- 
+      IF @CurrentBackupOutput = 0 AND @Verify = 'Y' AND @AmazonRDS = 0  
+  ----------------------------------------------------------------------------------------------------	
       BEGIN
         WHILE (1 = 1)
         BEGIN
@@ -4112,6 +4231,7 @@ BEGIN
     SET @CurrentDate = NULL
     SET @CurrentDateUTC = NULL
     SET @CurrentCleanupDate = NULL
+
     SET @CurrentReplicaID = NULL
     SET @CurrentAvailabilityGroupID = NULL
     SET @CurrentAvailabilityGroup = NULL
@@ -4159,4 +4279,3 @@ BEGIN
 
 END
 GO
-
