@@ -10,7 +10,7 @@ License: https://ola.hallengren.com/license.html
 
 GitHub: https://github.com/olahallengren/sql-server-maintenance-solution
 
-Version: 2024-12-27 18:10:28
+Version: 2025-01-04 15:14:24
 
 You can contact me by e-mail at ola@hallengren.com.
 
@@ -137,7 +137,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2024-12-27 18:10:28                                                               //--
+  --// Version: 2025-01-04 15:14:24                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -478,7 +478,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2024-12-27 18:10:28                                                               //--
+  --// Version: 2025-01-04 15:14:24                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -538,7 +538,7 @@ BEGIN
   DECLARE @CurrentMaxFilePathLength nvarchar(max)
   DECLARE @CurrentFileName nvarchar(max)
   DECLARE @CurrentDirectoryID int
-  DECLARE @CurrentDirectoryPath nvarchar(max)
+  DECLARE @CurrentDirectoryPath nvarchar(4000)
   DECLARE @CurrentFilePath nvarchar(max)
   DECLARE @CurrentDate datetime2
   DECLARE @CurrentDateUTC datetime2
@@ -3813,21 +3813,35 @@ BEGIN
             BREAK
           END
 
-          SET @CurrentDatabaseContext = 'master'
+          INSERT INTO @DirectoryInfo (FileExists, FileIsADirectory, ParentDirectoryExists)
+          EXECUTE [master].dbo.xp_fileexist @CurrentDirectoryPath
 
-          SET @CurrentCommandType = 'xp_create_subdir'
+          IF NOT EXISTS (SELECT * FROM @DirectoryInfo WHERE FileExists = 0 AND FileIsADirectory = 1 AND ParentDirectoryExists = 1)
+          BEGIN
 
-          SET @CurrentCommand = 'DECLARE @ReturnCode int EXECUTE @ReturnCode = dbo.xp_create_subdir N''' + REPLACE(@CurrentDirectoryPath,'''','''''') + ''' IF @ReturnCode <> 0 RAISERROR(''Error creating directory.'', 16, 1)'
+            SET @CurrentDatabaseContext = 'master'
 
-          EXECUTE @CurrentCommandOutput = dbo.CommandExecute @DatabaseContext = @CurrentDatabaseContext, @Command = @CurrentCommand, @CommandType = @CurrentCommandType, @Mode = 1, @DatabaseName = @CurrentDatabaseName, @LogToTable = @LogToTable, @Execute = @Execute
-          SET @Error = @@ERROR
-          IF @Error <> 0 SET @CurrentCommandOutput = @Error
-          IF @CurrentCommandOutput <> 0 SET @ReturnCode = @CurrentCommandOutput
+            SET @CurrentCommandType = 'xp_create_subdir'
 
-          UPDATE @CurrentDirectories
-          SET CreateCompleted = 1,
-              CreateOutput = @CurrentCommandOutput
-          WHERE ID = @CurrentDirectoryID
+            SET @CurrentCommand = 'DECLARE @ReturnCode int EXECUTE @ReturnCode = dbo.xp_create_subdir N''' + REPLACE(@CurrentDirectoryPath,'''','''''') + ''' IF @ReturnCode <> 0 RAISERROR(''Error creating directory.'', 16, 1)'
+
+            EXECUTE @CurrentCommandOutput = dbo.CommandExecute @DatabaseContext = @CurrentDatabaseContext, @Command = @CurrentCommand, @CommandType = @CurrentCommandType, @Mode = 1, @DatabaseName = @CurrentDatabaseName, @LogToTable = @LogToTable, @Execute = @Execute
+            SET @Error = @@ERROR
+            IF @Error <> 0 SET @CurrentCommandOutput = @Error
+            IF @CurrentCommandOutput <> 0 SET @ReturnCode = @CurrentCommandOutput
+
+            UPDATE @CurrentDirectories
+            SET CreateCompleted = 1,
+                CreateOutput = @CurrentCommandOutput
+            WHERE ID = @CurrentDirectoryID
+          END
+          ELSE
+          BEGIN
+            UPDATE @CurrentDirectories
+            SET CreateCompleted = 1,
+                CreateOutput = 0
+            WHERE ID = @CurrentDirectoryID
+          END
 
           SET @CurrentDirectoryID = NULL
           SET @CurrentDirectoryPath = NULL
@@ -3836,6 +3850,8 @@ BEGIN
           SET @CurrentCommand = NULL
           SET @CurrentCommandOutput = NULL
           SET @CurrentCommandType = NULL
+
+          DELETE FROM @DirectoryInfo
         END
       END
 
@@ -4593,7 +4609,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2024-12-27 18:10:28                                                               //--
+  --// Version: 2025-01-04 15:14:24                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -6475,7 +6491,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2024-12-27 18:10:28                                                               //--
+  --// Version: 2025-01-04 15:14:24                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
