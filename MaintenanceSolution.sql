@@ -10,7 +10,7 @@ License: https://ola.hallengren.com/license.html
 
 GitHub: https://github.com/olahallengren/sql-server-maintenance-solution
 
-Version: 2025-01-04 15:25:02
+Version: 2025-01-04 17:56:59
 
 You can contact me by e-mail at ola@hallengren.com.
 
@@ -137,7 +137,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2025-01-04 15:25:02                                                               //--
+  --// Version: 2025-01-04 17:56:59                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -413,7 +413,7 @@ ALTER PROCEDURE [dbo].[DatabaseBackup]
 @CopyOnly nvarchar(max) = 'N',
 @ChangeBackupType nvarchar(max) = 'N',
 @BackupSoftware nvarchar(max) = NULL,
-@CheckSum nvarchar(max) = 'N',
+@Checksum nvarchar(max) = 'N',
 @BlockSize int = NULL,
 @BufferCount int = NULL,
 @MaxTransferSize int = NULL,
@@ -464,6 +464,7 @@ ALTER PROCEDURE [dbo].[DatabaseBackup]
 @ExcludeLogShippedFromLogBackup nvarchar(max) = 'Y',
 @DirectoryCheck nvarchar(max) = 'Y',
 @BackupOptions nvarchar(max) = NULL,
+@Stats int = NULL,
 @StringDelimiter nvarchar(max) = ',',
 @DatabaseOrder nvarchar(max) = NULL,
 @DatabasesInParallel nvarchar(max) = 'N',
@@ -478,7 +479,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2025-01-04 15:25:02                                                               //--
+  --// Version: 2025-01-04 17:56:59                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -681,7 +682,7 @@ BEGIN
   SET @Parameters += ', @CopyOnly = ' + ISNULL('''' + REPLACE(@CopyOnly,'''','''''') + '''','NULL')
   SET @Parameters += ', @ChangeBackupType = ' + ISNULL('''' + REPLACE(@ChangeBackupType,'''','''''') + '''','NULL')
   SET @Parameters += ', @BackupSoftware = ' + ISNULL('''' + REPLACE(@BackupSoftware,'''','''''') + '''','NULL')
-  SET @Parameters += ', @CheckSum = ' + ISNULL('''' + REPLACE(@CheckSum,'''','''''') + '''','NULL')
+  SET @Parameters += ', @Checksum = ' + ISNULL('''' + REPLACE(@Checksum,'''','''''') + '''','NULL')
   SET @Parameters += ', @BlockSize = ' + ISNULL(CAST(@BlockSize AS nvarchar),'NULL')
   SET @Parameters += ', @BufferCount = ' + ISNULL(CAST(@BufferCount AS nvarchar),'NULL')
   SET @Parameters += ', @MaxTransferSize = ' + ISNULL(CAST(@MaxTransferSize AS nvarchar),'NULL')
@@ -731,6 +732,8 @@ BEGIN
   SET @Parameters += ', @ObjectLevelRecoveryMap = ' + ISNULL('''' + REPLACE(@ObjectLevelRecoveryMap,'''','''''') + '''','NULL')
   SET @Parameters += ', @ExcludeLogShippedFromLogBackup = ' + ISNULL('''' + REPLACE(@ExcludeLogShippedFromLogBackup,'''','''''') + '''','NULL')
   SET @Parameters += ', @DirectoryCheck = ' + ISNULL('''' + REPLACE(@DirectoryCheck,'''','''''') + '''','NULL')
+  SET @Parameters += ', @BackupOptions = ' + ISNULL('''' + REPLACE(@BackupOptions,'''','''''') + '''','NULL')
+  SET @Parameters += ', @Stats = ' + ISNULL(CAST(@Stats AS nvarchar),'NULL')
   SET @Parameters += ', @StringDelimiter = ' + ISNULL('''' + REPLACE(@StringDelimiter,'''','''''') + '''','NULL')
   SET @Parameters += ', @DatabaseOrder = ' + ISNULL('''' + REPLACE(@DatabaseOrder,'''','''''') + '''','NULL')
   SET @Parameters += ', @DatabasesInParallel = ' + ISNULL('''' + REPLACE(@DatabasesInParallel,'''','''''') + '''','NULL')
@@ -1673,10 +1676,10 @@ BEGIN
 
   ----------------------------------------------------------------------------------------------------
 
-  IF @CheckSum NOT IN ('Y','N') OR @CheckSum IS NULL
+  IF @Checksum NOT IN ('Y','N') OR @Checksum IS NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @CheckSum is not supported.', 16, 1
+    SELECT 'The value for the parameter @Checksum is not supported.', 16, 1
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -2634,6 +2637,22 @@ BEGIN
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
     SELECT 'The value for the parameter @DirectoryCheck is not supported.', 16, 1
+  END
+
+  ----------------------------------------------------------------------------------------------------
+
+  IF @BackupOptions IS NOT NULL AND @URL IS NULL
+  BEGIN
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'The value for the parameter @BackupOptions is not supported.', 16, 1
+  END
+
+  ----------------------------------------------------------------------------------------------------
+
+  IF @Stats <= 0 OR @Stats > 100
+  BEGIN
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'The value for the parameter @Stats is not supported.', 16, 1
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -3813,8 +3832,11 @@ BEGIN
             BREAK
           END
 
-          INSERT INTO @DirectoryInfo (FileExists, FileIsADirectory, ParentDirectoryExists)
-          EXECUTE [master].dbo.xp_fileexist @CurrentDirectoryPath
+          IF @DirectoryCheck = 'Y'
+          BEGIN
+            INSERT INTO @DirectoryInfo (FileExists, FileIsADirectory, ParentDirectoryExists)
+            EXECUTE [master].dbo.xp_fileexist @CurrentDirectoryPath
+          END
 
           IF NOT EXISTS (SELECT * FROM @DirectoryInfo WHERE FileExists = 0 AND FileIsADirectory = 1 AND ParentDirectoryExists = 1)
           BEGIN
@@ -4002,8 +4024,8 @@ BEGIN
           END
 
           SET @CurrentCommand += ' WITH '
-          IF @CheckSum = 'Y' SET @CurrentCommand += 'CHECKSUM'
-          IF @CheckSum = 'N' SET @CurrentCommand += 'NO_CHECKSUM'
+          IF @Checksum = 'Y' SET @CurrentCommand += 'CHECKSUM'
+          IF @Checksum = 'N' SET @CurrentCommand += 'NO_CHECKSUM'
 
           IF @Version >= 10
           BEGIN
@@ -4030,6 +4052,7 @@ BEGIN
           IF @BufferCount IS NOT NULL SET @CurrentCommand += ', BUFFERCOUNT = ' + CAST(@BufferCount AS nvarchar)
           IF @CurrentMaxTransferSize IS NOT NULL SET @CurrentCommand += ', MAXTRANSFERSIZE = ' + CAST(@CurrentMaxTransferSize AS nvarchar)
           IF @Description IS NOT NULL SET @CurrentCommand += ', DESCRIPTION = N''' + REPLACE(@Description,'''','''''') + ''''
+          IF @Stats IS NOT NULL SET @CurrentCommand += ', STATS = ' + CAST(@Stats AS nvarchar)
           IF @BackupOptions IS NOT NULL SET @CurrentCommand += ', BACKUP_OPTIONS = N''' + REPLACE(@BackupOptions,'''','''''') + ''''
           IF @Encrypt = 'Y' SET @CurrentCommand += ', ENCRYPTION (ALGORITHM = ' + UPPER(@EncryptionAlgorithm) + ', '
           IF @Encrypt = 'Y' AND @ServerCertificate IS NOT NULL SET @CurrentCommand += 'SERVER CERTIFICATE = ' + QUOTENAME(@ServerCertificate)
@@ -4066,8 +4089,8 @@ BEGIN
           END
 
           SET @CurrentCommand += ', @with = '''
-          IF @CheckSum = 'Y' SET @CurrentCommand += 'CHECKSUM'
-          IF @CheckSum = 'N' SET @CurrentCommand += 'NO_CHECKSUM'
+          IF @Checksum = 'Y' SET @CurrentCommand += 'CHECKSUM'
+          IF @Checksum = 'N' SET @CurrentCommand += 'NO_CHECKSUM'
           IF @CurrentBackupType = 'DIFF' SET @CurrentCommand += ', DIFFERENTIAL'
           IF @CopyOnly = 'Y' SET @CurrentCommand += ', COPY_ONLY'
           IF @NoRecovery = 'Y' AND @CurrentBackupType = 'LOG' SET @CurrentCommand += ', NORECOVERY'
@@ -4128,8 +4151,8 @@ BEGIN
             SET @CurrentCommand += ' MIRRORFILE' + ' = N''' + REPLACE((SELECT FilePath FROM @CurrentFiles WHERE Mirror = 1),'''','''''') + ''', '
           END
 
-          IF @CheckSum = 'Y' SET @CurrentCommand += 'CHECKSUM'
-          IF @CheckSum = 'N' SET @CurrentCommand += 'NO_CHECKSUM'
+          IF @Checksum = 'Y' SET @CurrentCommand += 'CHECKSUM'
+          IF @Checksum = 'N' SET @CurrentCommand += 'NO_CHECKSUM'
           IF @CurrentBackupType = 'DIFF' SET @CurrentCommand += ', DIFFERENTIAL'
           IF @CopyOnly = 'Y' SET @CurrentCommand += ', COPY_ONLY'
           IF @NoRecovery = 'Y' AND @CurrentBackupType = 'LOG' SET @CurrentCommand += ', NORECOVERY'
@@ -4169,7 +4192,7 @@ BEGIN
 
           SET @CurrentCommand += ', @backuptype = ' + CASE WHEN @CurrentBackupType = 'FULL' THEN '''Full''' WHEN @CurrentBackupType = 'DIFF' THEN '''Differential''' WHEN @CurrentBackupType = 'LOG' THEN '''Log''' END
           IF @ReadWriteFileGroups = 'Y' AND @CurrentDatabaseName <> 'master' SET @CurrentCommand += ', @readwritefilegroups = 1'
-          SET @CurrentCommand += ', @checksum = ' + CASE WHEN @CheckSum = 'Y' THEN '1' WHEN @CheckSum = 'N' THEN '0' END
+          SET @CurrentCommand += ', @checksum = ' + CASE WHEN @Checksum = 'Y' THEN '1' WHEN @Checksum = 'N' THEN '0' END
           SET @CurrentCommand += ', @copyonly = ' + CASE WHEN @CopyOnly = 'Y' THEN '1' WHEN @CopyOnly = 'N' THEN '0' END
           IF @CompressionLevel IS NOT NULL SET @CurrentCommand += ', @compressionlevel = ' + CAST(@CompressionLevel AS nvarchar)
           IF @Threads IS NOT NULL SET @CurrentCommand += ', @threads = ' + CAST(@Threads AS nvarchar)
@@ -4205,7 +4228,7 @@ BEGIN
 
           IF @CleanupTime IS NOT NULL SET @CurrentCommand += ' -y +' + CAST(@CleanupTime/24 + CASE WHEN @CleanupTime%24 > 0 THEN 1 ELSE 0 END AS nvarchar) + 'd'
 
-          IF @CheckSum = 'Y' SET @CurrentCommand += ' -k'
+          IF @Checksum = 'Y' SET @CurrentCommand += ' -k'
 
           SET @CurrentCommand += ' -S ' + CAST(@CurrentNumberOfFiles AS nvarchar)
 
@@ -4268,8 +4291,9 @@ BEGIN
             ORDER BY FilePath ASC
 
             SET @CurrentCommand += ' WITH '
-            IF @CheckSum = 'Y' SET @CurrentCommand += 'CHECKSUM'
-            IF @CheckSum = 'N' SET @CurrentCommand += 'NO_CHECKSUM'
+            IF @Checksum = 'Y' SET @CurrentCommand += 'CHECKSUM'
+            IF @Checksum = 'N' SET @CurrentCommand += 'NO_CHECKSUM'
+            IF @Stats IS NOT NULL SET @CurrentCommand += ', STATS = ' + CAST(@Stats AS nvarchar)
             IF @BackupOptions IS NOT NULL SET @CurrentCommand += ', RESTORE_OPTIONS = N''' + REPLACE(@BackupOptions,'''','''''') + ''''
             IF @URL IS NOT NULL AND @Credential IS NOT NULL SET @CurrentCommand += ', CREDENTIAL = N''' + REPLACE(@Credential,'''','''''') + ''''
           END
@@ -4288,8 +4312,8 @@ BEGIN
             ORDER BY FilePath ASC
 
             SET @CurrentCommand += ', @with = '''
-            IF @CheckSum = 'Y' SET @CurrentCommand += 'CHECKSUM'
-            IF @CheckSum = 'N' SET @CurrentCommand += 'NO_CHECKSUM'
+            IF @Checksum = 'Y' SET @CurrentCommand += 'CHECKSUM'
+            IF @Checksum = 'N' SET @CurrentCommand += 'NO_CHECKSUM'
             SET @CurrentCommand += ''''
             IF @EncryptionKey IS NOT NULL SET @CurrentCommand += ', @encryptionkey = N''' + REPLACE(@EncryptionKey,'''','''''') + ''''
 
@@ -4310,8 +4334,8 @@ BEGIN
             ORDER BY FilePath ASC
 
             SET @CurrentCommand += ' WITH '
-            IF @CheckSum = 'Y' SET @CurrentCommand += 'CHECKSUM'
-            IF @CheckSum = 'N' SET @CurrentCommand += 'NO_CHECKSUM'
+            IF @Checksum = 'Y' SET @CurrentCommand += 'CHECKSUM'
+            IF @Checksum = 'N' SET @CurrentCommand += 'NO_CHECKSUM'
             IF @EncryptionKey IS NOT NULL SET @CurrentCommand += ', PASSWORD = N''' + REPLACE(@EncryptionKey,'''','''''') + ''''
 
             SET @CurrentCommand = 'DECLARE @ReturnCode int EXECUTE @ReturnCode = dbo.sqlbackup N''-SQL "' + REPLACE(@CurrentCommand,'''','''''') + '"''' + ' IF @ReturnCode <> 0 RAISERROR(''Error verifying SQLBackup backup.'', 16, 1)'
@@ -4608,7 +4632,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2025-01-04 15:25:02                                                               //--
+  --// Version: 2025-01-04 17:56:59                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -6490,7 +6514,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2025-01-04 15:25:02                                                               //--
+  --// Version: 2025-01-04 17:56:59                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
