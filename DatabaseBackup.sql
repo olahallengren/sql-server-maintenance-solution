@@ -87,7 +87,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2025-01-05 15:08:25                                                               //--
+  --// Version: 2025-01-05 15:28:48                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -696,8 +696,8 @@ BEGIN
   SET @ErrorMessage = ''
   SELECT @ErrorMessage = @ErrorMessage + QUOTENAME(DatabaseName) + ', '
   FROM @tmpDatabases
-  WHERE UPPER(DatabaseNameFS) IN(SELECT UPPER(DatabaseNameFS) FROM @tmpDatabases GROUP BY UPPER(DatabaseNameFS) HAVING COUNT(*) > 1)
-  AND UPPER(DatabaseNameFS) IN(SELECT UPPER(DatabaseNameFS) FROM @tmpDatabases WHERE Selected = 1)
+  WHERE UPPER(DatabaseNameFS) IN(SELECT UPPER(DatabaseNameFS) FROM @tmpDatabases GROUP BY UPPER(DatabaseNameFS) HAVING COUNT(*) > 1 AND MAX(CAST(Selected AS int)) = 1)
+
   AND DATALENGTH(DatabaseNameFS) > 0
   ORDER BY DatabaseName ASC
   OPTION (RECOMPILE)
