@@ -88,7 +88,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2025-01-06 19:10:39                                                               //--
+  --// Version: 2025-01-07 23:11:34                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -1930,7 +1930,7 @@ BEGIN
   IF @MinDatabaseSizeForDifferentialBackup IS NOT NULL AND @BackupType <> 'DIFF'
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The parameter @MinDatabaseSizeForDifferentialBackup can only be used for differential backups.', 16, 3
+    SELECT 'The parameter @MinDatabaseSizeForDifferentialBackup can only be used for differential backups.', 16, 2
   END
 
   ----------------------------------------------------------------------------------------------------
