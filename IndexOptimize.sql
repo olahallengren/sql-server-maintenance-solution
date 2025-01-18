@@ -53,7 +53,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2025-01-15 19:00:39                                                               //--
+  --// Version: 2025-01-18 21:00:27                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -1898,7 +1898,7 @@ BEGIN
         AND @CurrentOnReadOnlyFileGroup = 0
         AND EXISTS(SELECT * FROM @ActionsPreferred)
         AND (EXISTS(SELECT [Priority], [Action], COUNT(*) FROM @ActionsPreferred GROUP BY [Priority], [Action] HAVING COUNT(*) <> 3) OR @MinNumberOfPages > 0 OR @MaxNumberOfPages IS NOT NULL)
-        AND NOT (SERVERPROPERTY('EngineEdition') = 8 AND @CurrentDatabaseName = 'master')
+        AND NOT (SERVERPROPERTY('EngineEdition') = 8 AND @CurrentDatabaseName IN ('master', 'model'))
         BEGIN
           SET @CurrentCommand = ''
 
