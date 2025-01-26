@@ -53,7 +53,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2025-01-26 11:32:15                                                               //--
+  --// Version: 2025-01-26 15:59:53                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -1648,7 +1648,7 @@ BEGIN
           END
 
           SET @CurrentCommand = @CurrentCommand + ' WHERE objects.[type] IN(''U'',''V'')'
-                                                    + CASE WHEN @Version >= 12 THEN ' AND tables.is_memory_optimized = 0 OR tables.is_memory_optimized IS NULL' ELSE '' END
+                                                    + CASE WHEN @Version >= 12 THEN ' AND (tables.is_memory_optimized = 0 OR tables.is_memory_optimized IS NULL)' ELSE '' END
                                                     + CASE WHEN @MSShippedObjects = 'N' THEN ' AND objects.is_ms_shipped = 0' ELSE '' END
                                                     + ' AND NOT EXISTS(SELECT * FROM sys.indexes indexes WHERE indexes.[object_id] = stats.[object_id] AND indexes.index_id = stats.stats_id)'
 
@@ -1690,7 +1690,7 @@ BEGIN
                                                       + ' INNER JOIN sys.schemas schemas ON objects.[schema_id] = schemas.[schema_id]'
                                                       + ' INNER JOIN sys.tables tables ON objects.[object_id] = tables.[object_id]'
 
-            SET @CurrentCommand = @CurrentCommand + ' WHERE objects.[type] IN(''U'',''V'')'
+            SET @CurrentCommand = @CurrentCommand + ' WHERE objects.[type] = ''U'''
                                                       + ' AND tables.is_memory_optimized = 1'
                                                       + CASE WHEN @MSShippedObjects = 'N' THEN ' AND objects.is_ms_shipped = 0' ELSE '' END
                                                       + ' AND NOT EXISTS(SELECT * FROM sys.indexes indexes WHERE indexes.[object_id] = stats.[object_id] AND indexes.index_id = stats.stats_id)'
