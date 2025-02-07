@@ -47,16 +47,16 @@ BEGIN
   DECLARE @ErrorMessageOriginal nvarchar(max)
   DECLARE @Severity int
 
-  DECLARE @Errors TABLE (ID int IDENTITY PRIMARY KEY,
+  DECLARE @Errors TABLE ([ID] int IDENTITY PRIMARY KEY,
                          [Message] nvarchar(max) NOT NULL,
-                         Severity int NOT NULL,
-                         [State] int)
+                         [Severity] int NOT NULL,
+                         [State] int NOT NULL)
 
   DECLARE @CurrentMessage nvarchar(max)
   DECLARE @CurrentSeverity int
   DECLARE @CurrentState int
 
-  DECLARE @sp_executesql nvarchar(max) = QUOTENAME(@DatabaseContext) + '.sys.sp_executesql'
+  DECLARE @sp_executesql nvarchar(max) = QUOTENAME(@DatabaseContext) + '.sys.sp_executesql';
 
   DECLARE @StartTime datetime2
   DECLARE @EndTime datetime2
@@ -66,7 +66,7 @@ BEGIN
   DECLARE @Error int = 0
   DECLARE @ReturnCode int = 0
 
-  DECLARE @EmptyLine nvarchar(max) = CHAR(9)
+  DECLARE @EmptyLine nvarchar(max) = CHAR(9);
 
   DECLARE @RevertCommand nvarchar(max)
 
@@ -74,27 +74,27 @@ BEGIN
   --// Check core requirements                                                                    //--
   ----------------------------------------------------------------------------------------------------
 
-  IF NOT (SELECT [compatibility_level] FROM sys.databases WHERE database_id = DB_ID()) >= 90
+  IF NOT EXISTS(SELECT 1 FROM sys.databases WHERE database_id = DB_ID() and [compatibility_level] >= 90 )
   BEGIN
-    INSERT INTO @Errors ([Message], Severity, [State])
+    INSERT INTO @Errors ([Message], [Severity], [State])
     SELECT 'The database ' + QUOTENAME(DB_NAME(DB_ID())) + ' has to be in compatibility level 90 or higher.', 16, 1
   END
 
-  IF NOT (SELECT uses_ansi_nulls FROM sys.sql_modules WHERE [object_id] = @@PROCID) = 1
+  IF NOT EXISTS(SELECT 1 FROM sys.sql_modules WHERE [object_id] = @@PROCID and [uses_ansi_nulls] = 1 )
   BEGIN
-    INSERT INTO @Errors ([Message], Severity, [State])
+    INSERT INTO @Errors ([Message], [Severity], [State])
     SELECT 'ANSI_NULLS has to be set to ON for the stored procedure.', 16, 1
   END
 
-  IF NOT (SELECT uses_quoted_identifier FROM sys.sql_modules WHERE [object_id] = @@PROCID) = 1
+  IF NOT EXISTS(SELECT 1 FROM sys.sql_modules WHERE [object_id] = @@PROCID and [uses_quoted_identifier] = 1 )
   BEGIN
-    INSERT INTO @Errors ([Message], Severity, [State])
+    INSERT INTO @Errors ([Message], [Severity], [State])
     SELECT 'QUOTED_IDENTIFIER has to be set to ON for the stored procedure.', 16, 1
   END
 
   IF @LogToTable = 'Y' AND NOT EXISTS (SELECT * FROM sys.objects objects INNER JOIN sys.schemas schemas ON objects.[schema_id] = schemas.[schema_id] WHERE objects.[type] = 'U' AND schemas.[name] = 'dbo' AND objects.[name] = 'CommandLog')
   BEGIN
-    INSERT INTO @Errors ([Message], Severity, [State])
+    INSERT INTO @Errors ([Message], [Severity], [State])
     SELECT 'The table CommandLog is missing. Download https://ola.hallengren.com/scripts/CommandLog.sql.', 16, 1
   END
 
@@ -102,51 +102,58 @@ BEGIN
   --// Check input parameters                                                                     //--
   ----------------------------------------------------------------------------------------------------
 
+  SET @DatabaseContext = TRIM( @DatabaseContext );
+  
+  /* Optional cleanup for [] around @DatabaseContext. */
+  IF left(@DatabaseContext, 1) = '[' and ']' = right(@DatabaseContext, 1) set @DatabaseContext = parsename(@DatabaseContext, 1);
+
   IF @DatabaseContext IS NULL OR NOT EXISTS (SELECT * FROM sys.databases WHERE name = @DatabaseContext)
   BEGIN
-    INSERT INTO @Errors ([Message], Severity, [State])
+    INSERT INTO @Errors ([Message], [Severity], [State])
     SELECT 'The value for the parameter @DatabaseContext is not supported.', 16, 1
   END
 
-  IF @Command IS NULL OR @Command = ''
+  SET @Command = NULLIF(TRIM( @Command ), '');
+
+  IF @Command IS NULL
   BEGIN
-    INSERT INTO @Errors ([Message], Severity, [State])
+    INSERT INTO @Errors ([Message], [Severity], [State])
     SELECT 'The value for the parameter @Command is not supported.', 16, 1
   END
 
   IF @CommandType IS NULL OR @CommandType = '' OR LEN(@CommandType) > 60
   BEGIN
-    INSERT INTO @Errors ([Message], Severity, [State])
+    INSERT INTO @Errors ([Message], [Severity], [State])
     SELECT 'The value for the parameter @CommandType is not supported.', 16, 1
   END
 
   IF @Mode NOT IN(1,2) OR @Mode IS NULL
   BEGIN
-    INSERT INTO @Errors ([Message], Severity, [State])
+    INSERT INTO @Errors ([Message], [Severity], [State])
     SELECT 'The value for the parameter @Mode is not supported.', 16, 1
   END
 
   IF @LockMessageSeverity NOT IN(10,16) OR @LockMessageSeverity IS NULL
   BEGIN
-    INSERT INTO @Errors ([Message], Severity, [State])
+    INSERT INTO @Errors ([Message], [Severity], [State])
     SELECT 'The value for the parameter @LockMessageSeverity is not supported.', 16, 1
   END
 
   IF LEN(@ExecuteAsUser) > 128
   BEGIN
-    INSERT INTO @Errors ([Message], Severity, [State])
+    INSERT INTO @Errors ([Message], [Severity], [State])
     SELECT 'The value for the parameter @ExecuteAsUser is not supported.', 16, 1
   END
 
   IF @LogToTable NOT IN('Y','N') OR @LogToTable IS NULL
   BEGIN
-    INSERT INTO @Errors ([Message], Severity, [State])
+    INSERT INTO @Errors ([Message], [Severity], [State])
     SELECT 'The value for the parameter @LogToTable is not supported.', 16, 1
   END
 
   IF @Execute NOT IN('Y','N') OR @Execute IS NULL
   BEGIN
-    INSERT INTO @Errors ([Message], Severity, [State])
+    INSERT INTO @Errors ([Message], [Severity], [State])
     SELECT 'The value for the parameter @Execute is not supported.', 16, 1
   END
 
