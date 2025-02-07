@@ -1,4 +1,4 @@
-﻿SET ANSI_NULLS ON
+SET ANSI_NULLS ON
 GO
 SET QUOTED_IDENTIFIER ON
 GO
@@ -30,7 +30,8 @@ ALTER PROCEDURE [dbo].[DatabaseIntegrityCheck]
 @DatabaseOrder nvarchar(max) = NULL,
 @DatabasesInParallel nvarchar(max) = 'N',
 @LogToTable nvarchar(max) = 'N',
-@Execute nvarchar(max) = 'Y'
+@Execute nvarchar(max) = 'Y',
+@OutputTableResults nvarchar(max) = 'N'
 
 AS
 
@@ -220,6 +221,8 @@ BEGIN
   SET @Parameters += ', @DatabasesInParallel = ' + ISNULL('''' + REPLACE(@DatabasesInParallel,'''','''''') + '''','NULL')
   SET @Parameters += ', @LogToTable = ' + ISNULL('''' + REPLACE(@LogToTable,'''','''''') + '''','NULL')
   SET @Parameters += ', @Execute = ' + ISNULL('''' + REPLACE(@Execute,'''','''''') + '''','NULL')
+  SET @Parameters += ', @OutputTableResults = ' + ISNULL('''' + REPLACE(@OutputTableResults,'''','''''') + '''','NULL')
+
 
   SET @StartMessage = 'Date and time: ' + CONVERT(nvarchar,@StartTime,120)
   RAISERROR('%s',10,1,@StartMessage) WITH NOWAIT
@@ -932,6 +935,14 @@ BEGIN
 
   ----------------------------------------------------------------------------------------------------
 
+  IF COALESCE(@OutputTableResults, 'N') NOT IN('Y','N')
+  BEGIN
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'The value for the parameter @OutputTableresults is not supported.', 16, 1
+  END
+
+  ----------------------------------------------------------------------------------------------------
+
   IF EXISTS(SELECT * FROM @Errors)
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
@@ -1458,6 +1469,7 @@ BEGIN
         IF @NoInformationalMessages = 'Y' SET @CurrentCommand += ', NO_INFOMSGS'
         IF @TabLock = 'Y' SET @CurrentCommand += ', TABLOCK'
         IF @MaxDOP IS NOT NULL SET @CurrentCommand += ', MAXDOP = ' + CAST(@MaxDOP AS nvarchar)
+        IF @OutputTableResults = 'Y' SET @CurrentCommand += ', TABLERESULTS'
 
         EXECUTE @CurrentCommandOutput = dbo.CommandExecute @DatabaseContext = @CurrentDatabaseContext, @Command = @CurrentCommand, @CommandType = @CurrentCommandType, @Mode = 1, @DatabaseName = @CurrentDatabaseName, @LogToTable = @LogToTable, @Execute = @Execute
         SET @Error = @@ERROR
@@ -1585,6 +1597,7 @@ BEGIN
             IF @NoInformationalMessages = 'Y' SET @CurrentCommand += ', NO_INFOMSGS'
             IF @TabLock = 'Y' SET @CurrentCommand += ', TABLOCK'
             IF @MaxDOP IS NOT NULL SET @CurrentCommand += ', MAXDOP = ' + CAST(@MaxDOP AS nvarchar)
+            IF @OutputTableResults IS NOT NULL SET @CurrentCommand += ', TABLERESULTS'
 
             EXECUTE @CurrentCommandOutput = dbo.CommandExecute @DatabaseContext = @CurrentDatabaseContext, @Command = @CurrentCommand, @CommandType = @CurrentCommandType, @Mode = 1, @DatabaseName = @CurrentDatabaseName, @LogToTable = @LogToTable, @Execute = @Execute
             SET @Error = @@ERROR
@@ -1623,6 +1636,7 @@ BEGIN
         SET @CurrentCommand += ') WITH ALL_ERRORMSGS'
         IF @NoInformationalMessages = 'Y' SET @CurrentCommand += ', NO_INFOMSGS'
         IF @TabLock = 'Y' SET @CurrentCommand += ', TABLOCK'
+        IF @OutputTableResults IS NOT NULL SET @CurrentCommand += ', TABLERESULTS'
 
         EXECUTE @CurrentCommandOutput = dbo.CommandExecute @DatabaseContext = @CurrentDatabaseContext, @Command = @CurrentCommand, @CommandType = @CurrentCommandType, @Mode = 1, @DatabaseName = @CurrentDatabaseName, @LogToTable = @LogToTable, @Execute = @Execute
         SET @Error = @@ERROR
@@ -1756,6 +1770,7 @@ BEGIN
             IF @NoInformationalMessages = 'Y' SET @CurrentCommand += ', NO_INFOMSGS'
             IF @TabLock = 'Y' SET @CurrentCommand += ', TABLOCK'
             IF @MaxDOP IS NOT NULL SET @CurrentCommand += ', MAXDOP = ' + CAST(@MaxDOP AS nvarchar)
+            IF @OutputTableResults IS NOT NULL SET @CurrentCommand += ', TABLERESULTS'
 
             EXECUTE @CurrentCommandOutput = dbo.CommandExecute @DatabaseContext = @CurrentDatabaseContext, @Command = @CurrentCommand, @CommandType = @CurrentCommandType, @Mode = 1, @DatabaseName = @CurrentDatabaseName, @SchemaName = @CurrentSchemaName, @ObjectName = @CurrentObjectName, @ObjectType = @CurrentObjectType, @LogToTable = @LogToTable, @Execute = @Execute
             SET @Error = @@ERROR
@@ -1881,4 +1896,3 @@ BEGIN
 END
 
 GO
-
