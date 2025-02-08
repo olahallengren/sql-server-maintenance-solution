@@ -53,7 +53,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2025-01-26 12:22:47                                                               //--
+  --// Version: 2025-02-08 16:16:38                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -1648,8 +1648,53 @@ BEGIN
           END
 
           SET @CurrentCommand = @CurrentCommand + ' WHERE objects.[type] IN(''U'',''V'')'
+                                                    + CASE WHEN @Version >= 12 THEN ' AND (tables.is_memory_optimized = 0 OR tables.is_memory_optimized IS NULL)' ELSE '' END
                                                     + CASE WHEN @MSShippedObjects = 'N' THEN ' AND objects.is_ms_shipped = 0' ELSE '' END
                                                     + ' AND NOT EXISTS(SELECT * FROM sys.indexes indexes WHERE indexes.[object_id] = stats.[object_id] AND indexes.index_id = stats.stats_id)'
+
+          IF @Version >= 12
+          BEGIN
+            SET @CurrentCommand = @CurrentCommand + ' UNION '
+
+            SET @CurrentCommand = @CurrentCommand + 'SELECT schemas.[schema_id] AS SchemaID'
+                                                      + ', schemas.[name] AS SchemaName'
+                                                      + ', objects.[object_id] AS ObjectID'
+                                                      + ', objects.[name] AS ObjectName'
+                                                      + ', RTRIM(objects.[type]) AS ObjectType'
+                                                      + ', tables.is_memory_optimized AS IsMemoryOptimized'
+                                                      + ', NULL AS IndexID, NULL AS IndexName'
+                                                      + ', NULL AS IndexType'
+                                                      + ', NULL AS AllowPageLocks'
+                                                      + ', NULL AS HasFilter'
+                                                      + ', NULL AS IsImageText'
+                                                      + ', NULL AS IsNewLOB'
+                                                      + ', NULL AS IsFileStream'
+                                                      + ', NULL AS IsColumnStore'
+                                                      + ', NULL AS IsComputed'
+                                                      + ', NULL AS IsClusteredIndexComputed'
+                                                      + ', NULL AS IsTimestamp'
+                                                      + ', NULL AS OnReadOnlyFileGroup'
+                                                      + ', NULL AS ResumableIndexOperation'
+                                                      + ', stats.stats_id AS StatisticsID'
+                                                      + ', stats.name AS StatisticsName'
+                                                      + ', stats.no_recompute AS NoRecompute'
+                                                      + ', ' + CASE WHEN @Version >= 12 THEN 'stats.is_incremental' ELSE '0' END + ' AS IsIncremental'
+                                                      + ', NULL AS PartitionID'
+                                                      + ', NULL AS PartitionNumber'
+                                                      + ', NULL AS PartitionCount'
+                                                      + ', 0 AS [Order]'
+                                                      + ', 0 AS Selected'
+                                                      + ', 0 AS Completed'
+                                                      + ' FROM sys.stats stats'
+                                                      + ' INNER JOIN sys.objects objects ON stats.[object_id] = objects.[object_id]'
+                                                      + ' INNER JOIN sys.schemas schemas ON objects.[schema_id] = schemas.[schema_id]'
+                                                      + ' INNER JOIN sys.tables tables ON objects.[object_id] = tables.[object_id]'
+
+            SET @CurrentCommand = @CurrentCommand + ' WHERE objects.[type] = ''U'''
+                                                      + ' AND tables.is_memory_optimized = 1'
+                                                      + CASE WHEN @MSShippedObjects = 'N' THEN ' AND objects.is_ms_shipped = 0' ELSE '' END
+                                                      + ' AND NOT EXISTS(SELECT * FROM sys.indexes indexes WHERE indexes.[object_id] = stats.[object_id] AND indexes.index_id = stats.stats_id)'
+          END
         END
 
         SET @CurrentCommand = @CurrentCommand + ') IndexesStatistics'

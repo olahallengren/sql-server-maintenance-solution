@@ -10,7 +10,7 @@ License: https://ola.hallengren.com/license.html
 
 GitHub: https://github.com/olahallengren/sql-server-maintenance-solution
 
-Version: 2025-01-26 12:22:47
+Version: 2025-02-08 16:16:38
 
 You can contact me by e-mail at ola@hallengren.com.
 
@@ -137,7 +137,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2025-01-26 12:22:47                                                               //--
+  --// Version: 2025-02-08 16:16:38                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -467,6 +467,8 @@ ALTER PROCEDURE [dbo].[DatabaseBackup]
 @DirectoryCheck nvarchar(max) = 'Y',
 @BackupOptions nvarchar(max) = NULL,
 @Stats int = NULL,
+@ExpireDate datetime = NULL,
+@RetainDays int = NULL,
 @StringDelimiter nvarchar(max) = ',',
 @DatabaseOrder nvarchar(max) = NULL,
 @DatabasesInParallel nvarchar(max) = 'N',
@@ -481,7 +483,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2025-01-26 12:22:47                                                               //--
+  --// Version: 2025-02-08 16:16:38                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -739,6 +741,8 @@ BEGIN
   SET @Parameters += ', @DirectoryCheck = ' + ISNULL('''' + REPLACE(@DirectoryCheck,'''','''''') + '''','NULL')
   SET @Parameters += ', @BackupOptions = ' + ISNULL('''' + REPLACE(@BackupOptions,'''','''''') + '''','NULL')
   SET @Parameters += ', @Stats = ' + ISNULL(CAST(@Stats AS nvarchar),'NULL')
+  SET @Parameters += ', @ExpireDate = ' + ISNULL('''' + CONVERT(nvarchar, @ExpireDate, 21) + '''','NULL')
+  SET @Parameters += ', @RetainDays = ' + ISNULL(CAST(@RetainDays AS nvarchar),'NULL')
   SET @Parameters += ', @StringDelimiter = ' + ISNULL('''' + REPLACE(@StringDelimiter,'''','''''') + '''','NULL')
   SET @Parameters += ', @DatabaseOrder = ' + ISNULL('''' + REPLACE(@DatabaseOrder,'''','''''') + '''','NULL')
   SET @Parameters += ', @DatabasesInParallel = ' + ISNULL('''' + REPLACE(@DatabasesInParallel,'''','''''') + '''','NULL')
@@ -2690,6 +2694,28 @@ BEGIN
 
   ----------------------------------------------------------------------------------------------------
 
+  IF @ExpireDate IS NOT NULL AND @BackupSoftware <> 'LITESPEED'
+  BEGIN
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'The value for the parameter @ExpireDate is not supported.', 16, 1
+  END
+
+  ----------------------------------------------------------------------------------------------------
+
+  IF @RetainDays < 0
+  BEGIN
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'The value for the parameter @RetainDays is not supported.', 16, 1
+  END
+
+  IF @RetainDays IS NOT NULL AND @BackupSoftware <> 'LITESPEED'
+  BEGIN
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'The value for the parameter @RetainDays is not supported.', 16, 1
+  END
+
+  ----------------------------------------------------------------------------------------------------
+
   IF @StringDelimiter IS NULL OR LEN(@StringDelimiter) > 1
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
@@ -4108,6 +4134,8 @@ BEGIN
           IF @Encrypt = 'Y' AND @ServerAsymmetricKey IS NOT NULL SET @CurrentCommand += 'SERVER ASYMMETRIC KEY = ' + QUOTENAME(@ServerAsymmetricKey)
           IF @Encrypt = 'Y' SET @CurrentCommand += ')'
           IF @URL IS NOT NULL AND @Credential IS NOT NULL SET @CurrentCommand += ', CREDENTIAL = N''' + REPLACE(@Credential,'''','''''') + ''''
+          IF @ExpireDate IS NOT NULL SET @CurrentCommand += ', EXPIREDATE = ''' + CONVERT(nvarchar, @ExpireDate, 21) + ''''
+          IF @RetainDays IS NOT NULL SET @CurrentCommand += ', RETAINDAYS = ' + CAST(@RetainDays AS nvarchar)
         END
 
         IF @BackupSoftware = 'LITESPEED'
@@ -4156,6 +4184,8 @@ BEGIN
           IF @Throttle IS NOT NULL SET @CurrentCommand += ', @throttle = ' + CAST(@Throttle AS nvarchar)
           IF @Description IS NOT NULL SET @CurrentCommand += ', @desc = N''' + REPLACE(@Description,'''','''''') + ''''
           IF @ObjectLevelRecoveryMap = 'Y' SET @CurrentCommand += ', @olrmap = 1'
+          IF @ExpireDate IS NOT NULL SET @CurrentCommand += ', @expiration = ''' + CONVERT(nvarchar, @ExpireDate, 21) + ''''
+          IF @RetainDays IS NOT NULL SET @CurrentCommand += ', @retaindays = ' + CAST(@RetainDays AS nvarchar)
 
           IF @EncryptionAlgorithm IS NOT NULL SET @CurrentCommand += ', @cryptlevel = ' + CASE
           WHEN @EncryptionAlgorithm = 'RC2_40' THEN '0'
@@ -4265,7 +4295,7 @@ BEGIN
 
           SET @CurrentCommand = 'DECLARE @ReturnCode int EXECUTE @ReturnCode = dbo.emc_run_backup '''
 
-          SET @CurrentCommand += ' -c ' + CASE WHEN @CurrentAvailabilityGroup IS NOT NULL THEN @Cluster ELSE CAST(SERVERPROPERTY('MachineName') AS nvarchar) END
+          SET @CurrentCommand += ' -c ' + CASE WHEN @Cluster IS NOT NULL AND @CurrentAvailabilityGroup IS NOT NULL THEN @Cluster ELSE CAST(SERVERPROPERTY('MachineName') AS nvarchar) END
 
           SET @CurrentCommand += ' -l ' + CASE
           WHEN @CurrentBackupType = 'FULL' THEN 'full'
@@ -4685,7 +4715,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2025-01-26 12:22:47                                                               //--
+  --// Version: 2025-02-08 16:16:38                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -6581,7 +6611,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2025-01-26 12:22:47                                                               //--
+  --// Version: 2025-02-08 16:16:38                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -8176,8 +8206,53 @@ BEGIN
           END
 
           SET @CurrentCommand = @CurrentCommand + ' WHERE objects.[type] IN(''U'',''V'')'
+                                                    + CASE WHEN @Version >= 12 THEN ' AND (tables.is_memory_optimized = 0 OR tables.is_memory_optimized IS NULL)' ELSE '' END
                                                     + CASE WHEN @MSShippedObjects = 'N' THEN ' AND objects.is_ms_shipped = 0' ELSE '' END
                                                     + ' AND NOT EXISTS(SELECT * FROM sys.indexes indexes WHERE indexes.[object_id] = stats.[object_id] AND indexes.index_id = stats.stats_id)'
+
+          IF @Version >= 12
+          BEGIN
+            SET @CurrentCommand = @CurrentCommand + ' UNION '
+
+            SET @CurrentCommand = @CurrentCommand + 'SELECT schemas.[schema_id] AS SchemaID'
+                                                      + ', schemas.[name] AS SchemaName'
+                                                      + ', objects.[object_id] AS ObjectID'
+                                                      + ', objects.[name] AS ObjectName'
+                                                      + ', RTRIM(objects.[type]) AS ObjectType'
+                                                      + ', tables.is_memory_optimized AS IsMemoryOptimized'
+                                                      + ', NULL AS IndexID, NULL AS IndexName'
+                                                      + ', NULL AS IndexType'
+                                                      + ', NULL AS AllowPageLocks'
+                                                      + ', NULL AS HasFilter'
+                                                      + ', NULL AS IsImageText'
+                                                      + ', NULL AS IsNewLOB'
+                                                      + ', NULL AS IsFileStream'
+                                                      + ', NULL AS IsColumnStore'
+                                                      + ', NULL AS IsComputed'
+                                                      + ', NULL AS IsClusteredIndexComputed'
+                                                      + ', NULL AS IsTimestamp'
+                                                      + ', NULL AS OnReadOnlyFileGroup'
+                                                      + ', NULL AS ResumableIndexOperation'
+                                                      + ', stats.stats_id AS StatisticsID'
+                                                      + ', stats.name AS StatisticsName'
+                                                      + ', stats.no_recompute AS NoRecompute'
+                                                      + ', ' + CASE WHEN @Version >= 12 THEN 'stats.is_incremental' ELSE '0' END + ' AS IsIncremental'
+                                                      + ', NULL AS PartitionID'
+                                                      + ', NULL AS PartitionNumber'
+                                                      + ', NULL AS PartitionCount'
+                                                      + ', 0 AS [Order]'
+                                                      + ', 0 AS Selected'
+                                                      + ', 0 AS Completed'
+                                                      + ' FROM sys.stats stats'
+                                                      + ' INNER JOIN sys.objects objects ON stats.[object_id] = objects.[object_id]'
+                                                      + ' INNER JOIN sys.schemas schemas ON objects.[schema_id] = schemas.[schema_id]'
+                                                      + ' INNER JOIN sys.tables tables ON objects.[object_id] = tables.[object_id]'
+
+            SET @CurrentCommand = @CurrentCommand + ' WHERE objects.[type] = ''U'''
+                                                      + ' AND tables.is_memory_optimized = 1'
+                                                      + CASE WHEN @MSShippedObjects = 'N' THEN ' AND objects.is_ms_shipped = 0' ELSE '' END
+                                                      + ' AND NOT EXISTS(SELECT * FROM sys.indexes indexes WHERE indexes.[object_id] = stats.[object_id] AND indexes.index_id = stats.stats_id)'
+          END
         END
 
         SET @CurrentCommand = @CurrentCommand + ') IndexesStatistics'
