@@ -10,7 +10,7 @@ License: https://ola.hallengren.com/license.html
 
 GitHub: https://github.com/olahallengren/sql-server-maintenance-solution
 
-Version: 2025-02-15 17:41:50
+Version: 2025-02-15 18:14:12
 
 You can contact me by e-mail at ola@hallengren.com.
 
@@ -137,7 +137,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2025-02-15 17:41:50                                                               //--
+  --// Version: 2025-02-15 18:14:12                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -483,7 +483,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2025-02-15 17:41:50                                                               //--
+  --// Version: 2025-02-15 18:14:12                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -4715,7 +4715,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2025-02-15 17:41:50                                                               //--
+  --// Version: 2025-02-15 18:14:12                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -6071,7 +6071,7 @@ BEGIN
     IF SERVERPROPERTY('EngineEdition') <> 5
     BEGIN
       SELECT @CurrentDatabaseMirroringRole = UPPER(mirroring_role_desc)
-      FROM sys.database_mirroring
+      FROM sys.database_mirroring database_mirroring
       INNER JOIN sys.databases databases ON database_mirroring.database_id = databases.database_id
       WHERE databases.[name] = @CurrentDatabaseName
     END
@@ -6614,7 +6614,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2025-02-15 17:41:50                                                               //--
+  --// Version: 2025-02-15 18:14:12                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -8050,7 +8050,7 @@ BEGIN
     IF SERVERPROPERTY('EngineEdition') <> 5
     BEGIN
       SELECT @CurrentDatabaseMirroringRole = UPPER(mirroring_role_desc)
-      FROM sys.database_mirroring
+      FROM sys.database_mirroring database_mirroring
       INNER JOIN sys.databases databases ON database_mirroring.database_id = databases.database_id
       WHERE databases.[name] = @CurrentDatabaseName
     END
