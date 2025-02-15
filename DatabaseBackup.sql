@@ -90,7 +90,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2025-02-12 21:17:38                                                               //--
+  --// Version: 2025-02-15 18:14:12                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -2873,8 +2873,9 @@ BEGIN
     FROM CurrentDatabase
 
     SELECT @CurrentDatabaseMirroringRole = UPPER(mirroring_role_desc)
-    FROM sys.database_mirroring
-    WHERE database_id = DB_ID(@CurrentDatabaseName)
+    FROM sys.database_mirroring database_mirroring
+    INNER JOIN sys.databases databases ON database_mirroring.database_id = databases.database_id
+    WHERE databases.[name] = @CurrentDatabaseName
 
     IF EXISTS (SELECT * FROM msdb.dbo.log_shipping_primary_databases WHERE primary_database = @CurrentDatabaseName)
     BEGIN

@@ -10,7 +10,7 @@ License: https://ola.hallengren.com/license.html
 
 GitHub: https://github.com/olahallengren/sql-server-maintenance-solution
 
-Version: 2025-02-12 21:17:38
+Version: 2025-02-15 18:14:12
 
 You can contact me by e-mail at ola@hallengren.com.
 
@@ -137,7 +137,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2025-02-12 21:17:38                                                               //--
+  --// Version: 2025-02-15 18:14:12                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -483,7 +483,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2025-02-12 21:17:38                                                               //--
+  --// Version: 2025-02-15 18:14:12                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -3266,8 +3266,9 @@ BEGIN
     FROM CurrentDatabase
 
     SELECT @CurrentDatabaseMirroringRole = UPPER(mirroring_role_desc)
-    FROM sys.database_mirroring
-    WHERE database_id = DB_ID(@CurrentDatabaseName)
+    FROM sys.database_mirroring database_mirroring
+    INNER JOIN sys.databases databases ON database_mirroring.database_id = databases.database_id
+    WHERE databases.[name] = @CurrentDatabaseName
 
     IF EXISTS (SELECT * FROM msdb.dbo.log_shipping_primary_databases WHERE primary_database = @CurrentDatabaseName)
     BEGIN
@@ -4714,7 +4715,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2025-02-12 21:17:38                                                               //--
+  --// Version: 2025-02-15 18:14:12                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -6070,8 +6071,9 @@ BEGIN
     IF SERVERPROPERTY('EngineEdition') <> 5
     BEGIN
       SELECT @CurrentDatabaseMirroringRole = UPPER(mirroring_role_desc)
-      FROM sys.database_mirroring
-      WHERE database_id = DB_ID(@CurrentDatabaseName)
+      FROM sys.database_mirroring database_mirroring
+      INNER JOIN sys.databases databases ON database_mirroring.database_id = databases.database_id
+      WHERE databases.[name] = @CurrentDatabaseName
     END
 
     IF @CurrentAvailabilityGroup IS NOT NULL
@@ -6612,7 +6614,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2025-02-12 21:17:38                                                               //--
+  --// Version: 2025-02-15 18:14:12                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -8048,8 +8050,9 @@ BEGIN
     IF SERVERPROPERTY('EngineEdition') <> 5
     BEGIN
       SELECT @CurrentDatabaseMirroringRole = UPPER(mirroring_role_desc)
-      FROM sys.database_mirroring
-      WHERE database_id = DB_ID(@CurrentDatabaseName)
+      FROM sys.database_mirroring database_mirroring
+      INNER JOIN sys.databases databases ON database_mirroring.database_id = databases.database_id
+      WHERE databases.[name] = @CurrentDatabaseName
     END
 
     IF @CurrentAvailabilityGroup IS NOT NULL
@@ -9370,5 +9373,29 @@ BEGIN
   END
 
 END
+GO
+
+DECLARE @job_id uniqueidentifier
+DECLARE @step_id int
+DECLARE @command nvarchar(max)
+
+DECLARE JobCursor CURSOR FAST_FORWARD FOR SELECT job_id, step_id, command FROM msdb.dbo.sysjobsteps WHERE command LIKE '%DatabaseBackup%@CheckSum%' COLLATE SQL_Latin1_General_CP1_CS_AS
+
+OPEN JobCursor
+
+FETCH JobCursor INTO @job_id, @step_id, @command
+
+WHILE @@FETCH_STATUS = 0
+BEGIN
+  SET @command = REPLACE(@command, '@CheckSum', '@Checksum')
+
+  EXECUTE msdb.dbo.sp_update_jobstep @job_id = @job_id, @step_id = @step_id, @command = @command
+
+  FETCH NEXT FROM JobCursor INTO @job_id, @step_id, @command
+END
+
+CLOSE JobCursor
+
+DEALLOCATE JobCursor
 GO
 
