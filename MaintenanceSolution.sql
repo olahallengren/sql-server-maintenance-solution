@@ -10,7 +10,7 @@ License: https://ola.hallengren.com/license.html
 
 GitHub: https://github.com/olahallengren/sql-server-maintenance-solution
 
-Version: 2025-04-26 16:58:28
+Version: 2025-04-26 17:20:34
 
 You can contact me by e-mail at ola@hallengren.com.
 
@@ -137,7 +137,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2025-04-26 16:58:28                                                               //--
+  --// Version: 2025-04-26 17:20:34                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -483,7 +483,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2025-04-26 16:58:28                                                               //--
+  --// Version: 2025-04-26 17:20:34                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -4706,7 +4706,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2025-04-26 16:58:28                                                               //--
+  --// Version: 2025-04-26 17:20:34                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -6605,7 +6605,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2025-04-26 16:58:28                                                               //--
+  --// Version: 2025-04-26 17:20:34                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -9369,24 +9369,29 @@ GO
 DECLARE @job_id uniqueidentifier
 DECLARE @step_id int
 DECLARE @command nvarchar(max)
+DECLARE @AmazonRDS bit = CASE WHEN SERVERPROPERTY('EngineEdition') IN (5, 8) THEN 0 WHEN EXISTS (SELECT * FROM sys.databases WHERE [name] = 'rdsadmin') AND SUSER_SNAME(0x01) = 'rdsa' THEN 1 ELSE 0 END
 
-DECLARE JobCursor CURSOR FAST_FORWARD FOR SELECT job_id, step_id, command FROM msdb.dbo.sysjobsteps WHERE command LIKE '%DatabaseBackup%@CheckSum%' COLLATE SQL_Latin1_General_CP1_CS_AS
-
-OPEN JobCursor
-
-FETCH JobCursor INTO @job_id, @step_id, @command
-
-WHILE @@FETCH_STATUS = 0
+IF @AmazonRDS = 0
 BEGIN
-  SET @command = REPLACE(@command, '@CheckSum', '@Checksum')
 
-  EXECUTE msdb.dbo.sp_update_jobstep @job_id = @job_id, @step_id = @step_id, @command = @command
+  DECLARE JobCursor CURSOR FAST_FORWARD FOR SELECT job_id, step_id, command FROM msdb.dbo.sysjobsteps WHERE command LIKE '%DatabaseBackup%@CheckSum%' COLLATE SQL_Latin1_General_CP1_CS_AS
 
-  FETCH NEXT FROM JobCursor INTO @job_id, @step_id, @command
+  OPEN JobCursor
+
+  FETCH JobCursor INTO @job_id, @step_id, @command
+
+  WHILE @@FETCH_STATUS = 0
+  BEGIN
+    SET @command = REPLACE(@command, '@CheckSum', '@Checksum')
+
+    EXECUTE msdb.dbo.sp_update_jobstep @job_id = @job_id, @step_id = @step_id, @command = @command
+
+    FETCH NEXT FROM JobCursor INTO @job_id, @step_id, @command
+  END
+
+  CLOSE JobCursor
+
+  DEALLOCATE JobCursor
 END
-
-CLOSE JobCursor
-
-DEALLOCATE JobCursor
 GO
 
