@@ -79,6 +79,7 @@ ALTER PROCEDURE [dbo].[DatabaseBackup]
 @StringDelimiter nvarchar(max) = ',',
 @DatabaseOrder nvarchar(max) = NULL,
 @DatabasesInParallel nvarchar(max) = 'N',
+@EscapeInvalidDirChars nvarchar(max) = N'N',
 @LogToTable nvarchar(max) = 'N',
 @Execute nvarchar(max) = 'Y'
 
@@ -352,6 +353,7 @@ BEGIN
   SET @Parameters += ', @StringDelimiter = ' + ISNULL('''' + REPLACE(@StringDelimiter,'''','''''') + '''','NULL')
   SET @Parameters += ', @DatabaseOrder = ' + ISNULL('''' + REPLACE(@DatabaseOrder,'''','''''') + '''','NULL')
   SET @Parameters += ', @DatabasesInParallel = ' + ISNULL('''' + REPLACE(@DatabasesInParallel,'''','''''') + '''','NULL')
+  SET @Parameters += ', @EscapeInvalidDirChars = ' + ISNULL('''' + REPLACE(@EscapeInvalidDirChars,'''','''''') + '''','NULL')
   SET @Parameters += ', @LogToTable = ' + ISNULL('''' + REPLACE(@LogToTable,'''','''''') + '''','NULL')
   SET @Parameters += ', @Execute = ' + ISNULL('''' + REPLACE(@Execute,'''','''''') + '''','NULL')
 
@@ -522,18 +524,77 @@ BEGIN
     INNER JOIN sys.availability_groups availability_groups ON availability_replicas.group_id = availability_groups.group_id
   END
 
-  INSERT INTO @tmpDatabases (DatabaseName, DatabaseNameFS, DatabaseType, AvailabilityGroup, [Order], Selected, Completed)
-  SELECT [name] AS DatabaseName,
-         RTRIM(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE([name],'\',''),'/',''),':',''),'*',''),'?',''),'"',''),'<',''),'>',''),'|','')) AS DatabaseNameFS,
-         CASE WHEN name IN('master','msdb','model') OR is_distributor = 1 THEN 'S' ELSE 'U' END AS DatabaseType,
-         NULL AS AvailabilityGroup,
-         0 AS [Order],
-         0 AS Selected,
-         0 AS Completed
-  FROM sys.databases
-  WHERE [name] <> 'tempdb'
-  AND source_database_id IS NULL
-  ORDER BY [name] ASC
+  if @EscapeInvalidDirChars = 'N'
+    INSERT INTO @tmpDatabases (DatabaseName, DatabaseNameFS, DatabaseType, AvailabilityGroup, [Order], Selected, Completed)
+    SELECT [name] AS DatabaseName,
+           RTRIM(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE([name],'\',''),'/',''),':',''),'*',''),'?',''),'"',''),'<',''),'>',''),'|','')) AS DatabaseNameFS,
+            CASE WHEN name IN('master','msdb','model') OR is_distributor = 1 THEN 'S' ELSE 'U' END AS DatabaseType,
+           NULL AS AvailabilityGroup,
+           0 AS [Order],
+           0 AS Selected,
+           0 AS Completed
+    FROM sys.databases
+    WHERE [name] <> 'tempdb'
+    AND source_database_id IS NULL
+    ORDER BY [name] ASC
+
+  else begin
+
+    declare @i int = 0x00,
+      @invalidDirChars nvarchar(99) = N'';
+    -- from https://docs.microsoft.com/en-us/windows/win32/fileio/naming-a-file
+    while @i < 0x20 begin
+      set @invalidDirChars += nchar(@i);
+      set @i += 1
+    end;
+    set @invalidDirChars += N'"''*/:<>?\|';
+    set @i = 0x80
+    while @i < 0xa0 begin
+      set @invalidDirChars += nchar(@i);
+      set @i += 1
+    end;
+
+    with [x] ([DatabaseType], [DatabaseName], [DatabaseNameFS], [index]) as (
+      select CASE WHEN db.[name] IN('master', 'msdb', 'model') OR db.[is_distributor] = 1 THEN 'S' ELSE 'U' END,
+        db.[name],
+        cast(db.[name] as nvarchar(255)),
+        patindex(N'%[' + @invalidDirChars + N']%', replace(db.[name], N'%', N'%25'))
+      from [master].[sys].[databases] db
+      where db.[name] <> N'tempdb'
+        and db.[source_database_id] is null
+      union all
+      select x1.[DatabaseType],
+        x1.[DatabaseName],
+        cast(replace(x1.[DatabaseNameFS],
+          substring(x1.[DatabaseNameFS], x1.[index], 1),
+          N'%' + convert(nchar(2), cast(substring(x1.[DatabaseNameFS], x1.[index], 1) as varbinary(2)), 2)
+        ) as nvarchar(255)),
+        patindex(N'%[' + @invalidDirChars + N']%',
+          replace(x1.[DatabaseNameFS],
+            substring(x1.[DatabaseNameFS], x1.[index], 1),
+            N'%xx'
+          )
+        )
+      from [x] x1
+      where x1.[index] > 0
+    )
+    INSERT INTO @tmpDatabases (DatabaseName, DatabaseNameFS, DatabaseType, AvailabilityGroup, [Order], Selected, Completed)
+    select x2.[DatabaseName],
+      case
+        when x2.[DatabaseNameFS] in (N'CON', N'PRN', N'AUX', N'NUL', N'COM1', N'COM2', N'COM3', N'COM4', N'COM5', N'COM6', N'COM7', N'COM8', N'COM9', N'LPT1', N'LPT2', N'LPT3', N'LPT4', N'LPT5', N'LPT6', N'LPT7', N'LPT8', N'LPT9')
+        then substring(x2.[DatabaseNameFS], 1, datalength(x2.[DatabaseNameFS]) / 2 - 1) + N'%' + convert(nchar(2), cast(substring(x2.[DatabaseNameFS], datalength(x2.[DatabaseNameFS]) / 2 - 1, 1) as varbinary(2)), 2)
+        else x2.[DatabaseNameFS]
+      end [DatabaseNameFS],
+      x2.[DatabaseType],
+      NULL AS AvailabilityGroup,
+      0 AS [Order],
+      0 AS Selected,
+      0 AS Completed
+    from [x] x2
+    where x2.[index] = 0
+    order by x2.[DatabaseName] asc;
+
+  end;
 
   UPDATE tmpDatabases
   SET AvailabilityGroup = CASE WHEN EXISTS (SELECT * FROM @tmpDatabasesAvailabilityGroups WHERE DatabaseName = tmpDatabases.DatabaseName) THEN 1 ELSE 0 END
@@ -2360,6 +2421,14 @@ BEGIN
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
     SELECT 'The value for the parameter @DatabasesInParallel is not supported.', 16, 2
+  END
+
+  ----------------------------------------------------------------------------------------------------
+
+  IF @EscapeInvalidDirChars NOT IN('Y','N') OR @EscapeInvalidDirChars IS NULL
+  BEGIN
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'The value for the parameter @EscapeInvalidDirChars is not supported.', 16, 1
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -4271,4 +4340,3 @@ BEGIN
 
 END
 GO
-
