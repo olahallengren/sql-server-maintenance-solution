@@ -213,6 +213,13 @@ BEGIN
                                        Completed bit,
                                        PRIMARY KEY(Selected, Completed, [Order], ID))
 
+  DECLARE @tmpStatisticsCache TABLE (ObjectID int NOT NULL,
+                                     StatisticsID int NOT NULL,
+                                     PartitionNumber int NOT NULL DEFAULT 0,
+                                     [Rows] bigint NULL DEFAULT 0,
+                                     ModificationCounter bigint NULL DEFAULT 0,
+                                     PRIMARY KEY(ObjectID, StatisticsID, PartitionNumber))
+
   DECLARE @SelectedDatabases TABLE (DatabaseName nvarchar(max),
                                     DatabaseType nvarchar(max),
                                     AvailabilityGroup nvarchar(max),
@@ -1610,7 +1617,7 @@ BEGIN
 
         IF (EXISTS(SELECT * FROM @ActionsPreferred) AND @UpdateStatistics = 'COLUMNS') OR @UpdateStatistics = 'ALL'
         BEGIN
-          SET @CurrentCommand = @CurrentCommand + ' UNION '
+          SET @CurrentCommand = @CurrentCommand + ' UNION ALL '
         END
 
         IF @UpdateStatistics IN('ALL','COLUMNS')
@@ -1913,21 +1920,34 @@ BEGIN
 
           IF @PartitionLevelStatistics = 1 AND @CurrentIsIncremental = 1
           BEGIN
-            SET @CurrentCommand += 'SELECT @ParamRowCount = [rows], @ParamModificationCounter = modification_counter FROM sys.dm_db_incremental_stats_properties (@ParamObjectID, @ParamStatisticsID) WHERE partition_number = @ParamPartitionNumber'
+            SET @CurrentCommand += 'SELECT object_id, stats_id, partition_number, [rows], modification_counter FROM sys.dm_db_incremental_stats_properties (@ParamObjectID, @ParamStatisticsID)'
           END
           ELSE
           IF (@Version >= 10.504000 AND @Version < 11) OR @Version >= 11.03000
           BEGIN
-            SET @CurrentCommand += 'SELECT @ParamRowCount = [rows], @ParamModificationCounter = modification_counter FROM sys.dm_db_stats_properties (@ParamObjectID, @ParamStatisticsID)'
+            SET @CurrentCommand += 'SELECT object_id, stats_id, 0 AS partition_number, [rows], modification_counter FROM sys.dm_db_stats_properties (@ParamObjectID, @ParamStatisticsID)'
           END
           ELSE
           BEGIN
-            SET @CurrentCommand += 'SELECT @ParamRowCount = rowcnt, @ParamModificationCounter = rowmodctr FROM sys.sysindexes sysindexes WHERE sysindexes.[id] = @ParamObjectID AND sysindexes.[indid] = @ParamStatisticsID'
+            SET @CurrentCommand += 'SELECT id, indid, 0 AS partition_number, rowcnt, rowmodctr FROM sys.sysindexes sysindexes WHERE sysindexes.[id] = @ParamObjectID AND sysindexes.[indid] = @ParamStatisticsID'
           END
 
           BEGIN TRY
-            EXECUTE @CurrentDatabase_sp_executesql @stmt = @CurrentCommand, @params = N'@ParamObjectID int, @ParamStatisticsID int, @ParamPartitionNumber int, @ParamRowCount bigint OUTPUT, @ParamModificationCounter bigint OUTPUT', @ParamObjectID = @CurrentObjectID, @ParamStatisticsID = @CurrentStatisticsID, @ParamPartitionNumber = @CurrentPartitionNumber, @ParamRowCount = @CurrentRowCount OUTPUT, @ParamModificationCounter = @CurrentModificationCounter OUTPUT
-
+            IF NOT EXISTS (SELECT * FROM @tmpStatisticsCache WHERE ObjectID = @CurrentObjectID AND StatisticsID = @CurrentStatisticsID)
+            BEGIN
+                DELETE FROM @tmpStatisticsCache
+                
+                INSERT INTO @tmpStatisticsCache (ObjectID, StatisticsID, PartitionNumber, [Rows], ModificationCounter)
+                EXECUTE @CurrentDatabase_sp_executesql @stmt = @CurrentCommand, @params = N'@ParamObjectID int, @ParamStatisticsID int', @ParamObjectID = @CurrentObjectID, @ParamStatisticsID = @CurrentStatisticsID
+            END
+            
+            SELECT TOP (1) @CurrentRowCount = [Rows],
+                           @CurrentModificationCounter = ModificationCounter
+            FROM @tmpStatisticsCache
+            WHERE ObjectID = @CurrentObjectID
+              AND StatisticsID = @CurrentStatisticsID
+              AND PartitionNumber = ISNULL(@CurrentPartitionNumber, 0)
+            
             IF @CurrentRowCount IS NULL SET @CurrentRowCount = 0
             IF @CurrentModificationCounter IS NULL SET @CurrentModificationCounter = 0
           END TRY
@@ -2468,6 +2488,7 @@ BEGIN
     SET @CurrentCommand = NULL
 
     DELETE FROM @tmpIndexesStatistics
+    DELETE FROM @tmpStatisticsCache
 
   END
 
