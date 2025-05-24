@@ -10,7 +10,7 @@ License: https://ola.hallengren.com/license.html
 
 GitHub: https://github.com/olahallengren/sql-server-maintenance-solution
 
-Version: 2025-05-24 15:12:33
+Version: 2025-05-24 16:07:41
 
 You can contact me by e-mail at ola@hallengren.com.
 
@@ -137,7 +137,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2025-05-24 15:12:33                                                               //--
+  --// Version: 2025-05-24 16:07:41                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -484,7 +484,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2025-05-24 15:12:33                                                               //--
+  --// Version: 2025-05-24 16:07:41                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -1647,13 +1647,13 @@ BEGIN
   IF @CompressionAlgorithm = 'ZSTD' AND NOT (@Version >= 17)
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @CompressionAlgorithm is not supported. Setting the compression algorithm to ZSTD is only supported in SQL Server 2025 and later.', 16, 3
+    SELECT 'The value for the parameter @CompressionAlgorithm is not supported. Setting the compression algorithm to ZSTD is only supported in SQL Server 2025 and later.', 16, 4
   END
 
   IF @CompressionAlgorithm IS NOT NULL AND @BackupSoftware IS NOT NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @CompressionAlgorithm is not supported. Setting the compression algorithm is only supported with SQL Server native backup', 16, 4
+    SELECT 'The value for the parameter @CompressionAlgorithm is not supported. Setting the compression algorithm is only supported with SQL Server native backup', 16, 5
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -1661,13 +1661,13 @@ BEGIN
   IF @CompressionLevel IS NOT NULL AND @BackupSoftware IS NOT NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @CompressionLevel is not supported. For third-party backup software, use the parameter @CompressionLevelNumeric.', 16, 3
+    SELECT 'The value for the parameter @CompressionLevel is not supported. For third-party backup software, use the parameter @CompressionLevelNumeric.', 16, 1
   END
 
   IF @CompressionLevel NOT IN ('LOW','MEDIUM','HIGH')
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @CompressionLevel is not supported. The supported values are LOW, MEDIUM and HIGH.', 16, 3
+    SELECT 'The value for the parameter @CompressionLevel is not supported. The supported values are LOW, MEDIUM and HIGH.', 16, 2
   END
 
   IF @CompressionLevel IS NOT NULL AND NOT (@Version >= 17)
@@ -4754,7 +4754,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2025-05-24 15:12:33                                                               //--
+  --// Version: 2025-05-24 16:07:41                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -6653,7 +6653,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2025-05-24 15:12:33                                                               //--
+  --// Version: 2025-05-24 16:07:41                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
