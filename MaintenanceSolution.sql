@@ -10,7 +10,7 @@ License: https://ola.hallengren.com/license.html
 
 GitHub: https://github.com/olahallengren/sql-server-maintenance-solution
 
-Version: 2025-01-28 20:19:42
+Version: 2025-05-24 16:07:41
 
 You can contact me by e-mail at ola@hallengren.com.
 
@@ -32,15 +32,15 @@ DECLARE @LogToTable nvarchar(max)          = 'Y'         -- Log commands to a ta
 
 DECLARE @ErrorMessage nvarchar(max)
 
-IF IS_SRVROLEMEMBER('sysadmin') = 0 AND NOT (DB_ID('rdsadmin') IS NOT NULL AND SUSER_SNAME(0x01) = 'rdsa')
+IF IS_SRVROLEMEMBER('sysadmin') = 0 AND NOT (EXISTS (SELECT * FROM sys.databases WHERE [name] = 'rdsadmin') AND SUSER_SNAME(0x01) = 'rdsa')
 BEGIN
   SET @ErrorMessage = 'You need to be a member of the SysAdmin server role to install the SQL Server Maintenance Solution.'
   RAISERROR(@ErrorMessage,16,1) WITH NOWAIT
 END
 
-IF NOT (SELECT [compatibility_level] FROM sys.databases WHERE database_id = DB_ID()) >= 90
+IF NOT (SELECT [compatibility_level] FROM sys.databases WHERE [name] = DB_NAME()) >= 90
 BEGIN
-  SET @ErrorMessage = 'The database ' + QUOTENAME(DB_NAME(DB_ID())) + ' has to be in compatibility level 90 or higher.'
+  SET @ErrorMessage = 'The database ' + QUOTENAME(DB_NAME()) + ' has to be in compatibility level 90 or higher.'
   RAISERROR(@ErrorMessage,16,1) WITH NOWAIT
 END
 
@@ -67,7 +67,7 @@ INSERT INTO #Config ([Name], [Value]) VALUES('BackupURL', @BackupURL)
 INSERT INTO #Config ([Name], [Value]) VALUES('CleanupTime', @CleanupTime)
 INSERT INTO #Config ([Name], [Value]) VALUES('OutputFileDirectory', @OutputFileDirectory)
 INSERT INTO #Config ([Name], [Value]) VALUES('LogToTable', @LogToTable)
-INSERT INTO #Config ([Name], [Value]) VALUES('DatabaseName', DB_NAME(DB_ID()))
+INSERT INTO #Config ([Name], [Value]) VALUES('DatabaseName', DB_NAME())
 GO
 SET ANSI_NULLS ON
 GO
@@ -137,7 +137,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2025-01-28 20:19:42                                                               //--
+  --// Version: 2025-05-24 16:07:41                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -175,10 +175,10 @@ BEGIN
   --// Check core requirements                                                                    //--
   ----------------------------------------------------------------------------------------------------
 
-  IF NOT (SELECT [compatibility_level] FROM sys.databases WHERE database_id = DB_ID()) >= 90
+  IF NOT (SELECT [compatibility_level] FROM sys.databases WHERE [name] = DB_NAME()) >= 90
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The database ' + QUOTENAME(DB_NAME(DB_ID())) + ' has to be in compatibility level 90 or higher.', 16, 1
+    SELECT 'The database ' + QUOTENAME(DB_NAME()) + ' has to be in compatibility level 90 or higher.', 16, 1
   END
 
   IF NOT (SELECT uses_ansi_nulls FROM sys.sql_modules WHERE [object_id] = @@PROCID) = 1
@@ -410,17 +410,18 @@ ALTER PROCEDURE [dbo].[DatabaseBackup]
 @CleanupMode nvarchar(max) = 'AFTER_BACKUP',
 @Compress nvarchar(max) = NULL,
 @CompressionAlgorithm nvarchar(max) = NULL,
+@CompressionLevel nvarchar(max) = NULL,
 @CopyOnly nvarchar(max) = 'N',
 @ChangeBackupType nvarchar(max) = 'N',
 @BackupSoftware nvarchar(max) = NULL,
-@Checksum nvarchar(max) = 'N',
+@Checksum nvarchar(max) = NULL,
 @BlockSize int = NULL,
 @BufferCount int = NULL,
 @MaxTransferSize int = NULL,
 @NumberOfFiles int = NULL,
 @MinBackupSizeForMultipleFiles int = NULL,
 @MaxFileSize int = NULL,
-@CompressionLevel int = NULL,
+@CompressionLevelNumeric int = NULL,
 @Description nvarchar(max) = NULL,
 @BackupSetName nvarchar(max) = NULL,
 @Threads int = NULL,
@@ -483,7 +484,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2025-01-28 20:19:42                                                               //--
+  --// Version: 2025-05-24 16:07:41                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -536,7 +537,6 @@ BEGIN
   DECLARE @CurrentDifferentialBaseLSN numeric(25,0)
   DECLARE @CurrentDifferentialBaseIsSnapshot bit
   DECLARE @CurrentLogLSN numeric(25,0)
-  DECLARE @BackupInProcess bit
   DECLARE @CurrentLatestBackup datetime2
   DECLARE @CurrentDatabaseNameFS nvarchar(max)
   DECLARE @CurrentDirectoryStructure nvarchar(max)
@@ -670,7 +670,7 @@ BEGIN
     SET @HostPlatform = 'Windows'
   END
 
-  DECLARE @AmazonRDS bit = CASE WHEN DB_ID('rdsadmin') IS NOT NULL AND SUSER_SNAME(0x01) = 'rdsa' THEN 1 ELSE 0 END
+  DECLARE @AmazonRDS bit = CASE WHEN EXISTS (SELECT * FROM sys.databases WHERE [name] = 'rdsadmin') AND SUSER_SNAME(0x01) = 'rdsa' THEN 1 ELSE 0 END
 
   ----------------------------------------------------------------------------------------------------
   --// Log initial information                                                                    //--
@@ -684,6 +684,7 @@ BEGIN
   SET @Parameters += ', @CleanupMode = ' + ISNULL('''' + REPLACE(@CleanupMode,'''','''''') + '''','NULL')
   SET @Parameters += ', @Compress = ' + ISNULL('''' + REPLACE(@Compress,'''','''''') + '''','NULL')
   SET @Parameters += ', @CompressionAlgorithm = ' + ISNULL('''' + REPLACE(@CompressionAlgorithm,'''','''''') + '''','NULL')
+  SET @Parameters += ', @CompressionLevel = ' + ISNULL('''' + REPLACE(@CompressionLevel,'''','''''') + '''','NULL')
   SET @Parameters += ', @CopyOnly = ' + ISNULL('''' + REPLACE(@CopyOnly,'''','''''') + '''','NULL')
   SET @Parameters += ', @ChangeBackupType = ' + ISNULL('''' + REPLACE(@ChangeBackupType,'''','''''') + '''','NULL')
   SET @Parameters += ', @BackupSoftware = ' + ISNULL('''' + REPLACE(@BackupSoftware,'''','''''') + '''','NULL')
@@ -694,7 +695,7 @@ BEGIN
   SET @Parameters += ', @NumberOfFiles = ' + ISNULL(CAST(@NumberOfFiles AS nvarchar),'NULL')
   SET @Parameters += ', @MinBackupSizeForMultipleFiles = ' + ISNULL(CAST(@MinBackupSizeForMultipleFiles AS nvarchar),'NULL')
   SET @Parameters += ', @MaxFileSize = ' + ISNULL(CAST(@MaxFileSize AS nvarchar),'NULL')
-  SET @Parameters += ', @CompressionLevel = ' + ISNULL(CAST(@CompressionLevel AS nvarchar),'NULL')
+  SET @Parameters += ', @CompressionLevelNumeric = ' + ISNULL(CAST(@CompressionLevelNumeric AS nvarchar),'NULL')
   SET @Parameters += ', @Description = ' + ISNULL('''' + REPLACE(@Description,'''','''''') + '''','NULL')
   SET @Parameters += ', @BackupSetName = ' + ISNULL('''' + REPLACE(@BackupSetName,'''','''''') + '''','NULL')
   SET @Parameters += ', @Threads = ' + ISNULL(CAST(@Threads AS nvarchar),'NULL')
@@ -764,7 +765,7 @@ BEGIN
   SET @StartMessage = 'Platform: ' + @HostPlatform
   RAISERROR('%s',10,1,@StartMessage) WITH NOWAIT
 
-  SET @StartMessage = 'Procedure: ' + QUOTENAME(DB_NAME(DB_ID())) + '.' + QUOTENAME(@SchemaName) + '.' + QUOTENAME(@ObjectName)
+  SET @StartMessage = 'Procedure: ' + QUOTENAME(DB_NAME()) + '.' + QUOTENAME(@SchemaName) + '.' + QUOTENAME(@ObjectName)
   RAISERROR('%s',10,1,@StartMessage) WITH NOWAIT
 
   SET @StartMessage = 'Parameters: ' + @Parameters
@@ -782,10 +783,10 @@ BEGIN
   --// Check core requirements                                                                    //--
   ----------------------------------------------------------------------------------------------------
 
-  IF NOT (SELECT [compatibility_level] FROM sys.databases WHERE database_id = DB_ID()) >= 90
+  IF NOT (SELECT [compatibility_level] FROM sys.databases WHERE [name] = DB_NAME()) >= 90
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The database ' + QUOTENAME(DB_NAME(DB_ID())) + ' has to be in compatibility level 90 or higher.', 16, 1
+    SELECT 'The database ' + QUOTENAME(DB_NAME()) + ' has to be in compatibility level 90 or higher.', 16, 1
   END
 
   IF NOT (SELECT uses_ansi_nulls FROM sys.sql_modules WHERE [object_id] = @@PROCID) = 1
@@ -1466,6 +1467,16 @@ BEGIN
   END
 
   ----------------------------------------------------------------------------------------------------
+  --// Get default checksum                                                                       //--
+  ----------------------------------------------------------------------------------------------------
+
+  IF @Checksum IS NULL
+  BEGIN
+    SELECT @Checksum = CASE WHEN EXISTS(SELECT * FROM sys.configurations WHERE name = 'backup checksum default' AND value_in_use = 1) THEN 'Y'
+                            WHEN NOT EXISTS(SELECT * FROM sys.configurations WHERE name = 'backup checksum default' AND value_in_use = 1) THEN 'N' END
+  END
+
+  ----------------------------------------------------------------------------------------------------
   --// Get default compression                                                                    //--
   ----------------------------------------------------------------------------------------------------
 
@@ -1473,8 +1484,8 @@ BEGIN
   BEGIN
     SELECT @Compress = CASE WHEN @BackupSoftware IS NULL AND EXISTS(SELECT * FROM sys.configurations WHERE name = 'backup compression default' AND value_in_use = 1) THEN 'Y'
                             WHEN @BackupSoftware IS NULL AND NOT EXISTS(SELECT * FROM sys.configurations WHERE name = 'backup compression default' AND value_in_use = 1) THEN 'N'
-                            WHEN @BackupSoftware IS NOT NULL AND (@CompressionLevel IS NULL OR @CompressionLevel > 0)  THEN 'Y'
-                            WHEN @BackupSoftware IS NOT NULL AND @CompressionLevel = 0  THEN 'N' END
+                            WHEN @BackupSoftware IS NOT NULL AND (@CompressionLevelNumeric IS NULL OR @CompressionLevelNumeric > 0)  THEN 'Y'
+                            WHEN @BackupSoftware IS NOT NULL AND @CompressionLevelNumeric = 0  THEN 'N' END
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -1483,8 +1494,18 @@ BEGIN
 
   IF @CompressionAlgorithm IS NULL AND @BackupSoftware IS NULL AND @Version >= 16
   BEGIN
-    SELECT @CompressionAlgorithm = CASE WHEN @BackupSoftware IS NULL AND EXISTS(SELECT * FROM sys.configurations WHERE name = 'backup compression algorithm' AND value_in_use = 1) THEN 'MS_XPRESS'
-                                        WHEN @BackupSoftware IS NULL AND EXISTS(SELECT * FROM sys.configurations WHERE name = 'backup compression algorithm' AND value_in_use = 2) THEN 'QAT_DEFLATE' END
+    SELECT @CompressionAlgorithm = CASE WHEN @BackupSoftware IS NULL AND EXISTS(SELECT * FROM sys.configurations WHERE name = 'backup compression algorithm' AND value_in_use IN (0, 1)) THEN 'MS_XPRESS'
+                                        WHEN @BackupSoftware IS NULL AND EXISTS(SELECT * FROM sys.configurations WHERE name = 'backup compression algorithm' AND value_in_use = 2) THEN 'QAT_DEFLATE'
+                                        WHEN @BackupSoftware IS NULL AND EXISTS(SELECT * FROM sys.configurations WHERE name = 'backup compression algorithm' AND value_in_use = 3) THEN 'ZSTD' END
+  END
+
+  ----------------------------------------------------------------------------------------------------
+  --// Get default compression level                                                              //--
+  ----------------------------------------------------------------------------------------------------
+
+  IF @CompressionLevel IS NULL AND @BackupSoftware IS NULL AND @Version >= 17
+  BEGIN
+    SET @CompressionLevel = 'LOW'
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -1591,13 +1612,13 @@ BEGIN
     SELECT 'The value for the parameter @Compress is not supported. Backup compression is not supported in this version and edition of SQL Server.', 16, 2
   END
 
-  IF @Compress = 'N' AND @BackupSoftware IN ('LITESPEED','SQLBACKUP','SQLSAFE') AND (@CompressionLevel IS NULL OR @CompressionLevel >= 1)
+  IF @Compress = 'N' AND @BackupSoftware IN ('LITESPEED','SQLBACKUP','SQLSAFE') AND (@CompressionLevelNumeric IS NULL OR @CompressionLevelNumeric >= 1)
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
     SELECT 'The value for the parameter @Compress is not supported.', 16, 3
   END
 
-  IF @Compress = 'Y' AND @BackupSoftware IN ('LITESPEED','SQLBACKUP','SQLSAFE') AND @CompressionLevel = 0
+  IF @Compress = 'Y' AND @BackupSoftware IN ('LITESPEED','SQLBACKUP','SQLSAFE') AND @CompressionLevelNumeric = 0
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
     SELECT 'The value for the parameter @Compress is not supported.', 16, 4
@@ -1605,10 +1626,10 @@ BEGIN
 
   ----------------------------------------------------------------------------------------------------
 
-  IF @CompressionAlgorithm NOT IN ('MS_XPRESS','QAT_DEFLATE')
+  IF @CompressionAlgorithm NOT IN ('MS_XPRESS','QAT_DEFLATE','ZSTD')
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @CompressionAlgorithm is not supported. The allowed values are MS_XPRESS and QAT_DEFLATE.', 16, 1
+    SELECT 'The value for the parameter @CompressionAlgorithm is not supported. The allowed values are MS_XPRESS, QAT_DEFLATE and ZSTD.', 16, 1
   END
 
   IF @CompressionAlgorithm IS NOT NULL AND NOT (@Version >= 16)
@@ -1623,10 +1644,36 @@ BEGIN
     SELECT 'The value for the parameter @CompressionAlgorithm is not supported. Setting the compression algorithm to QAT_DEFLATE is only supported in Standard and Enterprise Edition.', 16, 3
   END
 
+  IF @CompressionAlgorithm = 'ZSTD' AND NOT (@Version >= 17)
+  BEGIN
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'The value for the parameter @CompressionAlgorithm is not supported. Setting the compression algorithm to ZSTD is only supported in SQL Server 2025 and later.', 16, 4
+  END
+
   IF @CompressionAlgorithm IS NOT NULL AND @BackupSoftware IS NOT NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @CompressionAlgorithm is not supported. Setting the compression algorithm is only supported with SQL Server native backup', 16, 4
+    SELECT 'The value for the parameter @CompressionAlgorithm is not supported. Setting the compression algorithm is only supported with SQL Server native backup', 16, 5
+  END
+
+  ----------------------------------------------------------------------------------------------------
+
+  IF @CompressionLevel IS NOT NULL AND @BackupSoftware IS NOT NULL
+  BEGIN
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'The value for the parameter @CompressionLevel is not supported. For third-party backup software, use the parameter @CompressionLevelNumeric.', 16, 1
+  END
+
+  IF @CompressionLevel NOT IN ('LOW','MEDIUM','HIGH')
+  BEGIN
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'The value for the parameter @CompressionLevel is not supported. The supported values are LOW, MEDIUM and HIGH.', 16, 2
+  END
+
+  IF @CompressionLevel IS NOT NULL AND NOT (@Version >= 17)
+  BEGIN
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'The value for the parameter @CompressionLevel is not supported. Setting the compression level is only supported in SQL Server 2025 and later.', 16, 3
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -1891,34 +1938,34 @@ BEGIN
 
   ----------------------------------------------------------------------------------------------------
 
-  IF (@BackupSoftware IS NULL AND @CompressionLevel IS NOT NULL)
+  IF (@BackupSoftware IS NULL AND @CompressionLevelNumeric IS NOT NULL)
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @CompressionLevel is not supported.', 16, 1
+    SELECT 'The value for the parameter @CompressionLevelNumeric is not supported.', 16, 1
   END
 
-  IF @BackupSoftware = 'LITESPEED' AND (@CompressionLevel < 0  OR @CompressionLevel > 8)
+  IF @BackupSoftware = 'LITESPEED' AND (@CompressionLevelNumeric < 0  OR @CompressionLevelNumeric > 8)
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @CompressionLevel is not supported.', 16, 2
+    SELECT 'The value for the parameter @CompressionLevelNumeric is not supported.', 16, 2
   END
 
-  IF @BackupSoftware = 'SQLBACKUP' AND (@CompressionLevel < 0 OR @CompressionLevel > 4)
+  IF @BackupSoftware = 'SQLBACKUP' AND (@CompressionLevelNumeric < 0 OR @CompressionLevelNumeric > 4)
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @CompressionLevel is not supported.', 16, 3
+    SELECT 'The value for the parameter @CompressionLevelNumeric is not supported.', 16, 3
   END
 
-  IF @BackupSoftware = 'SQLSAFE' AND (@CompressionLevel < 1 OR @CompressionLevel > 4)
+  IF @BackupSoftware = 'SQLSAFE' AND (@CompressionLevelNumeric < 1 OR @CompressionLevelNumeric > 4)
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @CompressionLevel is not supported.', 16, 4
+    SELECT 'The value for the parameter @CompressionLevelNumeric is not supported.', 16, 4
   END
 
-  IF @CompressionLevel IS NOT NULL AND @BackupSoftware = 'DATA_DOMAIN_BOOST'
+  IF @CompressionLevelNumeric IS NOT NULL AND @BackupSoftware = 'DATA_DOMAIN_BOOST'
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @CompressionLevel is not supported.', 16, 5
+    SELECT 'The value for the parameter @CompressionLevelNumeric is not supported.', 16, 5
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -3199,13 +3246,11 @@ BEGIN
       EXECUTE @CurrentDatabase_sp_executesql @stmt = @CurrentCommand, @params = N'@ParamAllocatedExtentPageCount bigint OUTPUT, @ParamModifiedExtentPageCount bigint OUTPUT', @ParamAllocatedExtentPageCount = @CurrentAllocatedExtentPageCount OUTPUT, @ParamModifiedExtentPageCount = @CurrentModifiedExtentPageCount OUTPUT
     END
 
-    SET @BackupInProcess = CASE WHEN EXISTS(SELECT * FROM sys.dm_exec_requests WHERE database_id = DB_ID(@CurrentDatabaseName) AND command = 'BACKUP DATABASE') THEN 1 ELSE 0 END
-
     SET @CurrentBackupType = @BackupType
 
     IF @ChangeBackupType = 'Y'
     BEGIN
-      IF @CurrentBackupType = 'LOG' AND @CurrentRecoveryModel IN('FULL','BULK_LOGGED') AND @CurrentLogLSN IS NULL AND @CurrentDatabaseName <> 'master' AND @BackupInProcess = 0
+      IF @CurrentBackupType = 'LOG' AND @CurrentRecoveryModel IN('FULL','BULK_LOGGED') AND @CurrentLogLSN IS NULL AND @CurrentDatabaseName <> 'master'
       BEGIN
         SET @CurrentBackupType = 'DIFF'
       END
@@ -3266,8 +3311,9 @@ BEGIN
     FROM CurrentDatabase
 
     SELECT @CurrentDatabaseMirroringRole = UPPER(mirroring_role_desc)
-    FROM sys.database_mirroring
-    WHERE database_id = DB_ID(@CurrentDatabaseName)
+    FROM sys.database_mirroring database_mirroring
+    INNER JOIN sys.databases databases ON database_mirroring.database_id = databases.database_id
+    WHERE databases.[name] = @CurrentDatabaseName
 
     IF EXISTS (SELECT * FROM msdb.dbo.log_shipping_primary_databases WHERE primary_database = @CurrentDatabaseName)
     BEGIN
@@ -3317,12 +3363,6 @@ BEGIN
 
     SET @DatabaseMessage = 'Last log backup LSN: ' + ISNULL(CAST(@CurrentLogLSN AS nvarchar),'N/A')
     RAISERROR('%s',10,1,@DatabaseMessage) WITH NOWAIT
-
-    IF @CurrentBackupType = 'LOG' AND @BackupInProcess = 1
-    BEGIN
-      SET @DatabaseMessage = 'Full or differential backup in process: ' + CASE WHEN @BackupInProcess = 1 THEN 'Yes' WHEN @BackupInProcess = 0 THEN 'No' ELSE 'N/A' END
-      RAISERROR('%s',10,1,@DatabaseMessage) WITH NOWAIT
-    END
 
     IF @CurrentBackupType IN('DIFF','FULL') AND EXISTS(SELECT * FROM sys.all_columns WHERE object_id = OBJECT_ID('sys.dm_db_file_space_usage') AND name = 'modified_extent_page_count')
     BEGIN
@@ -4108,7 +4148,7 @@ BEGIN
 
           IF @Compress = 'Y' AND @CompressionAlgorithm IS NOT NULL
           BEGIN
-            SET @CurrentCommand += ' (ALGORITHM = ' + @CompressionAlgorithm + ')'
+            SET @CurrentCommand += ' (ALGORITHM = ' + @CompressionAlgorithm + CASE WHEN @CompressionLevel IS NOT NULL THEN ', LEVEL = ' + @CompressionLevel ELSE '' END + ')'
           END
 
           IF @CurrentBackupType = 'DIFF' SET @CurrentCommand += ', DIFFERENTIAL'
@@ -4174,7 +4214,7 @@ BEGIN
           IF @BlockSize IS NOT NULL SET @CurrentCommand += ', BLOCKSIZE = ' + CAST(@BlockSize AS nvarchar)
           SET @CurrentCommand += ''''
           IF @ReadWriteFileGroups = 'Y' AND @CurrentDatabaseName <> 'master' SET @CurrentCommand += ', @read_write_filegroups = 1'
-          IF @CompressionLevel IS NOT NULL SET @CurrentCommand += ', @compressionlevel = ' + CAST(@CompressionLevel AS nvarchar)
+          IF @CompressionLevelNumeric IS NOT NULL SET @CurrentCommand += ', @compressionlevel = ' + CAST(@CompressionLevelNumeric AS nvarchar)
           IF @AdaptiveCompression IS NOT NULL SET @CurrentCommand += ', @adaptivecompression = ''' + CASE WHEN @AdaptiveCompression = 'SIZE' THEN 'Size' WHEN @AdaptiveCompression = 'SPEED' THEN 'Speed' END + ''''
           IF @BufferCount IS NOT NULL SET @CurrentCommand += ', @buffercount = ' + CAST(@BufferCount AS nvarchar)
           IF @CurrentMaxTransferSize IS NOT NULL SET @CurrentCommand += ', @maxtransfersize = ' + CAST(@CurrentMaxTransferSize AS nvarchar)
@@ -4237,7 +4277,7 @@ BEGIN
           IF @NoRecovery = 'Y' AND @CurrentBackupType = 'LOG' SET @CurrentCommand += ', NORECOVERY'
           IF @Init = 'Y' SET @CurrentCommand += ', INIT'
           IF @Format = 'Y' SET @CurrentCommand += ', FORMAT'
-          IF @CompressionLevel IS NOT NULL SET @CurrentCommand += ', COMPRESSION = ' + CAST(@CompressionLevel AS nvarchar)
+          IF @CompressionLevelNumeric IS NOT NULL SET @CurrentCommand += ', COMPRESSION = ' + CAST(@CompressionLevelNumeric AS nvarchar)
           IF @Threads IS NOT NULL SET @CurrentCommand += ', THREADCOUNT = ' + CAST(@Threads AS nvarchar)
           IF @CurrentMaxTransferSize IS NOT NULL SET @CurrentCommand += ', MAXTRANSFERSIZE = ' + CAST(@CurrentMaxTransferSize AS nvarchar)
           IF @Description IS NOT NULL SET @CurrentCommand += ', DESCRIPTION = N''' + REPLACE(@Description,'''','''''') + ''''
@@ -4273,7 +4313,7 @@ BEGIN
           IF @ReadWriteFileGroups = 'Y' AND @CurrentDatabaseName <> 'master' SET @CurrentCommand += ', @readwritefilegroups = 1'
           SET @CurrentCommand += ', @checksum = ' + CASE WHEN @Checksum = 'Y' THEN '1' WHEN @Checksum = 'N' THEN '0' END
           SET @CurrentCommand += ', @copyonly = ' + CASE WHEN @CopyOnly = 'Y' THEN '1' WHEN @CopyOnly = 'N' THEN '0' END
-          IF @CompressionLevel IS NOT NULL SET @CurrentCommand += ', @compressionlevel = ' + CAST(@CompressionLevel AS nvarchar)
+          IF @CompressionLevelNumeric IS NOT NULL SET @CurrentCommand += ', @compressionlevel = ' + CAST(@CompressionLevelNumeric AS nvarchar)
           IF @Threads IS NOT NULL SET @CurrentCommand += ', @threads = ' + CAST(@Threads AS nvarchar)
           IF @Init = 'Y' SET @CurrentCommand += ', @overwrite = 1'
           IF @Description IS NOT NULL SET @CurrentCommand += ', @desc = N''' + REPLACE(@Description,'''','''''') + ''''
@@ -4324,9 +4364,11 @@ BEGIN
           SET @CurrentCommand += ' -a "NSR_SKIP_NON_BACKUPABLE_STATE_DB=TRUE"'
           SET @CurrentCommand += ' -a "BACKUP_PROMOTION=NONE"'
           IF @CopyOnly = 'Y' SET @CurrentCommand += ' -a "NSR_COPY_ONLY=TRUE"'
+          IF @BackupSetName IS NOT NULL SET @CurrentCommand += ' -N "' + REPLACE(@BackupSetName,'''','''''') + '"'
 
-          IF SERVERPROPERTY('InstanceName') IS NULL SET @CurrentCommand += ' "MSSQL' + ':' + REPLACE(REPLACE(@CurrentDatabaseName,'''',''''''),'.','\.') + '"'
-          IF SERVERPROPERTY('InstanceName') IS NOT NULL SET @CurrentCommand += ' "MSSQL$' + CAST(SERVERPROPERTY('InstanceName') AS nvarchar) + ':' + REPLACE(REPLACE(@CurrentDatabaseName,'''',''''''),'.','\.') + '"'
+          IF SERVERPROPERTY('InstanceName') IS NULL SET @CurrentCommand += ' "MSSQL'
+          IF SERVERPROPERTY('InstanceName') IS NOT NULL SET @CurrentCommand += ' "MSSQL$' + CAST(SERVERPROPERTY('InstanceName') AS nvarchar)
+          SET @CurrentCommand += ':' + REPLACE(REPLACE(@CurrentDatabaseName,'''',''''''),'.','\.') + '"'
 
           SET @CurrentCommand += ''''
 
@@ -4615,7 +4657,6 @@ BEGIN
     SET @CurrentDifferentialBaseLSN = NULL
     SET @CurrentDifferentialBaseIsSnapshot = NULL
     SET @CurrentLogLSN = NULL
-    SET @BackupInProcess = NULL
     SET @CurrentLatestBackup = NULL
     SET @CurrentDatabaseNameFS = NULL
     SET @CurrentDirectoryStructure = NULL
@@ -4713,7 +4754,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2025-01-28 20:19:42                                                               //--
+  --// Version: 2025-05-24 16:07:41                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -4865,7 +4906,7 @@ BEGIN
     SET @HostPlatform = 'Windows'
   END
 
-  DECLARE @AmazonRDS bit = CASE WHEN DB_ID('rdsadmin') IS NOT NULL AND SUSER_SNAME(0x01) = 'rdsa' THEN 1 ELSE 0 END
+  DECLARE @AmazonRDS bit = CASE WHEN SERVERPROPERTY('EngineEdition') IN (5, 8) THEN 0 WHEN EXISTS (SELECT * FROM sys.databases WHERE [name] = 'rdsadmin') AND SUSER_SNAME(0x01) = 'rdsa' THEN 1 ELSE 0 END
 
   ----------------------------------------------------------------------------------------------------
   --// Log initial information                                                                    //--
@@ -4909,7 +4950,7 @@ BEGIN
   SET @StartMessage = 'Platform: ' + @HostPlatform
   RAISERROR('%s',10,1,@StartMessage) WITH NOWAIT
 
-  SET @StartMessage = 'Procedure: ' + QUOTENAME(DB_NAME(DB_ID())) + '.' + QUOTENAME(@SchemaName) + '.' + QUOTENAME(@ObjectName)
+  SET @StartMessage = 'Procedure: ' + QUOTENAME(DB_NAME()) + '.' + QUOTENAME(@SchemaName) + '.' + QUOTENAME(@ObjectName)
   RAISERROR('%s',10,1,@StartMessage) WITH NOWAIT
 
   SET @StartMessage = 'Parameters: ' + @Parameters
@@ -4927,10 +4968,10 @@ BEGIN
   --// Check core requirements                                                                    //--
   ----------------------------------------------------------------------------------------------------
 
-  IF NOT (SELECT [compatibility_level] FROM sys.databases WHERE database_id = DB_ID()) >= 90
+  IF NOT (SELECT [compatibility_level] FROM sys.databases WHERE [name] = DB_NAME()) >= 90
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT  'The database ' + QUOTENAME(DB_NAME(DB_ID())) + ' has to be in compatibility level 90 or higher.', 16, 1
+    SELECT  'The database ' + QUOTENAME(DB_NAME()) + ' has to be in compatibility level 90 or higher.', 16, 1
   END
 
   IF NOT (SELECT uses_ansi_nulls FROM sys.sql_modules WHERE [object_id] = @@PROCID) = 1
@@ -6069,8 +6110,9 @@ BEGIN
     IF SERVERPROPERTY('EngineEdition') <> 5
     BEGIN
       SELECT @CurrentDatabaseMirroringRole = UPPER(mirroring_role_desc)
-      FROM sys.database_mirroring
-      WHERE database_id = DB_ID(@CurrentDatabaseName)
+      FROM sys.database_mirroring database_mirroring
+      INNER JOIN sys.databases databases ON database_mirroring.database_id = databases.database_id
+      WHERE databases.[name] = @CurrentDatabaseName
     END
 
     IF @CurrentAvailabilityGroup IS NOT NULL
@@ -6111,6 +6153,7 @@ BEGIN
     AND ((@AvailabilityGroupReplicas = 'PRIMARY' AND @CurrentAvailabilityGroupRole = 'PRIMARY') OR (@AvailabilityGroupReplicas = 'SECONDARY' AND @CurrentAvailabilityGroupRole = 'SECONDARY') OR (@AvailabilityGroupReplicas = 'PREFERRED_BACKUP_REPLICA' AND @CurrentIsPreferredBackupReplica = 1) OR @AvailabilityGroupReplicas = 'ALL' OR @CurrentAvailabilityGroupRole IS NULL)
     AND NOT (@CurrentIsReadOnly = 1 AND @Updateability = 'READ_WRITE')
     AND NOT (@CurrentIsReadOnly = 0 AND @Updateability = 'READ_ONLY')
+    AND NOT (@AmazonRDS = 1 AND @CurrentDatabaseName = 'rdsadmin')
     BEGIN
 
       -- Check database
@@ -6563,6 +6606,7 @@ BEGIN
 EXEC dbo.sp_executesql @statement = N'CREATE PROCEDURE [dbo].[IndexOptimize] AS'
 END
 GO
+
 ALTER PROCEDURE [dbo].[IndexOptimize]
 
 @Databases nvarchar(max) = NULL,
@@ -6609,7 +6653,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2025-01-28 20:19:42                                                               //--
+  --// Version: 2025-05-24 16:07:41                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -6693,7 +6737,7 @@ BEGIN
   DECLARE @CurrentIsImageText bit
   DECLARE @CurrentIsNewLOB bit
   DECLARE @CurrentIsFileStream bit
-  DECLARE @CurrentIsColumnStore bit
+  DECLARE @CurrentHasColumnstore bit
   DECLARE @CurrentIsComputed bit
   DECLARE @CurrentIsClusteredIndexComputed bit
   DECLARE @CurrentIsTimestamp bit
@@ -6749,7 +6793,7 @@ BEGIN
                                        IsImageText bit,
                                        IsNewLOB bit,
                                        IsFileStream bit,
-                                       IsColumnStore bit,
+                                       HasColumnstore bit,
                                        IsComputed bit,
                                        IsClusteredIndexComputed bit,
                                        IsTimestamp bit,
@@ -6830,7 +6874,7 @@ BEGIN
     SET @HostPlatform = 'Windows'
   END
 
-  DECLARE @AmazonRDS bit = CASE WHEN DB_ID('rdsadmin') IS NOT NULL AND SUSER_SNAME(0x01) = 'rdsa' THEN 1 ELSE 0 END
+  DECLARE @AmazonRDS bit = CASE WHEN SERVERPROPERTY('EngineEdition') IN (5, 8) THEN 0 WHEN EXISTS (SELECT * FROM sys.databases WHERE [name] = 'rdsadmin') AND SUSER_SNAME(0x01) = 'rdsa' THEN 1 ELSE 0 END
 
   ----------------------------------------------------------------------------------------------------
   --// Log initial information                                                                    //--
@@ -6887,7 +6931,7 @@ BEGIN
   SET @StartMessage = 'Platform: ' + @HostPlatform
   RAISERROR('%s',10,1,@StartMessage) WITH NOWAIT
 
-  SET @StartMessage = 'Procedure: ' + QUOTENAME(DB_NAME(DB_ID())) + '.' + QUOTENAME(@SchemaName) + '.' + QUOTENAME(@ObjectName)
+  SET @StartMessage = 'Procedure: ' + QUOTENAME(DB_NAME()) + '.' + QUOTENAME(@SchemaName) + '.' + QUOTENAME(@ObjectName)
   RAISERROR('%s',10,1,@StartMessage) WITH NOWAIT
 
   SET @StartMessage = 'Parameters: ' + @Parameters
@@ -6905,10 +6949,10 @@ BEGIN
   --// Check core requirements                                                                    //--
   ----------------------------------------------------------------------------------------------------
 
-  IF NOT (SELECT [compatibility_level] FROM sys.databases WHERE database_id = DB_ID()) >= 90
+  IF NOT (SELECT [compatibility_level] FROM sys.databases WHERE [name] = DB_NAME()) >= 90
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The database ' + QUOTENAME(DB_NAME(DB_ID())) + ' has to be in compatibility level 90 or higher.', 16, 1
+    SELECT 'The database ' + QUOTENAME(DB_NAME()) + ' has to be in compatibility level 90 or higher.', 16, 1
   END
 
   IF NOT (SELECT uses_ansi_nulls FROM sys.sql_modules WHERE [object_id] = @@PROCID) = 1
@@ -7989,14 +8033,6 @@ BEGIN
 
     SET @CurrentDatabase_sp_executesql = QUOTENAME(@CurrentDatabaseName) + '.sys.sp_executesql'
 
-    IF @ExecuteAsUser IS NOT NULL
-    BEGIN
-      SET @CurrentCommand = ''
-      SET @CurrentCommand += 'IF EXISTS(SELECT * FROM sys.database_principals database_principals WHERE database_principals.[name] = @ParamExecuteAsUser) BEGIN SET @ParamExecuteAsUserExists = 1 END ELSE BEGIN SET @ParamExecuteAsUserExists = 0 END'
-
-      EXECUTE @CurrentDatabase_sp_executesql @stmt = @CurrentCommand, @params = N'@ParamExecuteAsUser sysname, @ParamExecuteAsUserExists bit OUTPUT', @ParamExecuteAsUser = @ExecuteAsUser, @ParamExecuteAsUserExists = @CurrentExecuteAsUserExists OUTPUT
-    END
-
     BEGIN
       SET @DatabaseMessage = 'Date and time: ' + CONVERT(nvarchar,SYSDATETIME(),120)
       RAISERROR('%s',10,1,@DatabaseMessage) WITH NOWAIT
@@ -8053,8 +8089,9 @@ BEGIN
     IF SERVERPROPERTY('EngineEdition') <> 5
     BEGIN
       SELECT @CurrentDatabaseMirroringRole = UPPER(mirroring_role_desc)
-      FROM sys.database_mirroring
-      WHERE database_id = DB_ID(@CurrentDatabaseName)
+      FROM sys.database_mirroring database_mirroring
+      INNER JOIN sys.databases databases ON database_mirroring.database_id = databases.database_id
+      WHERE databases.[name] = @CurrentDatabaseName
     END
 
     IF @CurrentAvailabilityGroup IS NOT NULL
@@ -8074,6 +8111,18 @@ BEGIN
 
     RAISERROR(@EmptyLine,10,1) WITH NOWAIT
 
+    IF @ExecuteAsUser IS NOT NULL
+    AND @CurrentDatabaseState = 'ONLINE'
+    AND NOT (@CurrentUserAccess = 'SINGLE_USER')
+    AND NOT (@CurrentAvailabilityGroup IS NOT NULL AND (@CurrentAvailabilityGroupRole <> 'PRIMARY' OR @CurrentAvailabilityGroupRole IS NULL))
+    AND NOT (@AmazonRDS = 1 AND @CurrentDatabaseName = 'rdsadmin')
+    BEGIN
+      SET @CurrentCommand = ''
+      SET @CurrentCommand += 'IF EXISTS(SELECT * FROM sys.database_principals database_principals WHERE database_principals.[name] = @ParamExecuteAsUser) BEGIN SET @ParamExecuteAsUserExists = 1 END ELSE BEGIN SET @ParamExecuteAsUserExists = 0 END'
+
+      EXECUTE @CurrentDatabase_sp_executesql @stmt = @CurrentCommand, @params = N'@ParamExecuteAsUser sysname, @ParamExecuteAsUserExists bit OUTPUT', @ParamExecuteAsUser = @ExecuteAsUser, @ParamExecuteAsUserExists = @CurrentExecuteAsUserExists OUTPUT
+    END
+
     IF @CurrentExecuteAsUserExists = 0
     BEGIN
       SET @DatabaseMessage = 'The user ' + QUOTENAME(@ExecuteAsUser) + ' does not exist in the database ' + QUOTENAME(@CurrentDatabaseName) + '.'
@@ -8084,6 +8133,7 @@ BEGIN
     IF @CurrentDatabaseState = 'ONLINE'
     AND NOT (@CurrentUserAccess = 'SINGLE_USER')
     AND NOT (@CurrentAvailabilityGroup IS NOT NULL AND (@CurrentAvailabilityGroupRole <> 'PRIMARY' OR @CurrentAvailabilityGroupRole IS NULL))
+    AND NOT (@AmazonRDS = 1 AND @CurrentDatabaseName = 'rdsadmin')
     AND NOT (@CurrentIsReadOnly = 1)
     AND (@CurrentExecuteAsUserExists = 1 OR @CurrentExecuteAsUserExists IS NULL)
     BEGIN
@@ -8092,7 +8142,7 @@ BEGIN
       IF (EXISTS(SELECT * FROM @ActionsPreferred) OR @UpdateStatistics IS NOT NULL) AND (SYSDATETIME() < DATEADD(SECOND,@TimeLimit,@StartTime) OR @TimeLimit IS NULL)
       BEGIN
         SET @CurrentCommand = 'SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;'
-                              + ' SELECT SchemaID, SchemaName, ObjectID, ObjectName, ObjectType, IsMemoryOptimized, IndexID, IndexName, IndexType, AllowPageLocks, HasFilter, IsImageText, IsNewLOB, IsFileStream, IsColumnStore, IsComputed, IsClusteredIndexComputed, IsTimestamp, OnReadOnlyFileGroup, ResumableIndexOperation, StatisticsID, StatisticsName, NoRecompute, IsIncremental, PartitionID, PartitionNumber, PartitionCount, [Order], Selected, Completed'
+                              + ' SELECT SchemaID, SchemaName, ObjectID, ObjectName, ObjectType, IsMemoryOptimized, IndexID, IndexName, IndexType, AllowPageLocks, HasFilter, IsImageText, IsNewLOB, IsFileStream, HasColumnstore, IsComputed, IsClusteredIndexComputed, IsTimestamp, OnReadOnlyFileGroup, ResumableIndexOperation, StatisticsID, StatisticsName, NoRecompute, IsIncremental, PartitionID, PartitionNumber, PartitionCount, [Order], Selected, Completed'
                               + ' FROM ('
 
         IF EXISTS(SELECT * FROM @ActionsPreferred) OR @UpdateStatistics IN('ALL','INDEX')
@@ -8116,7 +8166,7 @@ BEGIN
 
                                                     + ', CASE WHEN indexes.[type] = 1 AND EXISTS(SELECT * FROM sys.columns columns WHERE columns.[object_id] = objects.object_id  AND columns.is_filestream = 1) THEN 1 ELSE 0 END AS IsFileStream'
 
-                                                    + ', CASE WHEN EXISTS(SELECT * FROM sys.indexes indexes WHERE indexes.[object_id] = objects.object_id AND [type] IN(5,6)) THEN 1 ELSE 0 END AS IsColumnStore'
+                                                    + ', CASE WHEN EXISTS(SELECT * FROM sys.indexes indexes WHERE indexes.[object_id] = objects.object_id AND [type] IN(5,6)) THEN 1 ELSE 0 END AS HasColumnstore'
 
                                                     + ', CASE WHEN EXISTS(SELECT * FROM sys.index_columns index_columns INNER JOIN sys.columns columns ON index_columns.object_id = columns.object_id AND index_columns.column_id = columns.column_id WHERE (index_columns.key_ordinal > 0 OR index_columns.partition_ordinal > 0) AND columns.is_computed = 1 AND index_columns.object_id = indexes.object_id AND index_columns.index_id = indexes.index_id) THEN 1 ELSE 0 END AS IsComputed'
 
@@ -8128,7 +8178,7 @@ BEGIN
                                                     + ' WHEN EXISTS (SELECT * FROM sys.indexes indexes2 INNER JOIN sys.filegroups filegroups ON indexes.data_space_id = filegroups.data_space_id WHERE filegroups.is_read_only = 1 AND indexes.[object_id] = indexes2.[object_id] AND indexes.[index_id] = indexes2.index_id) THEN 1'
                                                     + ' WHEN indexes.[type] = 1 AND EXISTS (SELECT * FROM sys.tables tables INNER JOIN sys.filegroups filegroups ON tables.lob_data_space_id = filegroups.data_space_id WHERE filegroups.is_read_only = 1 AND tables.[object_id] = objects.[object_id]) THEN 1 ELSE 0 END AS OnReadOnlyFileGroup'
 
-                                                    + ', ' + CASE WHEN @Version >= 14 THEN 'CASE WHEN EXISTS(SELECT * FROM sys.index_resumable_operations index_resumable_operations WHERE state_desc = ''PAUSED'' AND index_resumable_operations.object_id = indexes.object_id AND index_resumable_operations.index_id = indexes.index_id' + CASE WHEN @PartitionLevel = 'Y' THEN ' AND (index_resumable_operations.partition_number = partitions.partition_number OR index_resumable_operations.partition_number IS NULL)' ELSE '' END + ') THEN 1 ELSE 0 END' ELSE '0' END + ' AS ResumableIndexOperation'
+                                                    + ', ' + CASE WHEN @Version >= 14 OR SERVERPROPERTY('EngineEdition') IN (5, 8) THEN 'CASE WHEN EXISTS(SELECT * FROM sys.index_resumable_operations index_resumable_operations WHERE state_desc = ''PAUSED'' AND index_resumable_operations.object_id = indexes.object_id AND index_resumable_operations.index_id = indexes.index_id' + CASE WHEN @PartitionLevel = 'Y' THEN ' AND (index_resumable_operations.partition_number = partitions.partition_number OR index_resumable_operations.partition_number IS NULL)' ELSE '' END + ') THEN 1 ELSE 0 END' ELSE '0' END + ' AS ResumableIndexOperation'
 
                                                     + ', stats.stats_id AS StatisticsID'
                                                     + ', stats.name AS StatisticsName'
@@ -8177,7 +8227,7 @@ BEGIN
                                                     + ', NULL AS IsImageText'
                                                     + ', NULL AS IsNewLOB'
                                                     + ', NULL AS IsFileStream'
-                                                    + ', NULL AS IsColumnStore'
+                                                    + ', NULL AS HasColumnstore'
                                                     + ', NULL AS IsComputed'
                                                     + ', NULL AS IsClusteredIndexComputed'
                                                     + ', NULL AS IsTimestamp'
@@ -8207,6 +8257,7 @@ BEGIN
                                                     + CASE WHEN @Version >= 12 THEN ' AND (tables.is_memory_optimized = 0 OR tables.is_memory_optimized IS NULL)' ELSE '' END
                                                     + CASE WHEN @MSShippedObjects = 'N' THEN ' AND objects.is_ms_shipped = 0' ELSE '' END
                                                     + ' AND NOT EXISTS(SELECT * FROM sys.indexes indexes WHERE indexes.[object_id] = stats.[object_id] AND indexes.index_id = stats.stats_id)'
+                                                    + ' AND NOT EXISTS(SELECT * FROM sys.indexes indexes2 WHERE indexes2.[object_id] = stats.[object_id] AND indexes2.type = 1 AND indexes2.is_disabled = 1)'
 
           IF @Version >= 12
           BEGIN
@@ -8225,7 +8276,7 @@ BEGIN
                                                       + ', NULL AS IsImageText'
                                                       + ', NULL AS IsNewLOB'
                                                       + ', NULL AS IsFileStream'
-                                                      + ', NULL AS IsColumnStore'
+                                                      + ', NULL AS HasColumnstore'
                                                       + ', NULL AS IsComputed'
                                                       + ', NULL AS IsClusteredIndexComputed'
                                                       + ', NULL AS IsTimestamp'
@@ -8255,7 +8306,7 @@ BEGIN
 
         SET @CurrentCommand = @CurrentCommand + ') IndexesStatistics'
 
-        INSERT INTO @tmpIndexesStatistics (SchemaID, SchemaName, ObjectID, ObjectName, ObjectType, IsMemoryOptimized, IndexID, IndexName, IndexType, AllowPageLocks, HasFilter, IsImageText, IsNewLOB, IsFileStream, IsColumnStore, IsComputed, IsClusteredIndexComputed, IsTimestamp, OnReadOnlyFileGroup, ResumableIndexOperation, StatisticsID, StatisticsName, [NoRecompute], IsIncremental, PartitionID, PartitionNumber, PartitionCount, [Order], Selected, Completed)
+        INSERT INTO @tmpIndexesStatistics (SchemaID, SchemaName, ObjectID, ObjectName, ObjectType, IsMemoryOptimized, IndexID, IndexName, IndexType, AllowPageLocks, HasFilter, IsImageText, IsNewLOB, IsFileStream, HasColumnstore, IsComputed, IsClusteredIndexComputed, IsTimestamp, OnReadOnlyFileGroup, ResumableIndexOperation, StatisticsID, StatisticsName, [NoRecompute], IsIncremental, PartitionID, PartitionNumber, PartitionCount, [Order], Selected, Completed)
         EXECUTE @CurrentDatabase_sp_executesql @stmt = @CurrentCommand
         SET @Error = @@ERROR
         IF @Error <> 0
@@ -8359,7 +8410,7 @@ BEGIN
                      @CurrentIsImageText = IsImageText,
                      @CurrentIsNewLOB = IsNewLOB,
                      @CurrentIsFileStream = IsFileStream,
-                     @CurrentIsColumnStore = IsColumnStore,
+                     @CurrentHasColumnstore = HasColumnstore,
                      @CurrentIsComputed = IsComputed,
                      @CurrentIsClusteredIndexComputed = IsClusteredIndexComputed,
                      @CurrentIsTimestamp = IsTimestamp,
@@ -8538,25 +8589,33 @@ BEGIN
         -- Which actions are allowed?
         IF @CurrentIndexID IS NOT NULL AND EXISTS(SELECT * FROM @ActionsPreferred)
         BEGIN
-          IF @CurrentOnReadOnlyFileGroup = 0 AND @CurrentIndexType IN (1,2,3,4,5) AND (@CurrentIsMemoryOptimized = 0 OR @CurrentIsMemoryOptimized IS NULL) AND (@CurrentAllowPageLocks = 1 OR @CurrentIndexType = 5)
+          IF NOT (@CurrentOnReadOnlyFileGroup = 1)
+          AND NOT (@CurrentIsMemoryOptimized = 1)
+          AND NOT (@CurrentAllowPageLocks = 0)
           BEGIN
             INSERT INTO @CurrentActionsAllowed ([Action])
             VALUES ('INDEX_REORGANIZE')
           END
-          IF @CurrentOnReadOnlyFileGroup = 0 AND @CurrentIndexType IN (1,2,3,4,5) AND (@CurrentIsMemoryOptimized = 0 OR @CurrentIsMemoryOptimized IS NULL)
+          IF NOT (@CurrentOnReadOnlyFileGroup = 1)
+          AND NOT (@CurrentIsMemoryOptimized = 1)
           BEGIN
             INSERT INTO @CurrentActionsAllowed ([Action])
             VALUES ('INDEX_REBUILD_OFFLINE')
           END
-          IF @CurrentOnReadOnlyFileGroup = 0
-          AND (@CurrentIsMemoryOptimized = 0 OR @CurrentIsMemoryOptimized IS NULL)
-          AND (@CurrentIsPartition = 0 OR @Version >= 12)
-          AND ((@CurrentIndexType = 1 AND @CurrentIsImageText = 0 AND @CurrentIsNewLOB = 0)
-          OR (@CurrentIndexType = 2 AND @CurrentIsNewLOB = 0)
-          OR (@CurrentIndexType = 1 AND @CurrentIsImageText = 0 AND @CurrentIsFileStream = 0 AND @Version >= 11)
-          OR (@CurrentIndexType = 2 AND @Version >= 11))
-          AND (@CurrentIsColumnStore = 0 OR @Version < 11)
-          AND SERVERPROPERTY('EngineEdition') IN (3,5,8)
+          IF SERVERPROPERTY('EngineEdition') IN (3, 5, 8)
+          AND NOT (@CurrentOnReadOnlyFileGroup = 1)
+          AND NOT (@CurrentIsMemoryOptimized = 1)
+          AND NOT (@CurrentIsPartition = 1 AND @Version < 12)
+          AND NOT (@CurrentIndexType = 1 AND @CurrentIsImageText = 1)
+          AND NOT (@CurrentIndexType = 1 AND @CurrentIsFileStream = 1)
+          AND NOT (@CurrentIndexType = 1 AND @CurrentIsNewLOB = 1 AND @Version < 11)
+          AND NOT (@CurrentIndexType = 2 AND @CurrentIsNewLOB = 1 AND @Version < 11)
+          AND NOT (@CurrentIndexType = 3)
+          AND NOT (@CurrentIndexType = 4)
+          AND NOT (@CurrentIndexType = 5 AND @Version < 15)
+          AND NOT (@CurrentIndexType = 6 AND @Version < 15)
+          AND NOT (@CurrentIndexType = 1 AND @CurrentHasColumnstore = 1 AND @Version < 13)
+          AND NOT (@CurrentIndexType = 2 AND @CurrentHasColumnstore = 1 AND @Version < 13)
           BEGIN
             INSERT INTO @CurrentActionsAllowed ([Action])
             VALUES ('INDEX_REBUILD_ONLINE')
@@ -8644,7 +8703,7 @@ BEGIN
           SET @CurrentComment += 'ImageText: ' + CASE WHEN @CurrentIsImageText = 1 THEN 'Yes' WHEN @CurrentIsImageText = 0 THEN 'No' ELSE 'N/A' END + ', '
           SET @CurrentComment += 'NewLOB: ' + CASE WHEN @CurrentIsNewLOB = 1 THEN 'Yes' WHEN @CurrentIsNewLOB = 0 THEN 'No' ELSE 'N/A' END + ', '
           SET @CurrentComment += 'FileStream: ' + CASE WHEN @CurrentIsFileStream = 1 THEN 'Yes' WHEN @CurrentIsFileStream = 0 THEN 'No' ELSE 'N/A' END + ', '
-          IF @Version >= 11 SET @CurrentComment += 'ColumnStore: ' + CASE WHEN @CurrentIsColumnStore = 1 THEN 'Yes' WHEN @CurrentIsColumnStore = 0 THEN 'No' ELSE 'N/A' END + ', '
+          IF @Version >= 11 SET @CurrentComment += 'HasColumnStore: ' + CASE WHEN @CurrentHasColumnstore = 1 THEN 'Yes' WHEN @CurrentHasColumnstore = 0 THEN 'No' ELSE 'N/A' END + ', '
           IF @Version >= 14 AND @Resumable = 'Y' SET @CurrentComment += 'Computed: ' + CASE WHEN @CurrentIsComputed = 1 THEN 'Yes' WHEN @CurrentIsComputed = 0 THEN 'No' ELSE 'N/A' END + ', '
           IF @Version >= 14 AND @Resumable = 'Y' AND @CurrentIndexType = 2 SET @CurrentComment += 'ClusteredIndexComputed: ' + CASE WHEN @CurrentIsClusteredIndexComputed = 1 THEN 'Yes' WHEN @CurrentIsClusteredIndexComputed = 0 THEN 'No' ELSE 'N/A' END + ', '
           IF @Version >= 14 AND @Resumable = 'Y' SET @CurrentComment += 'Timestamp: ' + CASE WHEN @CurrentIsTimestamp = 1 THEN 'Yes' WHEN @CurrentIsTimestamp = 0 THEN 'No' ELSE 'N/A' END + ', '
@@ -8724,7 +8783,7 @@ BEGIN
             SELECT CASE WHEN @Resumable = 'Y' AND @CurrentIndexType IN(1,2) AND @CurrentIsComputed = 0 AND @CurrentIsClusteredIndexComputed = 0 AND @CurrentIsTimestamp = 0 AND @CurrentHasFilter = 0 THEN 'RESUMABLE = ON' ELSE 'RESUMABLE = OFF' END
           END
 
-          IF (@Version >= 14 OR SERVERPROPERTY('EngineEdition') IN (5,8)) AND @CurrentAction = 'INDEX_REBUILD_ONLINE' AND @CurrentResumableIndexOperation = 0 AND @Resumable = 'Y'  AND @CurrentIndexType IN(1,2) AND @CurrentIsComputed = 0 AND @CurrentIsClusteredIndexComputed = 0 AND @CurrentIsTimestamp = 0 AND @CurrentHasFilter = 0 AND @TimeLimit IS NOT NULL
+          IF (@Version >= 14 OR SERVERPROPERTY('EngineEdition') IN (5,8)) AND @CurrentAction = 'INDEX_REBUILD_ONLINE' AND @Resumable = 'Y'  AND @CurrentIndexType IN(1,2) AND @CurrentIsComputed = 0 AND @CurrentIsClusteredIndexComputed = 0 AND @CurrentIsTimestamp = 0 AND @CurrentHasFilter = 0 AND @TimeLimit IS NOT NULL
           BEGIN
             INSERT INTO @CurrentAlterIndexWithClauseArguments (Argument)
             SELECT 'MAX_DURATION = ' + CAST(DATEDIFF(MINUTE,SYSDATETIME(),DATEADD(SECOND,@TimeLimit,@StartTime)) AS nvarchar(max))
@@ -8926,7 +8985,7 @@ BEGIN
         SET @CurrentIsImageText = NULL
         SET @CurrentIsNewLOB = NULL
         SET @CurrentIsFileStream = NULL
-        SET @CurrentIsColumnStore = NULL
+        SET @CurrentHasColumnstore = NULL
         SET @CurrentIsComputed = NULL
         SET @CurrentIsClusteredIndexComputed = NULL
         SET @CurrentIsTimestamp = NULL
@@ -9033,8 +9092,8 @@ END
 GO
 IF (SELECT [Value] FROM #Config WHERE Name = 'CreateJobs') = 'Y'
     AND SERVERPROPERTY('EngineEdition') NOT IN(4, 5)
-    AND (IS_SRVROLEMEMBER('sysadmin') = 1 OR (DB_ID('rdsadmin') IS NOT NULL AND SUSER_SNAME(0x01) = 'rdsa'))
-    AND (SELECT [compatibility_level] FROM sys.databases WHERE database_id = DB_ID()) >= 90
+    AND (IS_SRVROLEMEMBER('sysadmin') = 1 OR (EXISTS (SELECT * FROM sys.databases WHERE [name] = 'rdsadmin') AND SUSER_SNAME(0x01) = 'rdsa'))
+    AND (SELECT [compatibility_level] FROM sys.databases WHERE [name] = DB_NAME()) >= 90
     AND NOT (EXISTS (SELECT * FROM #Config WHERE Name = 'BackupDirectory' AND [Value] IS NOT NULL) AND EXISTS (SELECT * FROM #Config WHERE Name = 'BackupURL' AND [Value] IS NOT NULL))
     AND NOT (EXISTS (SELECT * FROM #Config WHERE Name = 'BackupURL' AND [Value] IS NOT NULL) AND EXISTS (SELECT * FROM #Config WHERE Name = 'CleanupTime' AND [Value] IS NOT NULL))
 BEGIN
@@ -9088,7 +9147,7 @@ BEGIN
 
   DECLARE @Version numeric(18,10) = CAST(LEFT(CAST(SERVERPROPERTY('ProductVersion') AS nvarchar(max)),CHARINDEX('.',CAST(SERVERPROPERTY('ProductVersion') AS nvarchar(max))) - 1) + '.' + REPLACE(RIGHT(CAST(SERVERPROPERTY('ProductVersion') AS nvarchar(max)), LEN(CAST(SERVERPROPERTY('ProductVersion') AS nvarchar(max))) - CHARINDEX('.',CAST(SERVERPROPERTY('ProductVersion') AS nvarchar(max)))),'.','') AS numeric(18,10))
 
-  DECLARE @AmazonRDS bit = CASE WHEN DB_ID('rdsadmin') IS NOT NULL AND SUSER_SNAME(0x01) = 'rdsa' THEN 1 ELSE 0 END
+  DECLARE @AmazonRDS bit = CASE WHEN SERVERPROPERTY('EngineEdition') IN (5, 8) THEN 0 WHEN EXISTS (SELECT * FROM sys.databases WHERE [name] = 'rdsadmin') AND SUSER_SNAME(0x01) = 'rdsa' THEN 1 ELSE 0 END
 
   IF @Version >= 14
   BEGIN
@@ -9210,7 +9269,7 @@ BEGIN
 
   INSERT INTO @Jobs ([Name], CommandTSQL, DatabaseName, OutputFileNamePart01)
   SELECT 'DatabaseIntegrityCheck - USER_DATABASES',
-         'EXECUTE [dbo].[DatabaseIntegrityCheck]' + CHAR(13) + CHAR(10) + '@Databases = ''USER_DATABASES' + CASE WHEN @AmazonRDS = 1 THEN ', -rdsadmin' ELSE '' END + ''',' + CHAR(13) + CHAR(10) + '@LogToTable = ''' + @LogToTable + '''',
+         'EXECUTE [dbo].[DatabaseIntegrityCheck]' + CHAR(13) + CHAR(10) + '@Databases = ''USER_DATABASES'',' + CHAR(13) + CHAR(10) + '@LogToTable = ''' + @LogToTable + '''',
          @DatabaseName,
          'DatabaseIntegrityCheck'
 
@@ -9352,6 +9411,35 @@ BEGIN
 
   END
 
+END
+GO
+
+DECLARE @job_id uniqueidentifier
+DECLARE @step_id int
+DECLARE @command nvarchar(max)
+DECLARE @AmazonRDS bit = CASE WHEN SERVERPROPERTY('EngineEdition') IN (5, 8) THEN 0 WHEN EXISTS (SELECT * FROM sys.databases WHERE [name] = 'rdsadmin') AND SUSER_SNAME(0x01) = 'rdsa' THEN 1 ELSE 0 END
+
+IF @AmazonRDS = 0
+BEGIN
+
+  DECLARE JobCursor CURSOR FAST_FORWARD FOR SELECT job_id, step_id, command FROM msdb.dbo.sysjobsteps WHERE command LIKE '%DatabaseBackup%@CheckSum%' COLLATE SQL_Latin1_General_CP1_CS_AS
+
+  OPEN JobCursor
+
+  FETCH JobCursor INTO @job_id, @step_id, @command
+
+  WHILE @@FETCH_STATUS = 0
+  BEGIN
+    SET @command = REPLACE(@command, '@CheckSum', '@Checksum')
+
+    EXECUTE msdb.dbo.sp_update_jobstep @job_id = @job_id, @step_id = @step_id, @command = @command
+
+    FETCH NEXT FROM JobCursor INTO @job_id, @step_id, @command
+  END
+
+  CLOSE JobCursor
+
+  DEALLOCATE JobCursor
 END
 GO
 
