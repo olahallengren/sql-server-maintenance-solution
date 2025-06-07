@@ -58,11 +58,11 @@ ALTER PROCEDURE [dbo].[DatabaseBackup]
 @DataDomainBoostUser nvarchar(max) = NULL,
 @DataDomainBoostDevicePath nvarchar(max) = NULL,
 @DataDomainBoostLockboxPath nvarchar(max) = NULL,
-@DirectoryStructure nvarchar(max) = '{ServerName}${InstanceName}{DirectorySeparator}{DatabaseName}{DirectorySeparator}{BackupType}_{Partial}_{CopyOnly}',
-@AvailabilityGroupDirectoryStructure nvarchar(max) = '{ClusterName}${AvailabilityGroupName}{DirectorySeparator}{DatabaseName}{DirectorySeparator}{BackupType}_{Partial}_{CopyOnly}',
+@DirectoryStructure nvarchar(max) = '{ServerName}${InstanceName}{DirectorySeparator}{DatabaseName}{DirectorySeparator}{FileGroupName}{DirectorySeparator}{BackupType}_{Partial}_{CopyOnly}',
+@AvailabilityGroupDirectoryStructure nvarchar(max) = '{ClusterName}${AvailabilityGroupName}{DirectorySeparator}{DatabaseName}{DirectorySeparator}{FileGroupName}{DirectorySeparator}{BackupType}_{Partial}_{CopyOnly}',
 @DirectoryStructureCase nvarchar(max) = NULL,
-@FileName nvarchar(max) = '{ServerName}${InstanceName}_{DatabaseName}_{BackupType}_{Partial}_{CopyOnly}_{Year}{Month}{Day}_{Hour}{Minute}{Second}_{FileNumber}.{FileExtension}',
-@AvailabilityGroupFileName nvarchar(max) = '{ClusterName}${AvailabilityGroupName}_{DatabaseName}_{BackupType}_{Partial}_{CopyOnly}_{Year}{Month}{Day}_{Hour}{Minute}{Second}_{FileNumber}.{FileExtension}',
+@FileName nvarchar(max) = '{ServerName}${InstanceName}_{DatabaseName}_{FileGroupName}_{BackupType}_{Partial}_{CopyOnly}_{Year}{Month}{Day}_{Hour}{Minute}{Second}_{FileNumber}.{FileExtension}',
+@AvailabilityGroupFileName nvarchar(max) = '{ClusterName}${AvailabilityGroupName}_{DatabaseName}_{FileGroupName}_{BackupType}_{Partial}_{CopyOnly}_{Year}{Month}{Day}_{Hour}{Minute}{Second}_{FileNumber}.{FileExtension}',
 @FileNameCase nvarchar(max) = NULL,
 @TokenTimezone nvarchar(max) = 'LOCAL',
 @FileExtensionFull nvarchar(max) = NULL,
@@ -77,6 +77,7 @@ ALTER PROCEDURE [dbo].[DatabaseBackup]
 @Stats int = NULL,
 @ExpireDate datetime = NULL,
 @RetainDays int = NULL,
+@FileGroups nvarchar(max) = NULL,
 @StringDelimiter nvarchar(max) = ',',
 @DatabaseOrder nvarchar(max) = NULL,
 @DatabasesInParallel nvarchar(max) = 'N',
@@ -91,7 +92,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2025-05-24 16:07:41                                                               //--
+  --// Version: 2025-06-07 21:41:06                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -177,6 +178,11 @@ BEGIN
   DECLARE @CurrentCommandOutput int
   DECLARE @CurrentCommandType nvarchar(max)
 
+  DECLARE @CurrentFGID int
+  DECLARE @CurrentFileGroupID int
+  DECLARE @CurrentFileGroupName nvarchar(max)
+  DECLARE @CurrentFileGroupExists bit
+
   DECLARE @Errors TABLE (ID int IDENTITY PRIMARY KEY,
                          [Message] nvarchar(max) NOT NULL,
                          Severity int NOT NULL,
@@ -220,6 +226,15 @@ BEGIN
   DECLARE @tmpDatabasesAvailabilityGroups TABLE (DatabaseName nvarchar(max),
                                                  AvailabilityGroupName nvarchar(max))
 
+  DECLARE @tmpFileGroups TABLE (ID int IDENTITY,
+                                FileGroupID int,
+                                FileGroupName nvarchar(max),
+                                StartPosition int,
+                                [Order] int,
+                                Selected bit,
+                                Completed bit,
+                                PRIMARY KEY(Selected, Completed, [Order], ID))
+
   DECLARE @SelectedDatabases TABLE (DatabaseName nvarchar(max),
                                     DatabaseType nvarchar(max),
                                     AvailabilityGroup nvarchar(max),
@@ -229,6 +244,11 @@ BEGIN
   DECLARE @SelectedAvailabilityGroups TABLE (AvailabilityGroupName nvarchar(max),
                                              StartPosition int,
                                              Selected bit)
+
+  DECLARE @SelectedFileGroups TABLE (DatabaseName nvarchar(max),
+                                     FileGroupName nvarchar(max),
+                                     StartPosition int,
+                                     Selected bit)
 
   DECLARE @CurrentBackupOutput bit
 
@@ -351,6 +371,7 @@ BEGIN
   SET @Parameters += ', @Stats = ' + ISNULL(CAST(@Stats AS nvarchar),'NULL')
   SET @Parameters += ', @ExpireDate = ' + ISNULL('''' + CONVERT(nvarchar, @ExpireDate, 21) + '''','NULL')
   SET @Parameters += ', @RetainDays = ' + ISNULL(CAST(@RetainDays AS nvarchar),'NULL')
+  SET @Parameters += ', @FileGroups = ' + ISNULL('''' + REPLACE(@FileGroups,'''','''''') + '''','NULL')
   SET @Parameters += ', @StringDelimiter = ' + ISNULL('''' + REPLACE(@StringDelimiter,'''','''''') + '''','NULL')
   SET @Parameters += ', @DatabaseOrder = ' + ISNULL('''' + REPLACE(@DatabaseOrder,'''','''''') + '''','NULL')
   SET @Parameters += ', @DatabasesInParallel = ' + ISNULL('''' + REPLACE(@DatabasesInParallel,'''','''''') + '''','NULL')
@@ -684,6 +705,58 @@ BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
     SELECT 'You can only specify one of the parameters @Databases and @AvailabilityGroups.', 16, 3
   END
+
+  ----------------------------------------------------------------------------------------------------
+  --// Select filegroups                                                                          //--
+  ----------------------------------------------------------------------------------------------------
+
+  SET @FileGroups = REPLACE(@FileGroups, CHAR(10), '')
+  SET @FileGroups = REPLACE(@FileGroups, CHAR(13), '')
+
+  WHILE CHARINDEX(', ',@FileGroups) > 0 SET @FileGroups = REPLACE(@FileGroups,', ',',')
+  WHILE CHARINDEX(' ,',@FileGroups) > 0 SET @FileGroups = REPLACE(@FileGroups,' ,',',')
+
+  SET @FileGroups = LTRIM(RTRIM(@FileGroups));
+
+  WITH FileGroups1 (StartPosition, EndPosition, FileGroupItem) AS
+  (
+  SELECT 1 AS StartPosition,
+         ISNULL(NULLIF(CHARINDEX(',', @FileGroups, 1), 0), LEN(@FileGroups) + 1) AS EndPosition,
+         SUBSTRING(@FileGroups, 1, ISNULL(NULLIF(CHARINDEX(',', @FileGroups, 1), 0), LEN(@FileGroups) + 1) - 1) AS FileGroupItem
+  WHERE @FileGroups IS NOT NULL
+  UNION ALL
+  SELECT CAST(EndPosition AS int) + 1 AS StartPosition,
+         ISNULL(NULLIF(CHARINDEX(',', @FileGroups, EndPosition + 1), 0), LEN(@FileGroups) + 1) AS EndPosition,
+         SUBSTRING(@FileGroups, EndPosition + 1, ISNULL(NULLIF(CHARINDEX(',', @FileGroups, EndPosition + 1), 0), LEN(@FileGroups) + 1) - EndPosition - 1) AS FileGroupItem
+  FROM FileGroups1
+  WHERE EndPosition < LEN(@FileGroups) + 1
+  ),
+  FileGroups2 (FileGroupItem, StartPosition, Selected) AS
+  (
+  SELECT CASE WHEN FileGroupItem LIKE '-%' THEN RIGHT(FileGroupItem,LEN(FileGroupItem) - 1) ELSE FileGroupItem END AS FileGroupItem,
+         StartPosition,
+         CASE WHEN FileGroupItem LIKE '-%' THEN 0 ELSE 1 END AS Selected
+  FROM FileGroups1
+  ),
+  FileGroups3 (FileGroupItem, StartPosition, Selected) AS
+  (
+  SELECT CASE WHEN FileGroupItem = 'ALL_FILEGROUPS' THEN '%.%' ELSE FileGroupItem END AS FileGroupItem,
+         StartPosition,
+         Selected
+  FROM FileGroups2
+  ),
+  FileGroups4 (DatabaseName, FileGroupName, StartPosition, Selected) AS
+  (
+  SELECT CASE WHEN PARSENAME(FileGroupItem,4) IS NULL AND PARSENAME(FileGroupItem,3) IS NULL THEN PARSENAME(FileGroupItem,2) ELSE NULL END AS DatabaseName,
+         CASE WHEN PARSENAME(FileGroupItem,4) IS NULL AND PARSENAME(FileGroupItem,3) IS NULL THEN PARSENAME(FileGroupItem,1) ELSE NULL END AS FileGroupName,
+         StartPosition,
+         Selected
+  FROM FileGroups3
+  )
+  INSERT INTO @SelectedFileGroups (DatabaseName, FileGroupName, StartPosition, Selected)
+  SELECT DatabaseName, FileGroupName, StartPosition, Selected
+  FROM FileGroups4
+  OPTION (MAXRECURSION 0);
 
   ----------------------------------------------------------------------------------------------------
   --// Check database names                                                                       //--
@@ -2186,7 +2259,7 @@ BEGIN
 
   ----------------------------------------------------------------------------------------------------
 
-  IF EXISTS (SELECT * FROM (SELECT REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(@DirectoryStructure,'{DirectorySeparator}',''),'{ServerName}',''),'{InstanceName}',''),'{ServiceName}',''),'{ClusterName}',''),'{AvailabilityGroupName}',''),'{DatabaseName}',''),'{BackupType}',''),'{Partial}',''),'{CopyOnly}',''),'{Description}',''),'{BackupSetName}',''),'{Year}',''),'{Month}',''),'{Day}',''),'{Week}',''),'{Weekday}',''),'{Hour}',''),'{Minute}',''),'{Second}',''),'{Millisecond}',''),'{Microsecond}',''),'{MajorVersion}',''),'{MinorVersion}','') AS DirectoryStructure) Temp WHERE DirectoryStructure LIKE '%{%' OR DirectoryStructure LIKE '%}%')
+  IF EXISTS (SELECT * FROM (SELECT REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(@DirectoryStructure,'{DirectorySeparator}',''),'{ServerName}',''),'{InstanceName}',''),'{ServiceName}',''),'{ClusterName}',''),'{AvailabilityGroupName}',''),'{DatabaseName}',''),'{FileGroupName}',''),'{BackupType}',''),'{Partial}',''),'{CopyOnly}',''),'{Description}',''),'{BackupSetName}',''),'{Year}',''),'{Month}',''),'{Day}',''),'{Week}',''),'{Weekday}',''),'{Hour}',''),'{Minute}',''),'{Second}',''),'{Millisecond}',''),'{Microsecond}',''),'{MajorVersion}',''),'{MinorVersion}','') AS DirectoryStructure) Temp WHERE DirectoryStructure LIKE '%{%' OR DirectoryStructure LIKE '%}%')
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
     SELECT 'The parameter @DirectoryStructure contains one or more tokens that are not supported.', 16, 1
@@ -2194,7 +2267,7 @@ BEGIN
 
   ----------------------------------------------------------------------------------------------------
 
-  IF EXISTS (SELECT * FROM (SELECT REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(@AvailabilityGroupDirectoryStructure,'{DirectorySeparator}',''),'{ServerName}',''),'{InstanceName}',''),'{ServiceName}',''),'{ClusterName}',''),'{AvailabilityGroupName}',''),'{DatabaseName}',''),'{BackupType}',''),'{Partial}',''),'{CopyOnly}',''),'{Description}',''),'{BackupSetName}',''),'{Year}',''),'{Month}',''),'{Day}',''),'{Week}',''),'{Weekday}',''),'{Hour}',''),'{Minute}',''),'{Second}',''),'{Millisecond}',''),'{Microsecond}',''),'{MajorVersion}',''),'{MinorVersion}','') AS AvailabilityGroupDirectoryStructure) Temp WHERE AvailabilityGroupDirectoryStructure LIKE '%{%' OR AvailabilityGroupDirectoryStructure LIKE '%}%')
+  IF EXISTS (SELECT * FROM (SELECT REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(@AvailabilityGroupDirectoryStructure,'{DirectorySeparator}',''),'{ServerName}',''),'{InstanceName}',''),'{ServiceName}',''),'{ClusterName}',''),'{AvailabilityGroupName}',''),'{DatabaseName}',''),'{FileGroupName}',''),'{BackupType}',''),'{Partial}',''),'{CopyOnly}',''),'{Description}',''),'{BackupSetName}',''),'{Year}',''),'{Month}',''),'{Day}',''),'{Week}',''),'{Weekday}',''),'{Hour}',''),'{Minute}',''),'{Second}',''),'{Millisecond}',''),'{Microsecond}',''),'{MajorVersion}',''),'{MinorVersion}','') AS AvailabilityGroupDirectoryStructure) Temp WHERE AvailabilityGroupDirectoryStructure LIKE '%{%' OR AvailabilityGroupDirectoryStructure LIKE '%}%')
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
     SELECT 'The parameter @AvailabilityGroupDirectoryStructure contains one or more tokens that are not supported.', 16, 1
@@ -2202,7 +2275,7 @@ BEGIN
 
   ----------------------------------------------------------------------------------------------------
 
-  IF EXISTS (SELECT * FROM (SELECT REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(@FileName,'{DirectorySeparator}',''),'{ServerName}',''),'{InstanceName}',''),'{ServiceName}',''),'{ClusterName}',''),'{AvailabilityGroupName}',''),'{DatabaseName}',''),'{BackupType}',''),'{Partial}',''),'{CopyOnly}',''),'{Description}',''),'{BackupSetName}',''),'{Year}',''),'{Month}',''),'{Day}',''),'{Week}',''),'{Weekday}',''),'{Hour}',''),'{Minute}',''),'{Second}',''),'{Millisecond}',''),'{Microsecond}',''),'{FileNumber}',''),'{NumberOfFiles}',''),'{FileExtension}',''),'{MajorVersion}',''),'{MinorVersion}','') AS [FileName]) Temp WHERE [FileName] LIKE '%{%' OR [FileName] LIKE '%}%')
+  IF EXISTS (SELECT * FROM (SELECT REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(@FileName,'{DirectorySeparator}',''),'{ServerName}',''),'{InstanceName}',''),'{ServiceName}',''),'{ClusterName}',''),'{AvailabilityGroupName}',''),'{DatabaseName}',''),'{FileGroupName}',''),'{BackupType}',''),'{Partial}',''),'{CopyOnly}',''),'{Description}',''),'{BackupSetName}',''),'{Year}',''),'{Month}',''),'{Day}',''),'{Week}',''),'{Weekday}',''),'{Hour}',''),'{Minute}',''),'{Second}',''),'{Millisecond}',''),'{Microsecond}',''),'{FileNumber}',''),'{NumberOfFiles}',''),'{FileExtension}',''),'{MajorVersion}',''),'{MinorVersion}','') AS [FileName]) Temp WHERE [FileName] LIKE '%{%' OR [FileName] LIKE '%}%')
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
     SELECT 'The parameter @FileName contains one or more tokens that are not supported.', 16, 1
@@ -2210,7 +2283,7 @@ BEGIN
 
   ----------------------------------------------------------------------------------------------------
 
-  IF EXISTS (SELECT * FROM (SELECT REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(@AvailabilityGroupFileName,'{DirectorySeparator}',''),'{ServerName}',''),'{InstanceName}',''),'{ServiceName}',''),'{ClusterName}',''),'{AvailabilityGroupName}',''),'{DatabaseName}',''),'{BackupType}',''),'{Partial}',''),'{CopyOnly}',''),'{Description}',''),'{BackupSetName}',''),'{Year}',''),'{Month}',''),'{Day}',''),'{Week}',''),'{Weekday}',''),'{Hour}',''),'{Minute}',''),'{Second}',''),'{Millisecond}',''),'{Microsecond}',''),'{FileNumber}',''),'{NumberOfFiles}',''),'{FileExtension}',''),'{MajorVersion}',''),'{MinorVersion}','') AS AvailabilityGroupFileName) Temp WHERE AvailabilityGroupFileName LIKE '%{%' OR AvailabilityGroupFileName LIKE '%}%')
+  IF EXISTS (SELECT * FROM (SELECT REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(@AvailabilityGroupFileName,'{DirectorySeparator}',''),'{ServerName}',''),'{InstanceName}',''),'{ServiceName}',''),'{ClusterName}',''),'{AvailabilityGroupName}',''),'{DatabaseName}',''),'{FileGroupName}',''),'{BackupType}',''),'{Partial}',''),'{CopyOnly}',''),'{Description}',''),'{BackupSetName}',''),'{Year}',''),'{Month}',''),'{Day}',''),'{Week}',''),'{Weekday}',''),'{Hour}',''),'{Minute}',''),'{Second}',''),'{Millisecond}',''),'{Microsecond}',''),'{FileNumber}',''),'{NumberOfFiles}',''),'{FileExtension}',''),'{MajorVersion}',''),'{MinorVersion}','') AS AvailabilityGroupFileName) Temp WHERE AvailabilityGroupFileName LIKE '%{%' OR AvailabilityGroupFileName LIKE '%}%')
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
     SELECT 'The parameter @AvailabilityGroupFileName contains one or more tokens that are not supported.', 16, 1
@@ -2758,6 +2831,73 @@ BEGIN
       BREAK
     END
 
+    -- Select filegroups
+    IF @FileGroups IS NOT NULL
+    BEGIN
+      SET @CurrentCommand = 'SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED; SELECT data_space_id AS FileGroupID, name AS FileGroupName, 0 AS [Order], 0 AS Selected, 0 AS Completed FROM ' + QUOTENAME(@CurrentDatabaseName) + '.sys.filegroups filegroups WHERE [type] <> ''FX'' ORDER BY CASE WHEN filegroups.name = ''PRIMARY'' THEN 1 ELSE 0 END DESC, filegroups.name ASC'
+
+      INSERT INTO @tmpFileGroups (FileGroupID, FileGroupName, [Order], Selected, Completed)
+      EXECUTE sp_executesql @statement = @CurrentCommand
+      SET @Error = @@ERROR
+      IF @Error <> 0 SET @ReturnCode = @Error
+
+      IF @FileGroups IS NULL
+      BEGIN
+        UPDATE tmpFileGroups
+        SET tmpFileGroups.Selected = 1
+        FROM @tmpFileGroups tmpFileGroups
+      END
+      ELSE
+      BEGIN
+        UPDATE tmpFileGroups
+        SET tmpFileGroups.Selected = SelectedFileGroups.Selected
+        FROM @tmpFileGroups tmpFileGroups
+        INNER JOIN @SelectedFileGroups SelectedFileGroups
+        ON @CurrentDatabaseName LIKE REPLACE(SelectedFileGroups.DatabaseName,'_','[_]') AND tmpFileGroups.FileGroupName LIKE REPLACE(SelectedFileGroups.FileGroupName,'_','[_]')
+        WHERE SelectedFileGroups.Selected = 1
+
+        UPDATE tmpFileGroups
+        SET tmpFileGroups.Selected = SelectedFileGroups.Selected
+        FROM @tmpFileGroups tmpFileGroups
+        INNER JOIN @SelectedFileGroups SelectedFileGroups
+        ON @CurrentDatabaseName LIKE REPLACE(SelectedFileGroups.DatabaseName,'_','[_]') AND tmpFileGroups.FileGroupName LIKE REPLACE(SelectedFileGroups.FileGroupName,'_','[_]')
+        WHERE SelectedFileGroups.Selected = 0
+
+        UPDATE tmpFileGroups
+        SET tmpFileGroups.StartPosition = SelectedFileGroups2.StartPosition
+        FROM @tmpFileGroups tmpFileGroups
+        INNER JOIN (SELECT tmpFileGroups.FileGroupName, MIN(SelectedFileGroups.StartPosition) AS StartPosition
+                    FROM @tmpFileGroups tmpFileGroups
+                    INNER JOIN @SelectedFileGroups SelectedFileGroups
+                    ON @CurrentDatabaseName LIKE REPLACE(SelectedFileGroups.DatabaseName,'_','[_]') AND tmpFileGroups.FileGroupName LIKE REPLACE(SelectedFileGroups.FileGroupName,'_','[_]')
+                    WHERE SelectedFileGroups.Selected = 1
+                    GROUP BY tmpFileGroups.FileGroupName) SelectedFileGroups2
+        ON tmpFileGroups.FileGroupName = SelectedFileGroups2.FileGroupName
+      END;
+
+      WITH tmpFileGroups AS (
+      SELECT FileGroupName, [Order], ROW_NUMBER() OVER (ORDER BY StartPosition ASC, FileGroupName ASC) AS RowNumber
+      FROM @tmpFileGroups tmpFileGroups
+      WHERE Selected = 1
+      )
+      UPDATE tmpFileGroups
+      SET [Order] = RowNumber
+
+      SET @ErrorMessage = ''
+      SELECT @ErrorMessage = @ErrorMessage + QUOTENAME(DatabaseName) + '.' + QUOTENAME(FileGroupName) + ', '
+      FROM @SelectedFileGroups SelectedFileGroups
+      WHERE DatabaseName = @CurrentDatabaseName
+      AND FileGroupName NOT LIKE '%[%]%'
+      AND NOT EXISTS (SELECT * FROM @tmpFileGroups WHERE FileGroupName = SelectedFileGroups.FileGroupName)
+      IF @@ROWCOUNT > 0
+      BEGIN
+        SET @ErrorMessage = 'The following file groups do not exist: ' + LEFT(@ErrorMessage,LEN(@ErrorMessage)-1) + '.' + CHAR(13) + CHAR(10) + ' '
+        RAISERROR(@ErrorMessage,16,1) WITH NOWAIT
+        SET @Error = @@ERROR
+      END
+
+    END
+
     SET @CurrentDatabase_sp_executesql = QUOTENAME(@CurrentDatabaseName) + '.sys.sp_executesql'
 
     BEGIN
@@ -3011,6 +3151,43 @@ BEGIN
     AND NOT (@CurrentBackupType = 'DIFF' AND @MinDatabaseSizeForDifferentialBackup IS NOT NULL AND (COALESCE(CAST(@CurrentAllocatedExtentPageCount AS bigint) * 8192, CAST(@CurrentDatabaseSize AS bigint) * 8192) < CAST(@MinDatabaseSizeForDifferentialBackup AS bigint) * 1024 * 1024))
     BEGIN
 
+    WHILE (1 = 1)
+    BEGIN
+
+      IF @FileGroups IS NOT NULL
+      BEGIN
+        SELECT TOP 1 @CurrentFGID = ID,
+                     @CurrentFileGroupID = FileGroupID,
+                     @CurrentFileGroupName = FileGroupName
+        FROM @tmpFileGroups
+        WHERE Selected = 1
+        AND Completed = 0
+        ORDER BY [Order] ASC
+
+        IF @@ROWCOUNT = 0
+        BEGIN
+          BREAK
+        END
+
+        -- Does the filegroup exist?
+        SET @CurrentCommand = ''
+        SET @CurrentCommand = @CurrentCommand + 'IF EXISTS(SELECT * FROM ' + QUOTENAME(@CurrentDatabaseName) + '.sys.filegroups filegroups WHERE [type] <> ''FX'' AND filegroups.data_space_id = @ParamFileGroupID AND filegroups.[name] = @ParamFileGroupName) BEGIN SET @ParamFileGroupExists = 1 END'
+
+        EXECUTE sp_executesql @statement = @CurrentCommand, @params = N'@ParamFileGroupID int, @ParamFileGroupName sysname, @ParamFileGroupExists bit OUTPUT', @ParamFileGroupID = @CurrentFileGroupID, @ParamFileGroupName = @CurrentFileGroupName, @ParamFileGroupExists = @CurrentFileGroupExists OUTPUT
+        SET @Error = @@ERROR
+        IF @Error = 0 AND @CurrentFileGroupExists IS NULL SET @CurrentFileGroupExists = 0
+        IF @Error = 1222
+        BEGIN
+          SET @ErrorMessage = 'The file group ' + QUOTENAME(@CurrentFileGroupName) + ' in the database ' + QUOTENAME(@CurrentDatabaseName) + ' is locked. It could not be checked if the filegroup exists.' + CHAR(13) + CHAR(10) + ' '
+          SET @ErrorMessage = REPLACE(@ErrorMessage,'%','%%')
+          RAISERROR(@ErrorMessage,16,1) WITH NOWAIT
+        END
+        IF @Error <> 0
+        BEGIN
+          SET @ReturnCode = @Error
+        END
+      END
+
       IF @CurrentBackupType = 'LOG' AND (@CleanupTime IS NOT NULL OR @MirrorCleanupTime IS NOT NULL)
       BEGIN
         SELECT @CurrentLatestBackup = MAX(backup_start_date)
@@ -3041,6 +3218,7 @@ BEGIN
       IF @CurrentDirectoryStructure IS NOT NULL
       BEGIN
       -- Directory structure - remove tokens that are not needed
+        IF @CurrentFileGroupName IS NULL SET @CurrentDirectoryStructure = REPLACE(@CurrentDirectoryStructure,'{FileGroupName}','')
         IF @ReadWriteFileGroups = 'N' SET @CurrentDirectoryStructure = REPLACE(@CurrentDirectoryStructure,'{Partial}','')
         IF @CopyOnly = 'N' SET @CurrentDirectoryStructure = REPLACE(@CurrentDirectoryStructure,'{CopyOnly}','')
         IF @Cluster IS NULL SET @CurrentDirectoryStructure = REPLACE(@CurrentDirectoryStructure,'{ClusterName}','')
@@ -3202,6 +3380,7 @@ BEGIN
         SET @CurrentDirectoryStructure = REPLACE(@CurrentDirectoryStructure,'{ClusterName}',ISNULL(@Cluster,''))
         SET @CurrentDirectoryStructure = REPLACE(@CurrentDirectoryStructure,'{AvailabilityGroupName}',ISNULL(@CurrentAvailabilityGroup,''))
         SET @CurrentDirectoryStructure = REPLACE(@CurrentDirectoryStructure,'{DatabaseName}',@CurrentDatabaseNameFS)
+        SET @CurrentDirectoryStructure = REPLACE(@CurrentDirectoryStructure,'{FileGroupName}',ISNULL(@CurrentFileGroupName,''))
         SET @CurrentDirectoryStructure = REPLACE(@CurrentDirectoryStructure,'{BackupType}',@CurrentBackupType)
         SET @CurrentDirectoryStructure = REPLACE(@CurrentDirectoryStructure,'{Partial}','PARTIAL')
         SET @CurrentDirectoryStructure = REPLACE(@CurrentDirectoryStructure,'{CopyOnly}','COPY_ONLY')
@@ -3251,6 +3430,7 @@ BEGIN
       END
 
       -- File name - remove tokens that are not needed
+      IF @CurrentFileGroupName IS NULL SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'{FileGroupName}','')
       IF @ReadWriteFileGroups = 'N' SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'{Partial}','')
       IF @CopyOnly = 'N' SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'{CopyOnly}','')
       IF @Cluster IS NULL SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'{ClusterName}','')
@@ -3366,6 +3546,7 @@ BEGIN
       SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'{ServiceName}',ISNULL(@@SERVICENAME,''))
       SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'{ClusterName}',ISNULL(@Cluster,''))
       SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'{AvailabilityGroupName}',ISNULL(@CurrentAvailabilityGroup,''))
+      SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'{FileGroupName}',ISNULL(@CurrentFileGroupName,''))
       SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'{BackupType}',@CurrentBackupType)
       SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'{Partial}','PARTIAL')
       SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'{CopyOnly}','COPY_ONLY')
@@ -3724,6 +3905,8 @@ BEGIN
           WHEN @CurrentBackupType IN('DIFF','FULL') THEN 'BACKUP DATABASE ' + QUOTENAME(@CurrentDatabaseName)
           WHEN @CurrentBackupType = 'LOG' THEN 'BACKUP LOG ' + QUOTENAME(@CurrentDatabaseName)
           END
+
+          IF @FileGroups IS NOT NULL SET @CurrentCommand += ' FILEGROUP = ''' + @CurrentFileGroupName + ''''
 
           IF @ReadWriteFileGroups = 'Y' AND @CurrentDatabaseName <> 'master' SET @CurrentCommand += ' READ_WRITE_FILEGROUPS'
 
@@ -4215,6 +4398,33 @@ BEGIN
           SET @CurrentCommandType = NULL
         END
       END
+
+        UPDATE @tmpFileGroups
+        SET Completed = 1
+        WHERE Selected = 1
+        AND Completed = 0
+        AND ID = @CurrentFGID
+
+        SET @CurrentDatabaseContext = NULL
+        SET @CurrentCommand = NULL
+        SET @CurrentCommandOutput = NULL
+        SET @CurrentCommandType = NULL
+
+        SET @CurrentBackupOutput = NULL
+
+        DELETE FROM @CurrentDirectories
+        DELETE FROM @CurrentURLs
+        DELETE FROM @CurrentFiles
+        DELETE FROM @CurrentCleanupDates
+        DELETE FROM @CurrentBackupSet
+
+        IF @FileGroups IS NULL
+        BEGIN
+          BREAK
+        END
+
+    END
+
     END
 
     IF @CurrentDatabaseState = 'SUSPECT'
@@ -4284,19 +4494,6 @@ BEGIN
     SET @CurrentLogSizeSinceLastLogBackup = NULL
     SET @CurrentAllocatedExtentPageCount = NULL
     SET @CurrentModifiedExtentPageCount = NULL
-
-    SET @CurrentDatabaseContext = NULL
-    SET @CurrentCommand = NULL
-    SET @CurrentCommandOutput = NULL
-    SET @CurrentCommandType = NULL
-
-    SET @CurrentBackupOutput = NULL
-
-    DELETE FROM @CurrentDirectories
-    DELETE FROM @CurrentURLs
-    DELETE FROM @CurrentFiles
-    DELETE FROM @CurrentCleanupDates
-    DELETE FROM @CurrentBackupSet
 
   END
 
