@@ -92,7 +92,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2025-06-08 20:41:55                                                               //--
+  --// Version: 2025-06-08 22:57:39                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -2545,6 +2545,12 @@ BEGIN
     SELECT 'The value for the parameter @DatabasesInParallel is not supported.', 16, 2
   END
 
+  IF @DatabasesInParallel = 'Y' AND @FileGroups IS NOT NULL
+  BEGIN
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'The value for the parameter @DatabasesInParallel is not supported. This option is not supported with file group backup.', 16, 3
+  END
+
   ----------------------------------------------------------------------------------------------------
 
   IF @LogToTable NOT IN('Y','N') OR @LogToTable IS NULL
@@ -3210,6 +3216,7 @@ BEGIN
     AND NOT (@CurrentBackupType = 'LOG' AND @LogSizeSinceLastLogBackup IS NOT NULL AND @TimeSinceLastLogBackup IS NOT NULL AND NOT(@CurrentLogSizeSinceLastLogBackup >= @LogSizeSinceLastLogBackup OR @CurrentLogSizeSinceLastLogBackup IS NULL OR DATEDIFF(SECOND,@CurrentLastLogBackup,SYSDATETIME()) >= @TimeSinceLastLogBackup OR @CurrentLastLogBackup IS NULL))
     AND NOT (@CurrentBackupType = 'LOG' AND @Updateability = 'READ_ONLY' AND @BackupSoftware = 'DATA_DOMAIN_BOOST')
     AND NOT (@CurrentBackupType = 'DIFF' AND @MinDatabaseSizeForDifferentialBackup IS NOT NULL AND (COALESCE(CAST(@CurrentAllocatedExtentPageCount AS bigint) * 8192, CAST(@CurrentDatabaseSize AS bigint) * 8192) < CAST(@MinDatabaseSizeForDifferentialBackup AS bigint) * 1024 * 1024))
+    AND NOT (@FileGroups IS NOT NULL AND @CurrentDatabaseName IN ('master','msdb','model'))
     BEGIN
 
       WHILE (1 = 1)
@@ -3249,565 +3256,687 @@ BEGIN
           END
         END
 
-        IF @CurrentBackupType = 'LOG' AND (@CleanupTime IS NOT NULL OR @MirrorCleanupTime IS NOT NULL)
+        IF @CurrentFileGroupExists = 1 OR @CurrentFileGroupExists IS NULL
         BEGIN
-          SELECT @CurrentLatestBackup = MAX(backup_start_date)
-          FROM msdb.dbo.backupset
-          WHERE ([type] IN('D','I')
-          OR ([type] = 'L' AND last_lsn < @CurrentDifferentialBaseLSN))
-          AND is_damaged = 0
-          AND [database_name] = @CurrentDatabaseName
-        END
 
-        SET @CurrentDate = SYSDATETIME()
-        SET @CurrentDateUTC = SYSUTCDATETIME()
-
-        INSERT INTO @CurrentCleanupDates (CleanupDate)
-        SELECT @CurrentDate
-
-        IF @CurrentBackupType = 'LOG'
-        BEGIN
-          INSERT INTO @CurrentCleanupDates (CleanupDate)
-          SELECT @CurrentLatestBackup
-        END
-
-        SELECT @CurrentDirectoryStructure = CASE
-        WHEN @CurrentAvailabilityGroup IS NOT NULL THEN @AvailabilityGroupDirectoryStructure
-        ELSE @DirectoryStructure
-        END
-
-        IF @CurrentDirectoryStructure IS NOT NULL
-        BEGIN
-        -- Directory structure - remove tokens that are not needed
-          IF @CurrentFileGroupName IS NULL SET @CurrentDirectoryStructure = REPLACE(@CurrentDirectoryStructure,'{FileGroupName}','')
-          IF @ReadWriteFileGroups = 'N' SET @CurrentDirectoryStructure = REPLACE(@CurrentDirectoryStructure,'{Partial}','')
-          IF @CopyOnly = 'N' SET @CurrentDirectoryStructure = REPLACE(@CurrentDirectoryStructure,'{CopyOnly}','')
-          IF @Cluster IS NULL SET @CurrentDirectoryStructure = REPLACE(@CurrentDirectoryStructure,'{ClusterName}','')
-          IF @CurrentAvailabilityGroup IS NULL SET @CurrentDirectoryStructure = REPLACE(@CurrentDirectoryStructure,'{AvailabilityGroupName}','')
-          IF SERVERPROPERTY('InstanceName') IS NULL SET @CurrentDirectoryStructure = REPLACE(@CurrentDirectoryStructure,'{InstanceName}','')
-          IF @@SERVICENAME IS NULL SET @CurrentDirectoryStructure = REPLACE(@CurrentDirectoryStructure,'{ServiceName}','')
-          IF @Description IS NULL SET @CurrentDirectoryStructure = REPLACE(@CurrentDirectoryStructure,'{Description}','')
-          IF @BackupSetName IS NULL SET @CurrentDirectoryStructure = REPLACE(@CurrentDirectoryStructure,'{BackupSetName}','')
-
-          IF @Directory IS NULL AND @MirrorDirectory IS NULL AND @URL IS NULL AND @DefaultDirectory LIKE '%' + '.' + @@SERVICENAME + @DirectorySeparator + 'MSSQL' + @DirectorySeparator + 'Backup'
+          IF @CurrentBackupType = 'LOG' AND (@CleanupTime IS NOT NULL OR @MirrorCleanupTime IS NOT NULL)
           BEGIN
-            SET @CurrentDirectoryStructure = REPLACE(@CurrentDirectoryStructure,'{ServerName}','')
-            SET @CurrentDirectoryStructure = REPLACE(@CurrentDirectoryStructure,'{InstanceName}','')
-            SET @CurrentDirectoryStructure = REPLACE(@CurrentDirectoryStructure,'{ClusterName}','')
-            SET @CurrentDirectoryStructure = REPLACE(@CurrentDirectoryStructure,'{AvailabilityGroupName}','')
+            SELECT @CurrentLatestBackup = MAX(backup_start_date)
+            FROM msdb.dbo.backupset
+            WHERE ([type] IN('D','I')
+            OR ([type] = 'L' AND last_lsn < @CurrentDifferentialBaseLSN))
+            AND is_damaged = 0
+            AND [database_name] = @CurrentDatabaseName
           END
+
+          SET @CurrentDate = SYSDATETIME()
+          SET @CurrentDateUTC = SYSUTCDATETIME()
+
+          INSERT INTO @CurrentCleanupDates (CleanupDate)
+          SELECT @CurrentDate
+
+          IF @CurrentBackupType = 'LOG'
+          BEGIN
+            INSERT INTO @CurrentCleanupDates (CleanupDate)
+            SELECT @CurrentLatestBackup
+          END
+
+          SELECT @CurrentDirectoryStructure = CASE
+          WHEN @CurrentAvailabilityGroup IS NOT NULL THEN @AvailabilityGroupDirectoryStructure
+          ELSE @DirectoryStructure
+          END
+
+          IF @CurrentDirectoryStructure IS NOT NULL
+          BEGIN
+          -- Directory structure - remove tokens that are not needed
+            IF @CurrentFileGroupName IS NULL SET @CurrentDirectoryStructure = REPLACE(@CurrentDirectoryStructure,'{FileGroupName}','')
+            IF @ReadWriteFileGroups = 'N' SET @CurrentDirectoryStructure = REPLACE(@CurrentDirectoryStructure,'{Partial}','')
+            IF @CopyOnly = 'N' SET @CurrentDirectoryStructure = REPLACE(@CurrentDirectoryStructure,'{CopyOnly}','')
+            IF @Cluster IS NULL SET @CurrentDirectoryStructure = REPLACE(@CurrentDirectoryStructure,'{ClusterName}','')
+            IF @CurrentAvailabilityGroup IS NULL SET @CurrentDirectoryStructure = REPLACE(@CurrentDirectoryStructure,'{AvailabilityGroupName}','')
+            IF SERVERPROPERTY('InstanceName') IS NULL SET @CurrentDirectoryStructure = REPLACE(@CurrentDirectoryStructure,'{InstanceName}','')
+            IF @@SERVICENAME IS NULL SET @CurrentDirectoryStructure = REPLACE(@CurrentDirectoryStructure,'{ServiceName}','')
+            IF @Description IS NULL SET @CurrentDirectoryStructure = REPLACE(@CurrentDirectoryStructure,'{Description}','')
+            IF @BackupSetName IS NULL SET @CurrentDirectoryStructure = REPLACE(@CurrentDirectoryStructure,'{BackupSetName}','')
+
+            IF @Directory IS NULL AND @MirrorDirectory IS NULL AND @URL IS NULL AND @DefaultDirectory LIKE '%' + '.' + @@SERVICENAME + @DirectorySeparator + 'MSSQL' + @DirectorySeparator + 'Backup'
+            BEGIN
+              SET @CurrentDirectoryStructure = REPLACE(@CurrentDirectoryStructure,'{ServerName}','')
+              SET @CurrentDirectoryStructure = REPLACE(@CurrentDirectoryStructure,'{InstanceName}','')
+              SET @CurrentDirectoryStructure = REPLACE(@CurrentDirectoryStructure,'{ClusterName}','')
+              SET @CurrentDirectoryStructure = REPLACE(@CurrentDirectoryStructure,'{AvailabilityGroupName}','')
+            END
+
+            WHILE (@Updated = 1 OR @Updated IS NULL)
+            BEGIN
+              SET @Updated = 0
+
+              IF CHARINDEX('\',@CurrentDirectoryStructure) > 0
+              BEGIN
+                SET @CurrentDirectoryStructure = REPLACE(@CurrentDirectoryStructure,'\','{DirectorySeparator}')
+                SET @Updated = 1
+              END
+
+              IF CHARINDEX('/',@CurrentDirectoryStructure) > 0
+              BEGIN
+                SET @CurrentDirectoryStructure = REPLACE(@CurrentDirectoryStructure,'/','{DirectorySeparator}')
+                SET @Updated = 1
+              END
+
+              IF CHARINDEX('__',@CurrentDirectoryStructure) > 0
+              BEGIN
+                SET @CurrentDirectoryStructure = REPLACE(@CurrentDirectoryStructure,'__','_')
+                SET @Updated = 1
+              END
+
+              IF CHARINDEX('--',@CurrentDirectoryStructure) > 0
+              BEGIN
+                SET @CurrentDirectoryStructure = REPLACE(@CurrentDirectoryStructure,'--','-')
+                SET @Updated = 1
+              END
+
+              IF CHARINDEX('{DirectorySeparator}{DirectorySeparator}',@CurrentDirectoryStructure) > 0
+              BEGIN
+                SET @CurrentDirectoryStructure = REPLACE(@CurrentDirectoryStructure,'{DirectorySeparator}{DirectorySeparator}','{DirectorySeparator}')
+                SET @Updated = 1
+              END
+
+              IF CHARINDEX('{DirectorySeparator}$',@CurrentDirectoryStructure) > 0
+              BEGIN
+                SET @CurrentDirectoryStructure = REPLACE(@CurrentDirectoryStructure,'{DirectorySeparator}$','{DirectorySeparator}')
+                SET @Updated = 1
+              END
+              IF CHARINDEX('${DirectorySeparator}',@CurrentDirectoryStructure) > 0
+              BEGIN
+                SET @CurrentDirectoryStructure = REPLACE(@CurrentDirectoryStructure,'${DirectorySeparator}','{DirectorySeparator}')
+                SET @Updated = 1
+              END
+
+              IF CHARINDEX('{DirectorySeparator}_',@CurrentDirectoryStructure) > 0
+              BEGIN
+                SET @CurrentDirectoryStructure = REPLACE(@CurrentDirectoryStructure,'{DirectorySeparator}_','{DirectorySeparator}')
+                SET @Updated = 1
+              END
+              IF CHARINDEX('_{DirectorySeparator}',@CurrentDirectoryStructure) > 0
+              BEGIN
+                SET @CurrentDirectoryStructure = REPLACE(@CurrentDirectoryStructure,'_{DirectorySeparator}','{DirectorySeparator}')
+                SET @Updated = 1
+              END
+
+              IF CHARINDEX('{DirectorySeparator}-',@CurrentDirectoryStructure) > 0
+              BEGIN
+                SET @CurrentDirectoryStructure = REPLACE(@CurrentDirectoryStructure,'{DirectorySeparator}-','{DirectorySeparator}')
+                SET @Updated = 1
+              END
+              IF CHARINDEX('-{DirectorySeparator}',@CurrentDirectoryStructure) > 0
+              BEGIN
+                SET @CurrentDirectoryStructure = REPLACE(@CurrentDirectoryStructure,'-{DirectorySeparator}','{DirectorySeparator}')
+                SET @Updated = 1
+              END
+
+              IF CHARINDEX('_$',@CurrentDirectoryStructure) > 0
+              BEGIN
+                SET @CurrentDirectoryStructure = REPLACE(@CurrentDirectoryStructure,'_$','_')
+                SET @Updated = 1
+              END
+              IF CHARINDEX('$_',@CurrentDirectoryStructure) > 0
+              BEGIN
+                SET @CurrentDirectoryStructure = REPLACE(@CurrentDirectoryStructure,'$_','_')
+                SET @Updated = 1
+              END
+
+              IF CHARINDEX('-$',@CurrentDirectoryStructure) > 0
+              BEGIN
+                SET @CurrentDirectoryStructure = REPLACE(@CurrentDirectoryStructure,'-$','-')
+                SET @Updated = 1
+              END
+              IF CHARINDEX('$-',@CurrentDirectoryStructure) > 0
+              BEGIN
+                SET @CurrentDirectoryStructure = REPLACE(@CurrentDirectoryStructure,'$-','-')
+                SET @Updated = 1
+              END
+
+              IF LEFT(@CurrentDirectoryStructure,1) = '_'
+              BEGIN
+                SET @CurrentDirectoryStructure = RIGHT(@CurrentDirectoryStructure,LEN(@CurrentDirectoryStructure) - 1)
+                SET @Updated = 1
+              END
+              IF RIGHT(@CurrentDirectoryStructure,1) = '_'
+              BEGIN
+                SET @CurrentDirectoryStructure = LEFT(@CurrentDirectoryStructure,LEN(@CurrentDirectoryStructure) - 1)
+                SET @Updated = 1
+              END
+
+              IF LEFT(@CurrentDirectoryStructure,1) = '-'
+              BEGIN
+                SET @CurrentDirectoryStructure = RIGHT(@CurrentDirectoryStructure,LEN(@CurrentDirectoryStructure) - 1)
+                SET @Updated = 1
+              END
+              IF RIGHT(@CurrentDirectoryStructure,1) = '-'
+              BEGIN
+                SET @CurrentDirectoryStructure = LEFT(@CurrentDirectoryStructure,LEN(@CurrentDirectoryStructure) - 1)
+                SET @Updated = 1
+              END
+
+              IF LEFT(@CurrentDirectoryStructure,1) = '$'
+              BEGIN
+                SET @CurrentDirectoryStructure = RIGHT(@CurrentDirectoryStructure,LEN(@CurrentDirectoryStructure) - 1)
+                SET @Updated = 1
+              END
+              IF RIGHT(@CurrentDirectoryStructure,1) = '$'
+              BEGIN
+                SET @CurrentDirectoryStructure = LEFT(@CurrentDirectoryStructure,LEN(@CurrentDirectoryStructure) - 1)
+                SET @Updated = 1
+              END
+
+              IF LEFT(@CurrentDirectoryStructure,20) = '{DirectorySeparator}'
+              BEGIN
+                SET @CurrentDirectoryStructure = RIGHT(@CurrentDirectoryStructure,LEN(@CurrentDirectoryStructure) - 20)
+                SET @Updated = 1
+              END
+              IF RIGHT(@CurrentDirectoryStructure,20) = '{DirectorySeparator}'
+              BEGIN
+                SET @CurrentDirectoryStructure = LEFT(@CurrentDirectoryStructure,LEN(@CurrentDirectoryStructure) - 20)
+                SET @Updated = 1
+              END
+            END
+
+            SET @Updated = NULL
+
+            -- Directory structure - replace tokens with real values
+            SET @CurrentDirectoryStructure = REPLACE(@CurrentDirectoryStructure,'{DirectorySeparator}',@DirectorySeparator)
+            SET @CurrentDirectoryStructure = REPLACE(@CurrentDirectoryStructure,'{ServerName}',CASE WHEN SERVERPROPERTY('EngineEdition') = 8 THEN LEFT(CAST(SERVERPROPERTY('ServerName') AS nvarchar(max)),CHARINDEX('.',CAST(SERVERPROPERTY('ServerName') AS nvarchar(max))) - 1) ELSE CAST(SERVERPROPERTY('MachineName') AS nvarchar(max)) END)
+            SET @CurrentDirectoryStructure = REPLACE(@CurrentDirectoryStructure,'{InstanceName}',ISNULL(CAST(SERVERPROPERTY('InstanceName') AS nvarchar(max)),''))
+            SET @CurrentDirectoryStructure = REPLACE(@CurrentDirectoryStructure,'{ServiceName}',ISNULL(@@SERVICENAME,''))
+            SET @CurrentDirectoryStructure = REPLACE(@CurrentDirectoryStructure,'{ClusterName}',ISNULL(@Cluster,''))
+            SET @CurrentDirectoryStructure = REPLACE(@CurrentDirectoryStructure,'{AvailabilityGroupName}',ISNULL(@CurrentAvailabilityGroup,''))
+            SET @CurrentDirectoryStructure = REPLACE(@CurrentDirectoryStructure,'{DatabaseName}',@CurrentDatabaseNameFS)
+            SET @CurrentDirectoryStructure = REPLACE(@CurrentDirectoryStructure,'{FileGroupName}',ISNULL(@CurrentFileGroupName,''))
+            SET @CurrentDirectoryStructure = REPLACE(@CurrentDirectoryStructure,'{BackupType}',@CurrentBackupType)
+            SET @CurrentDirectoryStructure = REPLACE(@CurrentDirectoryStructure,'{Partial}','PARTIAL')
+            SET @CurrentDirectoryStructure = REPLACE(@CurrentDirectoryStructure,'{CopyOnly}','COPY_ONLY')
+            SET @CurrentDirectoryStructure = REPLACE(@CurrentDirectoryStructure,'{Description}',LTRIM(RTRIM(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(ISNULL(@Description,''),'\',''),'/',''),':',''),'*',''),'?',''),'"',''),'<',''),'>',''),'|',''))))
+            SET @CurrentDirectoryStructure = REPLACE(@CurrentDirectoryStructure,'{BackupSetName}',LTRIM(RTRIM(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(ISNULL(@BackupSetName,''),'\',''),'/',''),':',''),'*',''),'?',''),'"',''),'<',''),'>',''),'|',''))))
+            SET @CurrentDirectoryStructure = REPLACE(@CurrentDirectoryStructure,'{Year}',CAST(DATEPART(YEAR,CASE WHEN @TokenTimezone = 'UTC' THEN @CurrentDateUTC ELSE @CurrentDate END) AS nvarchar))
+            SET @CurrentDirectoryStructure = REPLACE(@CurrentDirectoryStructure,'{Month}',RIGHT('0' + CAST(DATEPART(MONTH,CASE WHEN @TokenTimezone = 'UTC' THEN @CurrentDateUTC ELSE @CurrentDate END) AS nvarchar),2))
+            SET @CurrentDirectoryStructure = REPLACE(@CurrentDirectoryStructure,'{Day}',RIGHT('0' + CAST(DATEPART(DAY,CASE WHEN @TokenTimezone = 'UTC' THEN @CurrentDateUTC ELSE @CurrentDate END) AS nvarchar),2))
+            SET @CurrentDirectoryStructure = REPLACE(@CurrentDirectoryStructure,'{Week}',RIGHT('0' + CAST(DATEPART(WEEK,CASE WHEN @TokenTimezone = 'UTC' THEN @CurrentDateUTC ELSE @CurrentDate END) AS nvarchar),2))
+            SET @CurrentDirectoryStructure = REPLACE(@CurrentDirectoryStructure,'{Weekday}',DATENAME(WEEKDAY,CASE WHEN @TokenTimezone = 'UTC' THEN @CurrentDateUTC ELSE @CurrentDate END))
+            SET @CurrentDirectoryStructure = REPLACE(@CurrentDirectoryStructure,'{Hour}',RIGHT('0' + CAST(DATEPART(HOUR,CASE WHEN @TokenTimezone = 'UTC' THEN @CurrentDateUTC ELSE @CurrentDate END) AS nvarchar),2))
+            SET @CurrentDirectoryStructure = REPLACE(@CurrentDirectoryStructure,'{Minute}',RIGHT('0' + CAST(DATEPART(MINUTE,CASE WHEN @TokenTimezone = 'UTC' THEN @CurrentDateUTC ELSE @CurrentDate END) AS nvarchar),2))
+            SET @CurrentDirectoryStructure = REPLACE(@CurrentDirectoryStructure,'{Second}',RIGHT('0' + CAST(DATEPART(SECOND,CASE WHEN @TokenTimezone = 'UTC' THEN @CurrentDateUTC ELSE @CurrentDate END) AS nvarchar),2))
+            SET @CurrentDirectoryStructure = REPLACE(@CurrentDirectoryStructure,'{Millisecond}',RIGHT('00' + CAST(DATEPART(MILLISECOND,CASE WHEN @TokenTimezone = 'UTC' THEN @CurrentDateUTC ELSE @CurrentDate END) AS nvarchar),3))
+            SET @CurrentDirectoryStructure = REPLACE(@CurrentDirectoryStructure,'{Microsecond}',RIGHT('00000' + CAST(DATEPART(MICROSECOND,CASE WHEN @TokenTimezone = 'UTC' THEN @CurrentDateUTC ELSE @CurrentDate END) AS nvarchar),6))
+            SET @CurrentDirectoryStructure = REPLACE(@CurrentDirectoryStructure,'{MajorVersion}',ISNULL(CAST(SERVERPROPERTY('ProductMajorVersion') AS nvarchar),PARSENAME(CAST(SERVERPROPERTY('ProductVersion') AS nvarchar),4)))
+            SET @CurrentDirectoryStructure = REPLACE(@CurrentDirectoryStructure,'{MinorVersion}',ISNULL(CAST(SERVERPROPERTY('ProductMinorVersion') AS nvarchar),PARSENAME(CAST(SERVERPROPERTY('ProductVersion') AS nvarchar),3)))
+          END
+
+          IF @DirectoryStructureCase IS NOT NULL
+          BEGIN
+            SET @CurrentDirectoryStructure = CASE WHEN @DirectoryStructureCase = 'LOWER' THEN LOWER(@CurrentDirectoryStructure)
+                                                  WHEN @DirectoryStructureCase = 'UPPER' THEN UPPER(@CurrentDirectoryStructure) END
+          END
+
+          INSERT INTO @CurrentDirectories (ID, DirectoryPath, Mirror, DirectoryNumber, CreateCompleted, CleanupCompleted)
+          SELECT ROW_NUMBER() OVER (ORDER BY ID),
+                 DirectoryPath + CASE WHEN DirectoryPath = 'NUL' THEN '' WHEN @CurrentDirectoryStructure IS NOT NULL THEN @DirectorySeparator + @CurrentDirectoryStructure ELSE '' END,
+                 Mirror,
+                 ROW_NUMBER() OVER (PARTITION BY Mirror ORDER BY ID ASC),
+                 0,
+                 0
+          FROM @Directories
+          ORDER BY ID ASC
+
+          INSERT INTO @CurrentURLs (ID, DirectoryPath, Mirror, DirectoryNumber)
+          SELECT ROW_NUMBER() OVER (ORDER BY ID),
+                 DirectoryPath + CASE WHEN @CurrentDirectoryStructure IS NOT NULL THEN @DirectorySeparator + @CurrentDirectoryStructure ELSE '' END,
+                 Mirror,
+                 ROW_NUMBER() OVER (PARTITION BY Mirror ORDER BY ID ASC)
+          FROM @URLs
+          ORDER BY ID ASC
+
+          SELECT @CurrentDatabaseFileName = CASE
+          WHEN @CurrentAvailabilityGroup IS NOT NULL THEN @AvailabilityGroupFileName
+          ELSE @FileName
+          END
+
+          -- File name - remove tokens that are not needed
+          IF @CurrentFileGroupName IS NULL SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'{FileGroupName}','')
+          IF @ReadWriteFileGroups = 'N' SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'{Partial}','')
+          IF @CopyOnly = 'N' SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'{CopyOnly}','')
+          IF @Cluster IS NULL SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'{ClusterName}','')
+          IF @CurrentAvailabilityGroup IS NULL SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'{AvailabilityGroupName}','')
+          IF SERVERPROPERTY('InstanceName') IS NULL SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'{InstanceName}','')
+          IF @@SERVICENAME IS NULL SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'{ServiceName}','')
+          IF @Description IS NULL SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'{Description}','')
+          IF @BackupSetName IS NULL SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'{BackupSetName}','')
+          IF @CurrentNumberOfFiles = 1 SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'{FileNumber}','')
+          IF @CurrentNumberOfFiles = 1 SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'{NumberOfFiles}','')
 
           WHILE (@Updated = 1 OR @Updated IS NULL)
           BEGIN
             SET @Updated = 0
 
-            IF CHARINDEX('\',@CurrentDirectoryStructure) > 0
+            IF CHARINDEX('__',@CurrentDatabaseFileName) > 0
             BEGIN
-              SET @CurrentDirectoryStructure = REPLACE(@CurrentDirectoryStructure,'\','{DirectorySeparator}')
+              SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'__','_')
               SET @Updated = 1
             END
 
-            IF CHARINDEX('/',@CurrentDirectoryStructure) > 0
+            IF CHARINDEX('--',@CurrentDatabaseFileName) > 0
             BEGIN
-              SET @CurrentDirectoryStructure = REPLACE(@CurrentDirectoryStructure,'/','{DirectorySeparator}')
+              SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'--','-')
               SET @Updated = 1
             END
 
-            IF CHARINDEX('__',@CurrentDirectoryStructure) > 0
+            IF CHARINDEX('_$',@CurrentDatabaseFileName) > 0
             BEGIN
-              SET @CurrentDirectoryStructure = REPLACE(@CurrentDirectoryStructure,'__','_')
+              SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'_$','_')
+              SET @Updated = 1
+            END
+            IF CHARINDEX('$_',@CurrentDatabaseFileName) > 0
+            BEGIN
+              SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'$_','_')
               SET @Updated = 1
             END
 
-            IF CHARINDEX('--',@CurrentDirectoryStructure) > 0
+            IF CHARINDEX('-$',@CurrentDatabaseFileName) > 0
             BEGIN
-              SET @CurrentDirectoryStructure = REPLACE(@CurrentDirectoryStructure,'--','-')
+              SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'-$','-')
+              SET @Updated = 1
+            END
+            IF CHARINDEX('$-',@CurrentDatabaseFileName) > 0
+            BEGIN
+              SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'$-','-')
               SET @Updated = 1
             END
 
-            IF CHARINDEX('{DirectorySeparator}{DirectorySeparator}',@CurrentDirectoryStructure) > 0
+            IF CHARINDEX('_.',@CurrentDatabaseFileName) > 0
             BEGIN
-              SET @CurrentDirectoryStructure = REPLACE(@CurrentDirectoryStructure,'{DirectorySeparator}{DirectorySeparator}','{DirectorySeparator}')
+              SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'_.','.')
               SET @Updated = 1
             END
 
-            IF CHARINDEX('{DirectorySeparator}$',@CurrentDirectoryStructure) > 0
+            IF CHARINDEX('-.',@CurrentDatabaseFileName) > 0
             BEGIN
-              SET @CurrentDirectoryStructure = REPLACE(@CurrentDirectoryStructure,'{DirectorySeparator}$','{DirectorySeparator}')
-              SET @Updated = 1
-            END
-            IF CHARINDEX('${DirectorySeparator}',@CurrentDirectoryStructure) > 0
-            BEGIN
-              SET @CurrentDirectoryStructure = REPLACE(@CurrentDirectoryStructure,'${DirectorySeparator}','{DirectorySeparator}')
+              SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'-.','.')
               SET @Updated = 1
             END
 
-            IF CHARINDEX('{DirectorySeparator}_',@CurrentDirectoryStructure) > 0
+            IF CHARINDEX('of.',@CurrentDatabaseFileName) > 0
             BEGIN
-              SET @CurrentDirectoryStructure = REPLACE(@CurrentDirectoryStructure,'{DirectorySeparator}_','{DirectorySeparator}')
-              SET @Updated = 1
-            END
-            IF CHARINDEX('_{DirectorySeparator}',@CurrentDirectoryStructure) > 0
-            BEGIN
-              SET @CurrentDirectoryStructure = REPLACE(@CurrentDirectoryStructure,'_{DirectorySeparator}','{DirectorySeparator}')
+              SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'of.','.')
               SET @Updated = 1
             END
 
-            IF CHARINDEX('{DirectorySeparator}-',@CurrentDirectoryStructure) > 0
+            IF LEFT(@CurrentDatabaseFileName,1) = '_'
             BEGIN
-              SET @CurrentDirectoryStructure = REPLACE(@CurrentDirectoryStructure,'{DirectorySeparator}-','{DirectorySeparator}')
+              SET @CurrentDatabaseFileName = RIGHT(@CurrentDatabaseFileName,LEN(@CurrentDatabaseFileName) - 1)
               SET @Updated = 1
             END
-            IF CHARINDEX('-{DirectorySeparator}',@CurrentDirectoryStructure) > 0
+            IF RIGHT(@CurrentDatabaseFileName,1) = '_'
             BEGIN
-              SET @CurrentDirectoryStructure = REPLACE(@CurrentDirectoryStructure,'-{DirectorySeparator}','{DirectorySeparator}')
-              SET @Updated = 1
-            END
-
-            IF CHARINDEX('_$',@CurrentDirectoryStructure) > 0
-            BEGIN
-              SET @CurrentDirectoryStructure = REPLACE(@CurrentDirectoryStructure,'_$','_')
-              SET @Updated = 1
-            END
-            IF CHARINDEX('$_',@CurrentDirectoryStructure) > 0
-            BEGIN
-              SET @CurrentDirectoryStructure = REPLACE(@CurrentDirectoryStructure,'$_','_')
+              SET @CurrentDatabaseFileName = LEFT(@CurrentDatabaseFileName,LEN(@CurrentDatabaseFileName) - 1)
               SET @Updated = 1
             END
 
-            IF CHARINDEX('-$',@CurrentDirectoryStructure) > 0
+            IF LEFT(@CurrentDatabaseFileName,1) = '-'
             BEGIN
-              SET @CurrentDirectoryStructure = REPLACE(@CurrentDirectoryStructure,'-$','-')
+              SET @CurrentDatabaseFileName = RIGHT(@CurrentDatabaseFileName,LEN(@CurrentDatabaseFileName) - 1)
               SET @Updated = 1
             END
-            IF CHARINDEX('$-',@CurrentDirectoryStructure) > 0
+            IF RIGHT(@CurrentDatabaseFileName,1) = '-'
             BEGIN
-              SET @CurrentDirectoryStructure = REPLACE(@CurrentDirectoryStructure,'$-','-')
-              SET @Updated = 1
-            END
-
-            IF LEFT(@CurrentDirectoryStructure,1) = '_'
-            BEGIN
-              SET @CurrentDirectoryStructure = RIGHT(@CurrentDirectoryStructure,LEN(@CurrentDirectoryStructure) - 1)
-              SET @Updated = 1
-            END
-            IF RIGHT(@CurrentDirectoryStructure,1) = '_'
-            BEGIN
-              SET @CurrentDirectoryStructure = LEFT(@CurrentDirectoryStructure,LEN(@CurrentDirectoryStructure) - 1)
+              SET @CurrentDatabaseFileName = LEFT(@CurrentDatabaseFileName,LEN(@CurrentDatabaseFileName) - 1)
               SET @Updated = 1
             END
 
-            IF LEFT(@CurrentDirectoryStructure,1) = '-'
+            IF LEFT(@CurrentDatabaseFileName,1) = '$'
             BEGIN
-              SET @CurrentDirectoryStructure = RIGHT(@CurrentDirectoryStructure,LEN(@CurrentDirectoryStructure) - 1)
+              SET @CurrentDatabaseFileName = RIGHT(@CurrentDatabaseFileName,LEN(@CurrentDatabaseFileName) - 1)
               SET @Updated = 1
             END
-            IF RIGHT(@CurrentDirectoryStructure,1) = '-'
+            IF RIGHT(@CurrentDatabaseFileName,1) = '$'
             BEGIN
-              SET @CurrentDirectoryStructure = LEFT(@CurrentDirectoryStructure,LEN(@CurrentDirectoryStructure) - 1)
-              SET @Updated = 1
-            END
-
-            IF LEFT(@CurrentDirectoryStructure,1) = '$'
-            BEGIN
-              SET @CurrentDirectoryStructure = RIGHT(@CurrentDirectoryStructure,LEN(@CurrentDirectoryStructure) - 1)
-              SET @Updated = 1
-            END
-            IF RIGHT(@CurrentDirectoryStructure,1) = '$'
-            BEGIN
-              SET @CurrentDirectoryStructure = LEFT(@CurrentDirectoryStructure,LEN(@CurrentDirectoryStructure) - 1)
-              SET @Updated = 1
-            END
-
-            IF LEFT(@CurrentDirectoryStructure,20) = '{DirectorySeparator}'
-            BEGIN
-              SET @CurrentDirectoryStructure = RIGHT(@CurrentDirectoryStructure,LEN(@CurrentDirectoryStructure) - 20)
-              SET @Updated = 1
-            END
-            IF RIGHT(@CurrentDirectoryStructure,20) = '{DirectorySeparator}'
-            BEGIN
-              SET @CurrentDirectoryStructure = LEFT(@CurrentDirectoryStructure,LEN(@CurrentDirectoryStructure) - 20)
+              SET @CurrentDatabaseFileName = LEFT(@CurrentDatabaseFileName,LEN(@CurrentDatabaseFileName) - 1)
               SET @Updated = 1
             END
           END
 
           SET @Updated = NULL
 
-          -- Directory structure - replace tokens with real values
-          SET @CurrentDirectoryStructure = REPLACE(@CurrentDirectoryStructure,'{DirectorySeparator}',@DirectorySeparator)
-          SET @CurrentDirectoryStructure = REPLACE(@CurrentDirectoryStructure,'{ServerName}',CASE WHEN SERVERPROPERTY('EngineEdition') = 8 THEN LEFT(CAST(SERVERPROPERTY('ServerName') AS nvarchar(max)),CHARINDEX('.',CAST(SERVERPROPERTY('ServerName') AS nvarchar(max))) - 1) ELSE CAST(SERVERPROPERTY('MachineName') AS nvarchar(max)) END)
-          SET @CurrentDirectoryStructure = REPLACE(@CurrentDirectoryStructure,'{InstanceName}',ISNULL(CAST(SERVERPROPERTY('InstanceName') AS nvarchar(max)),''))
-          SET @CurrentDirectoryStructure = REPLACE(@CurrentDirectoryStructure,'{ServiceName}',ISNULL(@@SERVICENAME,''))
-          SET @CurrentDirectoryStructure = REPLACE(@CurrentDirectoryStructure,'{ClusterName}',ISNULL(@Cluster,''))
-          SET @CurrentDirectoryStructure = REPLACE(@CurrentDirectoryStructure,'{AvailabilityGroupName}',ISNULL(@CurrentAvailabilityGroup,''))
-          SET @CurrentDirectoryStructure = REPLACE(@CurrentDirectoryStructure,'{DatabaseName}',@CurrentDatabaseNameFS)
-          SET @CurrentDirectoryStructure = REPLACE(@CurrentDirectoryStructure,'{FileGroupName}',ISNULL(@CurrentFileGroupName,''))
-          SET @CurrentDirectoryStructure = REPLACE(@CurrentDirectoryStructure,'{BackupType}',@CurrentBackupType)
-          SET @CurrentDirectoryStructure = REPLACE(@CurrentDirectoryStructure,'{Partial}','PARTIAL')
-          SET @CurrentDirectoryStructure = REPLACE(@CurrentDirectoryStructure,'{CopyOnly}','COPY_ONLY')
-          SET @CurrentDirectoryStructure = REPLACE(@CurrentDirectoryStructure,'{Description}',LTRIM(RTRIM(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(ISNULL(@Description,''),'\',''),'/',''),':',''),'*',''),'?',''),'"',''),'<',''),'>',''),'|',''))))
-          SET @CurrentDirectoryStructure = REPLACE(@CurrentDirectoryStructure,'{BackupSetName}',LTRIM(RTRIM(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(ISNULL(@BackupSetName,''),'\',''),'/',''),':',''),'*',''),'?',''),'"',''),'<',''),'>',''),'|',''))))
-          SET @CurrentDirectoryStructure = REPLACE(@CurrentDirectoryStructure,'{Year}',CAST(DATEPART(YEAR,CASE WHEN @TokenTimezone = 'UTC' THEN @CurrentDateUTC ELSE @CurrentDate END) AS nvarchar))
-          SET @CurrentDirectoryStructure = REPLACE(@CurrentDirectoryStructure,'{Month}',RIGHT('0' + CAST(DATEPART(MONTH,CASE WHEN @TokenTimezone = 'UTC' THEN @CurrentDateUTC ELSE @CurrentDate END) AS nvarchar),2))
-          SET @CurrentDirectoryStructure = REPLACE(@CurrentDirectoryStructure,'{Day}',RIGHT('0' + CAST(DATEPART(DAY,CASE WHEN @TokenTimezone = 'UTC' THEN @CurrentDateUTC ELSE @CurrentDate END) AS nvarchar),2))
-          SET @CurrentDirectoryStructure = REPLACE(@CurrentDirectoryStructure,'{Week}',RIGHT('0' + CAST(DATEPART(WEEK,CASE WHEN @TokenTimezone = 'UTC' THEN @CurrentDateUTC ELSE @CurrentDate END) AS nvarchar),2))
-          SET @CurrentDirectoryStructure = REPLACE(@CurrentDirectoryStructure,'{Weekday}',DATENAME(WEEKDAY,CASE WHEN @TokenTimezone = 'UTC' THEN @CurrentDateUTC ELSE @CurrentDate END))
-          SET @CurrentDirectoryStructure = REPLACE(@CurrentDirectoryStructure,'{Hour}',RIGHT('0' + CAST(DATEPART(HOUR,CASE WHEN @TokenTimezone = 'UTC' THEN @CurrentDateUTC ELSE @CurrentDate END) AS nvarchar),2))
-          SET @CurrentDirectoryStructure = REPLACE(@CurrentDirectoryStructure,'{Minute}',RIGHT('0' + CAST(DATEPART(MINUTE,CASE WHEN @TokenTimezone = 'UTC' THEN @CurrentDateUTC ELSE @CurrentDate END) AS nvarchar),2))
-          SET @CurrentDirectoryStructure = REPLACE(@CurrentDirectoryStructure,'{Second}',RIGHT('0' + CAST(DATEPART(SECOND,CASE WHEN @TokenTimezone = 'UTC' THEN @CurrentDateUTC ELSE @CurrentDate END) AS nvarchar),2))
-          SET @CurrentDirectoryStructure = REPLACE(@CurrentDirectoryStructure,'{Millisecond}',RIGHT('00' + CAST(DATEPART(MILLISECOND,CASE WHEN @TokenTimezone = 'UTC' THEN @CurrentDateUTC ELSE @CurrentDate END) AS nvarchar),3))
-          SET @CurrentDirectoryStructure = REPLACE(@CurrentDirectoryStructure,'{Microsecond}',RIGHT('00000' + CAST(DATEPART(MICROSECOND,CASE WHEN @TokenTimezone = 'UTC' THEN @CurrentDateUTC ELSE @CurrentDate END) AS nvarchar),6))
-          SET @CurrentDirectoryStructure = REPLACE(@CurrentDirectoryStructure,'{MajorVersion}',ISNULL(CAST(SERVERPROPERTY('ProductMajorVersion') AS nvarchar),PARSENAME(CAST(SERVERPROPERTY('ProductVersion') AS nvarchar),4)))
-          SET @CurrentDirectoryStructure = REPLACE(@CurrentDirectoryStructure,'{MinorVersion}',ISNULL(CAST(SERVERPROPERTY('ProductMinorVersion') AS nvarchar),PARSENAME(CAST(SERVERPROPERTY('ProductVersion') AS nvarchar),3)))
-        END
-
-        IF @DirectoryStructureCase IS NOT NULL
-        BEGIN
-          SET @CurrentDirectoryStructure = CASE WHEN @DirectoryStructureCase = 'LOWER' THEN LOWER(@CurrentDirectoryStructure)
-                                                WHEN @DirectoryStructureCase = 'UPPER' THEN UPPER(@CurrentDirectoryStructure) END
-        END
-
-        INSERT INTO @CurrentDirectories (ID, DirectoryPath, Mirror, DirectoryNumber, CreateCompleted, CleanupCompleted)
-        SELECT ROW_NUMBER() OVER (ORDER BY ID),
-               DirectoryPath + CASE WHEN DirectoryPath = 'NUL' THEN '' WHEN @CurrentDirectoryStructure IS NOT NULL THEN @DirectorySeparator + @CurrentDirectoryStructure ELSE '' END,
-               Mirror,
-               ROW_NUMBER() OVER (PARTITION BY Mirror ORDER BY ID ASC),
-               0,
-               0
-        FROM @Directories
-        ORDER BY ID ASC
-
-        INSERT INTO @CurrentURLs (ID, DirectoryPath, Mirror, DirectoryNumber)
-        SELECT ROW_NUMBER() OVER (ORDER BY ID),
-               DirectoryPath + CASE WHEN @CurrentDirectoryStructure IS NOT NULL THEN @DirectorySeparator + @CurrentDirectoryStructure ELSE '' END,
-               Mirror,
-               ROW_NUMBER() OVER (PARTITION BY Mirror ORDER BY ID ASC)
-        FROM @URLs
-        ORDER BY ID ASC
-
-        SELECT @CurrentDatabaseFileName = CASE
-        WHEN @CurrentAvailabilityGroup IS NOT NULL THEN @AvailabilityGroupFileName
-        ELSE @FileName
-        END
-
-        -- File name - remove tokens that are not needed
-        IF @CurrentFileGroupName IS NULL SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'{FileGroupName}','')
-        IF @ReadWriteFileGroups = 'N' SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'{Partial}','')
-        IF @CopyOnly = 'N' SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'{CopyOnly}','')
-        IF @Cluster IS NULL SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'{ClusterName}','')
-        IF @CurrentAvailabilityGroup IS NULL SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'{AvailabilityGroupName}','')
-        IF SERVERPROPERTY('InstanceName') IS NULL SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'{InstanceName}','')
-        IF @@SERVICENAME IS NULL SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'{ServiceName}','')
-        IF @Description IS NULL SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'{Description}','')
-        IF @BackupSetName IS NULL SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'{BackupSetName}','')
-        IF @CurrentNumberOfFiles = 1 SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'{FileNumber}','')
-        IF @CurrentNumberOfFiles = 1 SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'{NumberOfFiles}','')
-
-        WHILE (@Updated = 1 OR @Updated IS NULL)
-        BEGIN
-          SET @Updated = 0
-
-          IF CHARINDEX('__',@CurrentDatabaseFileName) > 0
-          BEGIN
-            SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'__','_')
-            SET @Updated = 1
+          SELECT @CurrentFileExtension = CASE
+          WHEN @CurrentBackupType = 'FULL' THEN @FileExtensionFull
+          WHEN @CurrentBackupType = 'DIFF' THEN @FileExtensionDiff
+          WHEN @CurrentBackupType = 'LOG' THEN @FileExtensionLog
           END
 
-          IF CHARINDEX('--',@CurrentDatabaseFileName) > 0
+          -- File name - replace tokens with real values
+          SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'{ServerName}',CASE WHEN SERVERPROPERTY('EngineEdition') = 8 THEN LEFT(CAST(SERVERPROPERTY('ServerName') AS nvarchar(max)),CHARINDEX('.',CAST(SERVERPROPERTY('ServerName') AS nvarchar(max))) - 1) ELSE CAST(SERVERPROPERTY('MachineName') AS nvarchar(max)) END)
+          SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'{InstanceName}',ISNULL(CAST(SERVERPROPERTY('InstanceName') AS nvarchar(max)),''))
+          SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'{ServiceName}',ISNULL(@@SERVICENAME,''))
+          SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'{ClusterName}',ISNULL(@Cluster,''))
+          SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'{AvailabilityGroupName}',ISNULL(@CurrentAvailabilityGroup,''))
+          SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'{FileGroupName}',ISNULL(@CurrentFileGroupName,''))
+          SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'{BackupType}',@CurrentBackupType)
+          SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'{Partial}','PARTIAL')
+          SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'{CopyOnly}','COPY_ONLY')
+          SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'{Description}',LTRIM(RTRIM(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(ISNULL(@Description,''),'\',''),'/',''),':',''),'*',''),'?',''),'"',''),'<',''),'>',''),'|',''))))
+          SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'{BackupSetName}',LTRIM(RTRIM(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(ISNULL(@BackupSetName,''),'\',''),'/',''),':',''),'*',''),'?',''),'"',''),'<',''),'>',''),'|',''))))
+          SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'{Year}',CAST(DATEPART(YEAR,CASE WHEN @TokenTimezone = 'UTC' THEN @CurrentDateUTC ELSE @CurrentDate END) AS nvarchar))
+          SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'{Month}',RIGHT('0' + CAST(DATEPART(MONTH,CASE WHEN @TokenTimezone = 'UTC' THEN @CurrentDateUTC ELSE @CurrentDate END) AS nvarchar),2))
+          SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'{Day}',RIGHT('0' + CAST(DATEPART(DAY,CASE WHEN @TokenTimezone = 'UTC' THEN @CurrentDateUTC ELSE @CurrentDate END) AS nvarchar),2))
+          SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'{Week}',RIGHT('0' + CAST(DATEPART(WEEK,CASE WHEN @TokenTimezone = 'UTC' THEN @CurrentDateUTC ELSE @CurrentDate END) AS nvarchar),2))
+          SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'{Weekday}',DATENAME(WEEKDAY,CASE WHEN @TokenTimezone = 'UTC' THEN @CurrentDateUTC ELSE @CurrentDate END))
+          SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'{Hour}',RIGHT('0' + CAST(DATEPART(HOUR,CASE WHEN @TokenTimezone = 'UTC' THEN @CurrentDateUTC ELSE @CurrentDate END) AS nvarchar),2))
+          SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'{Minute}',RIGHT('0' + CAST(DATEPART(MINUTE,CASE WHEN @TokenTimezone = 'UTC' THEN @CurrentDateUTC ELSE @CurrentDate END) AS nvarchar),2))
+          SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'{Second}',RIGHT('0' + CAST(DATEPART(SECOND,CASE WHEN @TokenTimezone = 'UTC' THEN @CurrentDateUTC ELSE @CurrentDate END) AS nvarchar),2))
+          SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'{Millisecond}',RIGHT('00' + CAST(DATEPART(MILLISECOND,CASE WHEN @TokenTimezone = 'UTC' THEN @CurrentDateUTC ELSE @CurrentDate END) AS nvarchar),3))
+          SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'{Microsecond}',RIGHT('00000' + CAST(DATEPART(MICROSECOND,CASE WHEN @TokenTimezone = 'UTC' THEN @CurrentDateUTC ELSE @CurrentDate END) AS nvarchar),6))
+          SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'{NumberOfFiles}',@CurrentNumberOfFiles)
+          SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'{FileExtension}',@CurrentFileExtension)
+          SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'{MajorVersion}',ISNULL(CAST(SERVERPROPERTY('ProductMajorVersion') AS nvarchar),PARSENAME(CAST(SERVERPROPERTY('ProductVersion') AS nvarchar),4)))
+          SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'{MinorVersion}',ISNULL(CAST(SERVERPROPERTY('ProductMinorVersion') AS nvarchar),PARSENAME(CAST(SERVERPROPERTY('ProductVersion') AS nvarchar),3)))
+
+          SELECT @CurrentMaxFilePathLength = CASE
+          WHEN EXISTS (SELECT * FROM @CurrentDirectories) THEN (SELECT MAX(LEN(DirectoryPath + @DirectorySeparator)) FROM @CurrentDirectories)
+          WHEN EXISTS (SELECT * FROM @CurrentURLs) THEN (SELECT MAX(LEN(DirectoryPath + @DirectorySeparator)) FROM @CurrentURLs)
+          END
+          + LEN(REPLACE(REPLACE(@CurrentDatabaseFileName,'{DatabaseName}',@CurrentDatabaseNameFS), '{FileNumber}', CASE WHEN @CurrentNumberOfFiles >= 1 AND @CurrentNumberOfFiles <= 9 THEN '1' WHEN @CurrentNumberOfFiles >= 10 THEN '01' END))
+
+          -- The maximum length of a backup device is 259 characters
+          IF @CurrentMaxFilePathLength > 259
           BEGIN
-            SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'--','-')
-            SET @Updated = 1
+            SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'{DatabaseName}',LEFT(@CurrentDatabaseNameFS,CASE WHEN (LEN(@CurrentDatabaseNameFS) + 259 - @CurrentMaxFilePathLength - 3) < 20 THEN 20 ELSE (LEN(@CurrentDatabaseNameFS) + 259 - @CurrentMaxFilePathLength - 3) END) + '...')
+          END
+          ELSE
+          BEGIN
+            SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'{DatabaseName}',@CurrentDatabaseNameFS)
           END
 
-          IF CHARINDEX('_$',@CurrentDatabaseFileName) > 0
+          IF @FileNameCase IS NOT NULL
           BEGIN
-            SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'_$','_')
-            SET @Updated = 1
-          END
-          IF CHARINDEX('$_',@CurrentDatabaseFileName) > 0
-          BEGIN
-            SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'$_','_')
-            SET @Updated = 1
+            SET @CurrentDatabaseFileName = CASE WHEN @FileNameCase = 'LOWER' THEN LOWER(@CurrentDatabaseFileName)
+                                                WHEN @FileNameCase = 'UPPER' THEN UPPER(@CurrentDatabaseFileName) END
           END
 
-          IF CHARINDEX('-$',@CurrentDatabaseFileName) > 0
+          IF EXISTS (SELECT * FROM @CurrentDirectories WHERE Mirror = 0)
           BEGIN
-            SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'-$','-')
-            SET @Updated = 1
-          END
-          IF CHARINDEX('$-',@CurrentDatabaseFileName) > 0
-          BEGIN
-            SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'$-','-')
-            SET @Updated = 1
-          END
+            SET @CurrentFileNumber = 0
 
-          IF CHARINDEX('_.',@CurrentDatabaseFileName) > 0
-          BEGIN
-            SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'_.','.')
-            SET @Updated = 1
-          END
-
-          IF CHARINDEX('-.',@CurrentDatabaseFileName) > 0
-          BEGIN
-            SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'-.','.')
-            SET @Updated = 1
-          END
-
-          IF CHARINDEX('of.',@CurrentDatabaseFileName) > 0
-          BEGIN
-            SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'of.','.')
-            SET @Updated = 1
-          END
-
-          IF LEFT(@CurrentDatabaseFileName,1) = '_'
-          BEGIN
-            SET @CurrentDatabaseFileName = RIGHT(@CurrentDatabaseFileName,LEN(@CurrentDatabaseFileName) - 1)
-            SET @Updated = 1
-          END
-          IF RIGHT(@CurrentDatabaseFileName,1) = '_'
-          BEGIN
-            SET @CurrentDatabaseFileName = LEFT(@CurrentDatabaseFileName,LEN(@CurrentDatabaseFileName) - 1)
-            SET @Updated = 1
-          END
-
-          IF LEFT(@CurrentDatabaseFileName,1) = '-'
-          BEGIN
-            SET @CurrentDatabaseFileName = RIGHT(@CurrentDatabaseFileName,LEN(@CurrentDatabaseFileName) - 1)
-            SET @Updated = 1
-          END
-          IF RIGHT(@CurrentDatabaseFileName,1) = '-'
-          BEGIN
-            SET @CurrentDatabaseFileName = LEFT(@CurrentDatabaseFileName,LEN(@CurrentDatabaseFileName) - 1)
-            SET @Updated = 1
-          END
-
-          IF LEFT(@CurrentDatabaseFileName,1) = '$'
-          BEGIN
-            SET @CurrentDatabaseFileName = RIGHT(@CurrentDatabaseFileName,LEN(@CurrentDatabaseFileName) - 1)
-            SET @Updated = 1
-          END
-          IF RIGHT(@CurrentDatabaseFileName,1) = '$'
-          BEGIN
-            SET @CurrentDatabaseFileName = LEFT(@CurrentDatabaseFileName,LEN(@CurrentDatabaseFileName) - 1)
-            SET @Updated = 1
-          END
-        END
-
-        SET @Updated = NULL
-
-        SELECT @CurrentFileExtension = CASE
-        WHEN @CurrentBackupType = 'FULL' THEN @FileExtensionFull
-        WHEN @CurrentBackupType = 'DIFF' THEN @FileExtensionDiff
-        WHEN @CurrentBackupType = 'LOG' THEN @FileExtensionLog
-        END
-
-        -- File name - replace tokens with real values
-        SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'{ServerName}',CASE WHEN SERVERPROPERTY('EngineEdition') = 8 THEN LEFT(CAST(SERVERPROPERTY('ServerName') AS nvarchar(max)),CHARINDEX('.',CAST(SERVERPROPERTY('ServerName') AS nvarchar(max))) - 1) ELSE CAST(SERVERPROPERTY('MachineName') AS nvarchar(max)) END)
-        SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'{InstanceName}',ISNULL(CAST(SERVERPROPERTY('InstanceName') AS nvarchar(max)),''))
-        SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'{ServiceName}',ISNULL(@@SERVICENAME,''))
-        SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'{ClusterName}',ISNULL(@Cluster,''))
-        SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'{AvailabilityGroupName}',ISNULL(@CurrentAvailabilityGroup,''))
-        SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'{FileGroupName}',ISNULL(@CurrentFileGroupName,''))
-        SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'{BackupType}',@CurrentBackupType)
-        SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'{Partial}','PARTIAL')
-        SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'{CopyOnly}','COPY_ONLY')
-        SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'{Description}',LTRIM(RTRIM(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(ISNULL(@Description,''),'\',''),'/',''),':',''),'*',''),'?',''),'"',''),'<',''),'>',''),'|',''))))
-        SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'{BackupSetName}',LTRIM(RTRIM(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(ISNULL(@BackupSetName,''),'\',''),'/',''),':',''),'*',''),'?',''),'"',''),'<',''),'>',''),'|',''))))
-        SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'{Year}',CAST(DATEPART(YEAR,CASE WHEN @TokenTimezone = 'UTC' THEN @CurrentDateUTC ELSE @CurrentDate END) AS nvarchar))
-        SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'{Month}',RIGHT('0' + CAST(DATEPART(MONTH,CASE WHEN @TokenTimezone = 'UTC' THEN @CurrentDateUTC ELSE @CurrentDate END) AS nvarchar),2))
-        SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'{Day}',RIGHT('0' + CAST(DATEPART(DAY,CASE WHEN @TokenTimezone = 'UTC' THEN @CurrentDateUTC ELSE @CurrentDate END) AS nvarchar),2))
-        SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'{Week}',RIGHT('0' + CAST(DATEPART(WEEK,CASE WHEN @TokenTimezone = 'UTC' THEN @CurrentDateUTC ELSE @CurrentDate END) AS nvarchar),2))
-        SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'{Weekday}',DATENAME(WEEKDAY,CASE WHEN @TokenTimezone = 'UTC' THEN @CurrentDateUTC ELSE @CurrentDate END))
-        SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'{Hour}',RIGHT('0' + CAST(DATEPART(HOUR,CASE WHEN @TokenTimezone = 'UTC' THEN @CurrentDateUTC ELSE @CurrentDate END) AS nvarchar),2))
-        SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'{Minute}',RIGHT('0' + CAST(DATEPART(MINUTE,CASE WHEN @TokenTimezone = 'UTC' THEN @CurrentDateUTC ELSE @CurrentDate END) AS nvarchar),2))
-        SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'{Second}',RIGHT('0' + CAST(DATEPART(SECOND,CASE WHEN @TokenTimezone = 'UTC' THEN @CurrentDateUTC ELSE @CurrentDate END) AS nvarchar),2))
-        SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'{Millisecond}',RIGHT('00' + CAST(DATEPART(MILLISECOND,CASE WHEN @TokenTimezone = 'UTC' THEN @CurrentDateUTC ELSE @CurrentDate END) AS nvarchar),3))
-        SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'{Microsecond}',RIGHT('00000' + CAST(DATEPART(MICROSECOND,CASE WHEN @TokenTimezone = 'UTC' THEN @CurrentDateUTC ELSE @CurrentDate END) AS nvarchar),6))
-        SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'{NumberOfFiles}',@CurrentNumberOfFiles)
-        SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'{FileExtension}',@CurrentFileExtension)
-        SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'{MajorVersion}',ISNULL(CAST(SERVERPROPERTY('ProductMajorVersion') AS nvarchar),PARSENAME(CAST(SERVERPROPERTY('ProductVersion') AS nvarchar),4)))
-        SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'{MinorVersion}',ISNULL(CAST(SERVERPROPERTY('ProductMinorVersion') AS nvarchar),PARSENAME(CAST(SERVERPROPERTY('ProductVersion') AS nvarchar),3)))
-
-        SELECT @CurrentMaxFilePathLength = CASE
-        WHEN EXISTS (SELECT * FROM @CurrentDirectories) THEN (SELECT MAX(LEN(DirectoryPath + @DirectorySeparator)) FROM @CurrentDirectories)
-        WHEN EXISTS (SELECT * FROM @CurrentURLs) THEN (SELECT MAX(LEN(DirectoryPath + @DirectorySeparator)) FROM @CurrentURLs)
-        END
-        + LEN(REPLACE(REPLACE(@CurrentDatabaseFileName,'{DatabaseName}',@CurrentDatabaseNameFS), '{FileNumber}', CASE WHEN @CurrentNumberOfFiles >= 1 AND @CurrentNumberOfFiles <= 9 THEN '1' WHEN @CurrentNumberOfFiles >= 10 THEN '01' END))
-
-        -- The maximum length of a backup device is 259 characters
-        IF @CurrentMaxFilePathLength > 259
-        BEGIN
-          SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'{DatabaseName}',LEFT(@CurrentDatabaseNameFS,CASE WHEN (LEN(@CurrentDatabaseNameFS) + 259 - @CurrentMaxFilePathLength - 3) < 20 THEN 20 ELSE (LEN(@CurrentDatabaseNameFS) + 259 - @CurrentMaxFilePathLength - 3) END) + '...')
-        END
-        ELSE
-        BEGIN
-          SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'{DatabaseName}',@CurrentDatabaseNameFS)
-        END
-
-        IF @FileNameCase IS NOT NULL
-        BEGIN
-          SET @CurrentDatabaseFileName = CASE WHEN @FileNameCase = 'LOWER' THEN LOWER(@CurrentDatabaseFileName)
-                                              WHEN @FileNameCase = 'UPPER' THEN UPPER(@CurrentDatabaseFileName) END
-        END
-
-        IF EXISTS (SELECT * FROM @CurrentDirectories WHERE Mirror = 0)
-        BEGIN
-          SET @CurrentFileNumber = 0
-
-          WHILE @CurrentFileNumber < @CurrentNumberOfFiles
-          BEGIN
-            SET @CurrentFileNumber = @CurrentFileNumber + 1
-
-            SELECT @CurrentDirectoryPath = DirectoryPath
-            FROM @CurrentDirectories
-            WHERE @CurrentFileNumber >= (DirectoryNumber - 1) * (SELECT @CurrentNumberOfFiles / COUNT(*) FROM @CurrentDirectories WHERE Mirror = 0) + 1
-            AND @CurrentFileNumber <= DirectoryNumber * (SELECT @CurrentNumberOfFiles / COUNT(*) FROM @CurrentDirectories WHERE Mirror = 0)
-            AND Mirror = 0
-
-            SET @CurrentFileName = REPLACE(@CurrentDatabaseFileName, '{FileNumber}', CASE WHEN @CurrentNumberOfFiles >= 1 AND @CurrentNumberOfFiles <= 9 THEN CAST(@CurrentFileNumber AS nvarchar) WHEN @CurrentNumberOfFiles >= 10 THEN RIGHT('0' + CAST(@CurrentFileNumber AS nvarchar),2) END)
-
-            IF @CurrentDirectoryPath = 'NUL'
+            WHILE @CurrentFileNumber < @CurrentNumberOfFiles
             BEGIN
-              SET @CurrentFilePath = 'NUL'
+              SET @CurrentFileNumber = @CurrentFileNumber + 1
+
+              SELECT @CurrentDirectoryPath = DirectoryPath
+              FROM @CurrentDirectories
+              WHERE @CurrentFileNumber >= (DirectoryNumber - 1) * (SELECT @CurrentNumberOfFiles / COUNT(*) FROM @CurrentDirectories WHERE Mirror = 0) + 1
+              AND @CurrentFileNumber <= DirectoryNumber * (SELECT @CurrentNumberOfFiles / COUNT(*) FROM @CurrentDirectories WHERE Mirror = 0)
+              AND Mirror = 0
+
+              SET @CurrentFileName = REPLACE(@CurrentDatabaseFileName, '{FileNumber}', CASE WHEN @CurrentNumberOfFiles >= 1 AND @CurrentNumberOfFiles <= 9 THEN CAST(@CurrentFileNumber AS nvarchar) WHEN @CurrentNumberOfFiles >= 10 THEN RIGHT('0' + CAST(@CurrentFileNumber AS nvarchar),2) END)
+
+              IF @CurrentDirectoryPath = 'NUL'
+              BEGIN
+                SET @CurrentFilePath = 'NUL'
+              END
+              ELSE
+              BEGIN
+                SET @CurrentFilePath = @CurrentDirectoryPath + @DirectorySeparator + @CurrentFileName
+              END
+
+              INSERT INTO @CurrentFiles ([Type], FilePath, Mirror)
+              SELECT 'DISK', @CurrentFilePath, 0
+
+              SET @CurrentDirectoryPath = NULL
+              SET @CurrentFileName = NULL
+              SET @CurrentFilePath = NULL
             END
-            ELSE
+
+            INSERT INTO @CurrentBackupSet (Mirror, VerifyCompleted)
+            SELECT 0, 0
+          END
+
+          IF EXISTS (SELECT * FROM @CurrentDirectories WHERE Mirror = 1)
+          BEGIN
+            SET @CurrentFileNumber = 0
+
+            WHILE @CurrentFileNumber < @CurrentNumberOfFiles
             BEGIN
+              SET @CurrentFileNumber = @CurrentFileNumber + 1
+
+              SELECT @CurrentDirectoryPath = DirectoryPath
+              FROM @CurrentDirectories
+              WHERE @CurrentFileNumber >= (DirectoryNumber - 1) * (SELECT @CurrentNumberOfFiles / COUNT(*) FROM @CurrentDirectories WHERE Mirror = 1) + 1
+              AND @CurrentFileNumber <= DirectoryNumber * (SELECT @CurrentNumberOfFiles / COUNT(*) FROM @CurrentDirectories WHERE Mirror = 1)
+              AND Mirror = 1
+
+              SET @CurrentFileName = REPLACE(@CurrentDatabaseFileName, '{FileNumber}', CASE WHEN @CurrentNumberOfFiles > 1 AND @CurrentNumberOfFiles <= 9 THEN CAST(@CurrentFileNumber AS nvarchar) WHEN @CurrentNumberOfFiles >= 10 THEN RIGHT('0' + CAST(@CurrentFileNumber AS nvarchar),2) ELSE '' END)
+
               SET @CurrentFilePath = @CurrentDirectoryPath + @DirectorySeparator + @CurrentFileName
+
+              INSERT INTO @CurrentFiles ([Type], FilePath, Mirror)
+              SELECT 'DISK', @CurrentFilePath, 1
+
+              SET @CurrentDirectoryPath = NULL
+              SET @CurrentFileName = NULL
+              SET @CurrentFilePath = NULL
             END
 
-            INSERT INTO @CurrentFiles ([Type], FilePath, Mirror)
-            SELECT 'DISK', @CurrentFilePath, 0
-
-            SET @CurrentDirectoryPath = NULL
-            SET @CurrentFileName = NULL
-            SET @CurrentFilePath = NULL
+            INSERT INTO @CurrentBackupSet (Mirror, VerifyCompleted)
+            SELECT 1, 0
           END
 
-          INSERT INTO @CurrentBackupSet (Mirror, VerifyCompleted)
-          SELECT 0, 0
-        END
-
-        IF EXISTS (SELECT * FROM @CurrentDirectories WHERE Mirror = 1)
-        BEGIN
-          SET @CurrentFileNumber = 0
-
-          WHILE @CurrentFileNumber < @CurrentNumberOfFiles
+          IF EXISTS (SELECT * FROM @CurrentURLs WHERE Mirror = 0)
           BEGIN
-            SET @CurrentFileNumber = @CurrentFileNumber + 1
+            SET @CurrentFileNumber = 0
 
-            SELECT @CurrentDirectoryPath = DirectoryPath
-            FROM @CurrentDirectories
-            WHERE @CurrentFileNumber >= (DirectoryNumber - 1) * (SELECT @CurrentNumberOfFiles / COUNT(*) FROM @CurrentDirectories WHERE Mirror = 1) + 1
-            AND @CurrentFileNumber <= DirectoryNumber * (SELECT @CurrentNumberOfFiles / COUNT(*) FROM @CurrentDirectories WHERE Mirror = 1)
-            AND Mirror = 1
-
-            SET @CurrentFileName = REPLACE(@CurrentDatabaseFileName, '{FileNumber}', CASE WHEN @CurrentNumberOfFiles > 1 AND @CurrentNumberOfFiles <= 9 THEN CAST(@CurrentFileNumber AS nvarchar) WHEN @CurrentNumberOfFiles >= 10 THEN RIGHT('0' + CAST(@CurrentFileNumber AS nvarchar),2) ELSE '' END)
-
-            SET @CurrentFilePath = @CurrentDirectoryPath + @DirectorySeparator + @CurrentFileName
-
-            INSERT INTO @CurrentFiles ([Type], FilePath, Mirror)
-            SELECT 'DISK', @CurrentFilePath, 1
-
-            SET @CurrentDirectoryPath = NULL
-            SET @CurrentFileName = NULL
-            SET @CurrentFilePath = NULL
-          END
-
-          INSERT INTO @CurrentBackupSet (Mirror, VerifyCompleted)
-          SELECT 1, 0
-        END
-
-        IF EXISTS (SELECT * FROM @CurrentURLs WHERE Mirror = 0)
-        BEGIN
-          SET @CurrentFileNumber = 0
-
-          WHILE @CurrentFileNumber < @CurrentNumberOfFiles
-          BEGIN
-            SET @CurrentFileNumber = @CurrentFileNumber + 1
-
-            SELECT @CurrentDirectoryPath = DirectoryPath
-            FROM @CurrentURLs
-            WHERE @CurrentFileNumber >= (DirectoryNumber - 1) * (SELECT @CurrentNumberOfFiles / COUNT(*) FROM @CurrentURLs WHERE Mirror = 0) + 1
-            AND @CurrentFileNumber <= DirectoryNumber * (SELECT @CurrentNumberOfFiles / COUNT(*) FROM @CurrentURLs WHERE Mirror = 0)
-            AND Mirror = 0
-
-            SET @CurrentFileName = REPLACE(@CurrentDatabaseFileName, '{FileNumber}', CASE WHEN @CurrentNumberOfFiles > 1 AND @CurrentNumberOfFiles <= 9 THEN CAST(@CurrentFileNumber AS nvarchar) WHEN @CurrentNumberOfFiles >= 10 THEN RIGHT('0' + CAST(@CurrentFileNumber AS nvarchar),2) ELSE '' END)
-
-            SET @CurrentFilePath = @CurrentDirectoryPath + @DirectorySeparator + @CurrentFileName
-
-            INSERT INTO @CurrentFiles ([Type], FilePath, Mirror)
-            SELECT 'URL', @CurrentFilePath, 0
-
-            SET @CurrentDirectoryPath = NULL
-            SET @CurrentFileName = NULL
-            SET @CurrentFilePath = NULL
-          END
-
-          INSERT INTO @CurrentBackupSet (Mirror, VerifyCompleted)
-          SELECT 0, 0
-        END
-
-        IF EXISTS (SELECT * FROM @CurrentURLs WHERE Mirror = 1)
-        BEGIN
-          SET @CurrentFileNumber = 0
-
-          WHILE @CurrentFileNumber < @CurrentNumberOfFiles
-          BEGIN
-            SET @CurrentFileNumber = @CurrentFileNumber + 1
-
-            SELECT @CurrentDirectoryPath = DirectoryPath
-            FROM @CurrentURLs
-            WHERE @CurrentFileNumber >= (DirectoryNumber - 1) * (SELECT @CurrentNumberOfFiles / COUNT(*) FROM @CurrentURLs WHERE Mirror = 0) + 1
-            AND @CurrentFileNumber <= DirectoryNumber * (SELECT @CurrentNumberOfFiles / COUNT(*) FROM @CurrentURLs WHERE Mirror = 0)
-            AND Mirror = 1
-
-            SET @CurrentFileName = REPLACE(@CurrentDatabaseFileName, '{FileNumber}', CASE WHEN @CurrentNumberOfFiles > 1 AND @CurrentNumberOfFiles <= 9 THEN CAST(@CurrentFileNumber AS nvarchar) WHEN @CurrentNumberOfFiles >= 10 THEN RIGHT('0' + CAST(@CurrentFileNumber AS nvarchar),2) ELSE '' END)
-
-            SET @CurrentFilePath = @CurrentDirectoryPath + @DirectorySeparator + @CurrentFileName
-
-            INSERT INTO @CurrentFiles ([Type], FilePath, Mirror)
-            SELECT 'URL', @CurrentFilePath, 1
-
-            SET @CurrentDirectoryPath = NULL
-            SET @CurrentFileName = NULL
-            SET @CurrentFilePath = NULL
-          END
-
-          INSERT INTO @CurrentBackupSet (Mirror, VerifyCompleted)
-          SELECT 1, 0
-        END
-
-        -- Create directory
-        IF @HostPlatform = 'Windows'
-        AND (@BackupSoftware <> 'DATA_DOMAIN_BOOST' OR @BackupSoftware IS NULL)
-        AND NOT EXISTS(SELECT * FROM @CurrentDirectories WHERE DirectoryPath = 'NUL' OR DirectoryPath IN(SELECT DirectoryPath FROM @Directories))
-        BEGIN
-          WHILE (1 = 1)
-          BEGIN
-            SELECT TOP 1 @CurrentDirectoryID = ID,
-                         @CurrentDirectoryPath = DirectoryPath
-            FROM @CurrentDirectories
-            WHERE CreateCompleted = 0
-            ORDER BY ID ASC
-
-            IF @@ROWCOUNT = 0
+            WHILE @CurrentFileNumber < @CurrentNumberOfFiles
             BEGIN
-              BREAK
+              SET @CurrentFileNumber = @CurrentFileNumber + 1
+
+              SELECT @CurrentDirectoryPath = DirectoryPath
+              FROM @CurrentURLs
+              WHERE @CurrentFileNumber >= (DirectoryNumber - 1) * (SELECT @CurrentNumberOfFiles / COUNT(*) FROM @CurrentURLs WHERE Mirror = 0) + 1
+              AND @CurrentFileNumber <= DirectoryNumber * (SELECT @CurrentNumberOfFiles / COUNT(*) FROM @CurrentURLs WHERE Mirror = 0)
+              AND Mirror = 0
+
+              SET @CurrentFileName = REPLACE(@CurrentDatabaseFileName, '{FileNumber}', CASE WHEN @CurrentNumberOfFiles > 1 AND @CurrentNumberOfFiles <= 9 THEN CAST(@CurrentFileNumber AS nvarchar) WHEN @CurrentNumberOfFiles >= 10 THEN RIGHT('0' + CAST(@CurrentFileNumber AS nvarchar),2) ELSE '' END)
+
+              SET @CurrentFilePath = @CurrentDirectoryPath + @DirectorySeparator + @CurrentFileName
+
+              INSERT INTO @CurrentFiles ([Type], FilePath, Mirror)
+              SELECT 'URL', @CurrentFilePath, 0
+
+              SET @CurrentDirectoryPath = NULL
+              SET @CurrentFileName = NULL
+              SET @CurrentFilePath = NULL
             END
 
-            IF @DirectoryCheck = 'Y'
+            INSERT INTO @CurrentBackupSet (Mirror, VerifyCompleted)
+            SELECT 0, 0
+          END
+
+          IF EXISTS (SELECT * FROM @CurrentURLs WHERE Mirror = 1)
+          BEGIN
+            SET @CurrentFileNumber = 0
+
+            WHILE @CurrentFileNumber < @CurrentNumberOfFiles
             BEGIN
-              INSERT INTO @DirectoryInfo (FileExists, FileIsADirectory, ParentDirectoryExists)
-              EXECUTE [master].dbo.xp_fileexist @CurrentDirectoryPath
+              SET @CurrentFileNumber = @CurrentFileNumber + 1
+
+              SELECT @CurrentDirectoryPath = DirectoryPath
+              FROM @CurrentURLs
+              WHERE @CurrentFileNumber >= (DirectoryNumber - 1) * (SELECT @CurrentNumberOfFiles / COUNT(*) FROM @CurrentURLs WHERE Mirror = 0) + 1
+              AND @CurrentFileNumber <= DirectoryNumber * (SELECT @CurrentNumberOfFiles / COUNT(*) FROM @CurrentURLs WHERE Mirror = 0)
+              AND Mirror = 1
+
+              SET @CurrentFileName = REPLACE(@CurrentDatabaseFileName, '{FileNumber}', CASE WHEN @CurrentNumberOfFiles > 1 AND @CurrentNumberOfFiles <= 9 THEN CAST(@CurrentFileNumber AS nvarchar) WHEN @CurrentNumberOfFiles >= 10 THEN RIGHT('0' + CAST(@CurrentFileNumber AS nvarchar),2) ELSE '' END)
+
+              SET @CurrentFilePath = @CurrentDirectoryPath + @DirectorySeparator + @CurrentFileName
+
+              INSERT INTO @CurrentFiles ([Type], FilePath, Mirror)
+              SELECT 'URL', @CurrentFilePath, 1
+
+              SET @CurrentDirectoryPath = NULL
+              SET @CurrentFileName = NULL
+              SET @CurrentFilePath = NULL
             END
 
-            IF NOT EXISTS (SELECT * FROM @DirectoryInfo WHERE FileExists = 0 AND FileIsADirectory = 1 AND ParentDirectoryExists = 1)
+            INSERT INTO @CurrentBackupSet (Mirror, VerifyCompleted)
+            SELECT 1, 0
+          END
+
+          -- Create directory
+          IF @HostPlatform = 'Windows'
+          AND (@BackupSoftware <> 'DATA_DOMAIN_BOOST' OR @BackupSoftware IS NULL)
+          AND NOT EXISTS(SELECT * FROM @CurrentDirectories WHERE DirectoryPath = 'NUL' OR DirectoryPath IN(SELECT DirectoryPath FROM @Directories))
+          BEGIN
+            WHILE (1 = 1)
             BEGIN
-              SET @CurrentDatabaseContext = 'master'
+              SELECT TOP 1 @CurrentDirectoryID = ID,
+                           @CurrentDirectoryPath = DirectoryPath
+              FROM @CurrentDirectories
+              WHERE CreateCompleted = 0
+              ORDER BY ID ASC
 
-              SET @CurrentCommandType = 'xp_create_subdir'
+              IF @@ROWCOUNT = 0
+              BEGIN
+                BREAK
+              END
 
-              SET @CurrentCommand = 'DECLARE @ReturnCode int EXECUTE @ReturnCode = dbo.xp_create_subdir N''' + REPLACE(@CurrentDirectoryPath,'''','''''') + ''' IF @ReturnCode <> 0 RAISERROR(''Error creating directory.'', 16, 1)'
+              IF @DirectoryCheck = 'Y'
+              BEGIN
+                INSERT INTO @DirectoryInfo (FileExists, FileIsADirectory, ParentDirectoryExists)
+                EXECUTE [master].dbo.xp_fileexist @CurrentDirectoryPath
+              END
+
+              IF NOT EXISTS (SELECT * FROM @DirectoryInfo WHERE FileExists = 0 AND FileIsADirectory = 1 AND ParentDirectoryExists = 1)
+              BEGIN
+                SET @CurrentDatabaseContext = 'master'
+
+                SET @CurrentCommandType = 'xp_create_subdir'
+
+                SET @CurrentCommand = 'DECLARE @ReturnCode int EXECUTE @ReturnCode = dbo.xp_create_subdir N''' + REPLACE(@CurrentDirectoryPath,'''','''''') + ''' IF @ReturnCode <> 0 RAISERROR(''Error creating directory.'', 16, 1)'
+
+                EXECUTE @CurrentCommandOutput = dbo.CommandExecute @DatabaseContext = @CurrentDatabaseContext, @Command = @CurrentCommand, @CommandType = @CurrentCommandType, @Mode = 1, @DatabaseName = @CurrentDatabaseName, @LogToTable = @LogToTable, @Execute = @Execute
+                SET @Error = @@ERROR
+                IF @Error <> 0 SET @CurrentCommandOutput = @Error
+                IF @CurrentCommandOutput <> 0 SET @ReturnCode = @CurrentCommandOutput
+
+                UPDATE @CurrentDirectories
+                SET CreateCompleted = 1,
+                    CreateOutput = @CurrentCommandOutput
+                WHERE ID = @CurrentDirectoryID
+              END
+              ELSE
+              BEGIN
+                UPDATE @CurrentDirectories
+                SET CreateCompleted = 1,
+                    CreateOutput = 0
+                WHERE ID = @CurrentDirectoryID
+              END
+
+              SET @CurrentDirectoryID = NULL
+              SET @CurrentDirectoryPath = NULL
+
+              SET @CurrentDatabaseContext = NULL
+              SET @CurrentCommand = NULL
+              SET @CurrentCommandOutput = NULL
+              SET @CurrentCommandType = NULL
+
+              DELETE FROM @DirectoryInfo
+            END
+          END
+
+          IF @CleanupMode = 'BEFORE_BACKUP'
+          BEGIN
+            INSERT INTO @CurrentCleanupDates (CleanupDate, Mirror)
+            SELECT DATEADD(hh,-(@CleanupTime),SYSDATETIME()), 0
+
+            IF NOT EXISTS(SELECT * FROM @CurrentCleanupDates WHERE (Mirror = 0 OR Mirror IS NULL) AND CleanupDate IS NULL)
+            BEGIN
+              UPDATE @CurrentDirectories
+              SET CleanupDate = (SELECT MIN(CleanupDate)
+                                 FROM @CurrentCleanupDates
+                                 WHERE (Mirror = 0 OR Mirror IS NULL)),
+                  CleanupMode = 'BEFORE_BACKUP'
+              WHERE Mirror = 0
+            END
+          END
+
+          IF @MirrorCleanupMode = 'BEFORE_BACKUP'
+          BEGIN
+            INSERT INTO @CurrentCleanupDates (CleanupDate, Mirror)
+            SELECT DATEADD(hh,-(@MirrorCleanupTime),SYSDATETIME()), 1
+
+            IF NOT EXISTS(SELECT * FROM @CurrentCleanupDates WHERE (Mirror = 1 OR Mirror IS NULL) AND CleanupDate IS NULL)
+            BEGIN
+              UPDATE @CurrentDirectories
+              SET CleanupDate = (SELECT MIN(CleanupDate)
+                                 FROM @CurrentCleanupDates
+                                 WHERE (Mirror = 1 OR Mirror IS NULL)),
+                  CleanupMode = 'BEFORE_BACKUP'
+              WHERE Mirror = 1
+            END
+          END
+
+          -- Delete old backup files, before backup
+          IF (NOT EXISTS (SELECT * FROM @CurrentDirectories WHERE CreateOutput <> 0 OR CreateOutput IS NULL) OR @HostPlatform = 'Linux')
+          AND (@BackupSoftware <> 'DATA_DOMAIN_BOOST' OR @BackupSoftware IS NULL)
+          AND @CurrentBackupType = @BackupType
+          BEGIN
+            WHILE (1 = 1)
+            BEGIN
+              SELECT TOP 1 @CurrentDirectoryID = ID,
+                           @CurrentDirectoryPath = DirectoryPath,
+                           @CurrentCleanupDate = CleanupDate
+              FROM @CurrentDirectories
+              WHERE CleanupDate IS NOT NULL
+              AND CleanupMode = 'BEFORE_BACKUP'
+              AND CleanupCompleted = 0
+              ORDER BY ID ASC
+
+              IF @@ROWCOUNT = 0
+              BEGIN
+                BREAK
+              END
+
+              IF @BackupSoftware IS NULL
+              BEGIN
+                SET @CurrentDatabaseContext = 'master'
+
+                SET @CurrentCommandType = 'xp_delete_file'
+
+                SET @CurrentCommand = 'DECLARE @ReturnCode int EXECUTE @ReturnCode = dbo.xp_delete_file 0, N''' + REPLACE(@CurrentDirectoryPath,'''','''''') + ''', ''' + @CurrentFileExtension + ''', ''' + CONVERT(nvarchar(19),@CurrentCleanupDate,126) + ''' IF @ReturnCode <> 0 RAISERROR(''Error deleting files.'', 16, 1)'
+              END
+
+              IF @BackupSoftware = 'LITESPEED'
+              BEGIN
+                SET @CurrentDatabaseContext = 'master'
+
+                SET @CurrentCommandType = 'xp_slssqlmaint'
+
+                SET @CurrentCommand = 'DECLARE @ReturnCode int EXECUTE @ReturnCode = dbo.xp_slssqlmaint N''-MAINTDEL -DELFOLDER "' + REPLACE(@CurrentDirectoryPath,'''','''''') + '" -DELEXTENSION "' + @CurrentFileExtension + '" -DELUNIT "' + CAST(DATEDIFF(mi,@CurrentCleanupDate,SYSDATETIME()) + 1 AS nvarchar) + '" -DELUNITTYPE "minutes" -DELUSEAGE'' IF @ReturnCode <> 0 RAISERROR(''Error deleting LiteSpeed backup files.'', 16, 1)'
+              END
+
+              IF @BackupSoftware = 'SQLBACKUP'
+              BEGIN
+                SET @CurrentDatabaseContext = 'master'
+
+                SET @CurrentCommandType = 'sqbutility'
+
+                SET @CurrentCommand = 'DECLARE @ReturnCode int EXECUTE @ReturnCode = dbo.sqbutility 1032, N''' + REPLACE(@CurrentDatabaseName,'''','''''') + ''', N''' + REPLACE(@CurrentDirectoryPath,'''','''''') + ''', ''' + CASE WHEN @CurrentBackupType = 'FULL' THEN 'D' WHEN @CurrentBackupType = 'DIFF' THEN 'I' WHEN @CurrentBackupType = 'LOG' THEN 'L' END + ''', ''' + CAST(DATEDIFF(hh,@CurrentCleanupDate,SYSDATETIME()) + 1 AS nvarchar) + 'h'', ' + ISNULL('''' + REPLACE(@EncryptionKey,'''','''''') + '''','NULL') + ' IF @ReturnCode <> 0 RAISERROR(''Error deleting SQLBackup backup files.'', 16, 1)'
+              END
+
+              IF @BackupSoftware = 'SQLSAFE'
+              BEGIN
+                SET @CurrentDatabaseContext = 'master'
+
+                SET @CurrentCommandType = 'xp_ss_delete'
+
+                SET @CurrentCommand = 'DECLARE @ReturnCode int EXECUTE @ReturnCode = dbo.xp_ss_delete @filename = N''' + REPLACE(@CurrentDirectoryPath,'''','''''') + '\*.' + @CurrentFileExtension + ''', @age = ''' + CAST(DATEDIFF(mi,@CurrentCleanupDate,SYSDATETIME()) + 1 AS nvarchar) + 'Minutes'' IF @ReturnCode <> 0 RAISERROR(''Error deleting SQLsafe backup files.'', 16, 1)'
+              END
 
               EXECUTE @CurrentCommandOutput = dbo.CommandExecute @DatabaseContext = @CurrentDatabaseContext, @Command = @CurrentCommand, @CommandType = @CurrentCommandType, @Mode = 1, @DatabaseName = @CurrentDatabaseName, @LogToTable = @LogToTable, @Execute = @Execute
               SET @Error = @@ERROR
@@ -3815,481 +3944,164 @@ BEGIN
               IF @CurrentCommandOutput <> 0 SET @ReturnCode = @CurrentCommandOutput
 
               UPDATE @CurrentDirectories
-              SET CreateCompleted = 1,
-                  CreateOutput = @CurrentCommandOutput
+              SET CleanupCompleted = 1,
+                  CleanupOutput = @CurrentCommandOutput
               WHERE ID = @CurrentDirectoryID
+
+              SET @CurrentDirectoryID = NULL
+              SET @CurrentDirectoryPath = NULL
+              SET @CurrentCleanupDate = NULL
+
+              SET @CurrentDatabaseContext = NULL
+              SET @CurrentCommand = NULL
+              SET @CurrentCommandOutput = NULL
+              SET @CurrentCommandType = NULL
             END
-            ELSE
-            BEGIN
-              UPDATE @CurrentDirectories
-              SET CreateCompleted = 1,
-                  CreateOutput = 0
-              WHERE ID = @CurrentDirectoryID
-            END
-
-            SET @CurrentDirectoryID = NULL
-            SET @CurrentDirectoryPath = NULL
-
-            SET @CurrentDatabaseContext = NULL
-            SET @CurrentCommand = NULL
-            SET @CurrentCommandOutput = NULL
-            SET @CurrentCommandType = NULL
-
-            DELETE FROM @DirectoryInfo
           END
-        END
 
-        IF @CleanupMode = 'BEFORE_BACKUP'
-        BEGIN
-          INSERT INTO @CurrentCleanupDates (CleanupDate, Mirror)
-          SELECT DATEADD(hh,-(@CleanupTime),SYSDATETIME()), 0
-
-          IF NOT EXISTS(SELECT * FROM @CurrentCleanupDates WHERE (Mirror = 0 OR Mirror IS NULL) AND CleanupDate IS NULL)
+          -- Perform a backup
+          IF NOT EXISTS (SELECT * FROM @CurrentDirectories WHERE DirectoryPath <> 'NUL' AND DirectoryPath NOT IN(SELECT DirectoryPath FROM @Directories) AND (CreateOutput <> 0 OR CreateOutput IS NULL))
+          OR @HostPlatform = 'Linux'
           BEGIN
-            UPDATE @CurrentDirectories
-            SET CleanupDate = (SELECT MIN(CleanupDate)
-                               FROM @CurrentCleanupDates
-                               WHERE (Mirror = 0 OR Mirror IS NULL)),
-                CleanupMode = 'BEFORE_BACKUP'
-            WHERE Mirror = 0
-          END
-        END
-
-        IF @MirrorCleanupMode = 'BEFORE_BACKUP'
-        BEGIN
-          INSERT INTO @CurrentCleanupDates (CleanupDate, Mirror)
-          SELECT DATEADD(hh,-(@MirrorCleanupTime),SYSDATETIME()), 1
-
-          IF NOT EXISTS(SELECT * FROM @CurrentCleanupDates WHERE (Mirror = 1 OR Mirror IS NULL) AND CleanupDate IS NULL)
-          BEGIN
-            UPDATE @CurrentDirectories
-            SET CleanupDate = (SELECT MIN(CleanupDate)
-                               FROM @CurrentCleanupDates
-                               WHERE (Mirror = 1 OR Mirror IS NULL)),
-                CleanupMode = 'BEFORE_BACKUP'
-            WHERE Mirror = 1
-          END
-        END
-
-        -- Delete old backup files, before backup
-        IF (NOT EXISTS (SELECT * FROM @CurrentDirectories WHERE CreateOutput <> 0 OR CreateOutput IS NULL) OR @HostPlatform = 'Linux')
-        AND (@BackupSoftware <> 'DATA_DOMAIN_BOOST' OR @BackupSoftware IS NULL)
-        AND @CurrentBackupType = @BackupType
-        BEGIN
-          WHILE (1 = 1)
-          BEGIN
-            SELECT TOP 1 @CurrentDirectoryID = ID,
-                         @CurrentDirectoryPath = DirectoryPath,
-                         @CurrentCleanupDate = CleanupDate
-            FROM @CurrentDirectories
-            WHERE CleanupDate IS NOT NULL
-            AND CleanupMode = 'BEFORE_BACKUP'
-            AND CleanupCompleted = 0
-            ORDER BY ID ASC
-
-            IF @@ROWCOUNT = 0
-            BEGIN
-              BREAK
-            END
-
             IF @BackupSoftware IS NULL
             BEGIN
               SET @CurrentDatabaseContext = 'master'
 
-              SET @CurrentCommandType = 'xp_delete_file'
+              SELECT @CurrentCommandType = CASE
+              WHEN @CurrentBackupType IN('DIFF','FULL') THEN 'BACKUP_DATABASE'
+              WHEN @CurrentBackupType = 'LOG' THEN 'BACKUP_LOG'
+              END
 
-              SET @CurrentCommand = 'DECLARE @ReturnCode int EXECUTE @ReturnCode = dbo.xp_delete_file 0, N''' + REPLACE(@CurrentDirectoryPath,'''','''''') + ''', ''' + @CurrentFileExtension + ''', ''' + CONVERT(nvarchar(19),@CurrentCleanupDate,126) + ''' IF @ReturnCode <> 0 RAISERROR(''Error deleting files.'', 16, 1)'
-            END
+              SELECT @CurrentCommand = CASE
+              WHEN @CurrentBackupType IN('DIFF','FULL') THEN 'BACKUP DATABASE ' + QUOTENAME(@CurrentDatabaseName)
+              WHEN @CurrentBackupType = 'LOG' THEN 'BACKUP LOG ' + QUOTENAME(@CurrentDatabaseName)
+              END
 
-            IF @BackupSoftware = 'LITESPEED'
-            BEGIN
-              SET @CurrentDatabaseContext = 'master'
+              IF @FileGroups IS NOT NULL SET @CurrentCommand += ' FILEGROUP = ''' + @CurrentFileGroupName + ''''
 
-              SET @CurrentCommandType = 'xp_slssqlmaint'
+              IF @ReadWriteFileGroups = 'Y' AND @CurrentDatabaseName <> 'master' SET @CurrentCommand += ' READ_WRITE_FILEGROUPS'
 
-              SET @CurrentCommand = 'DECLARE @ReturnCode int EXECUTE @ReturnCode = dbo.xp_slssqlmaint N''-MAINTDEL -DELFOLDER "' + REPLACE(@CurrentDirectoryPath,'''','''''') + '" -DELEXTENSION "' + @CurrentFileExtension + '" -DELUNIT "' + CAST(DATEDIFF(mi,@CurrentCleanupDate,SYSDATETIME()) + 1 AS nvarchar) + '" -DELUNITTYPE "minutes" -DELUSEAGE'' IF @ReturnCode <> 0 RAISERROR(''Error deleting LiteSpeed backup files.'', 16, 1)'
-            END
-
-            IF @BackupSoftware = 'SQLBACKUP'
-            BEGIN
-              SET @CurrentDatabaseContext = 'master'
-
-              SET @CurrentCommandType = 'sqbutility'
-
-              SET @CurrentCommand = 'DECLARE @ReturnCode int EXECUTE @ReturnCode = dbo.sqbutility 1032, N''' + REPLACE(@CurrentDatabaseName,'''','''''') + ''', N''' + REPLACE(@CurrentDirectoryPath,'''','''''') + ''', ''' + CASE WHEN @CurrentBackupType = 'FULL' THEN 'D' WHEN @CurrentBackupType = 'DIFF' THEN 'I' WHEN @CurrentBackupType = 'LOG' THEN 'L' END + ''', ''' + CAST(DATEDIFF(hh,@CurrentCleanupDate,SYSDATETIME()) + 1 AS nvarchar) + 'h'', ' + ISNULL('''' + REPLACE(@EncryptionKey,'''','''''') + '''','NULL') + ' IF @ReturnCode <> 0 RAISERROR(''Error deleting SQLBackup backup files.'', 16, 1)'
-            END
-
-            IF @BackupSoftware = 'SQLSAFE'
-            BEGIN
-              SET @CurrentDatabaseContext = 'master'
-
-              SET @CurrentCommandType = 'xp_ss_delete'
-
-              SET @CurrentCommand = 'DECLARE @ReturnCode int EXECUTE @ReturnCode = dbo.xp_ss_delete @filename = N''' + REPLACE(@CurrentDirectoryPath,'''','''''') + '\*.' + @CurrentFileExtension + ''', @age = ''' + CAST(DATEDIFF(mi,@CurrentCleanupDate,SYSDATETIME()) + 1 AS nvarchar) + 'Minutes'' IF @ReturnCode <> 0 RAISERROR(''Error deleting SQLsafe backup files.'', 16, 1)'
-            END
-
-            EXECUTE @CurrentCommandOutput = dbo.CommandExecute @DatabaseContext = @CurrentDatabaseContext, @Command = @CurrentCommand, @CommandType = @CurrentCommandType, @Mode = 1, @DatabaseName = @CurrentDatabaseName, @LogToTable = @LogToTable, @Execute = @Execute
-            SET @Error = @@ERROR
-            IF @Error <> 0 SET @CurrentCommandOutput = @Error
-            IF @CurrentCommandOutput <> 0 SET @ReturnCode = @CurrentCommandOutput
-
-            UPDATE @CurrentDirectories
-            SET CleanupCompleted = 1,
-                CleanupOutput = @CurrentCommandOutput
-            WHERE ID = @CurrentDirectoryID
-
-            SET @CurrentDirectoryID = NULL
-            SET @CurrentDirectoryPath = NULL
-            SET @CurrentCleanupDate = NULL
-
-            SET @CurrentDatabaseContext = NULL
-            SET @CurrentCommand = NULL
-            SET @CurrentCommandOutput = NULL
-            SET @CurrentCommandType = NULL
-          END
-        END
-
-        -- Perform a backup
-        IF NOT EXISTS (SELECT * FROM @CurrentDirectories WHERE DirectoryPath <> 'NUL' AND DirectoryPath NOT IN(SELECT DirectoryPath FROM @Directories) AND (CreateOutput <> 0 OR CreateOutput IS NULL))
-        OR @HostPlatform = 'Linux'
-        BEGIN
-          IF @BackupSoftware IS NULL
-          BEGIN
-            SET @CurrentDatabaseContext = 'master'
-
-            SELECT @CurrentCommandType = CASE
-            WHEN @CurrentBackupType IN('DIFF','FULL') THEN 'BACKUP_DATABASE'
-            WHEN @CurrentBackupType = 'LOG' THEN 'BACKUP_LOG'
-            END
-
-            SELECT @CurrentCommand = CASE
-            WHEN @CurrentBackupType IN('DIFF','FULL') THEN 'BACKUP DATABASE ' + QUOTENAME(@CurrentDatabaseName)
-            WHEN @CurrentBackupType = 'LOG' THEN 'BACKUP LOG ' + QUOTENAME(@CurrentDatabaseName)
-            END
-
-            IF @FileGroups IS NOT NULL SET @CurrentCommand += ' FILEGROUP = ''' + @CurrentFileGroupName + ''''
-
-            IF @ReadWriteFileGroups = 'Y' AND @CurrentDatabaseName <> 'master' SET @CurrentCommand += ' READ_WRITE_FILEGROUPS'
-
-            SET @CurrentCommand += ' TO'
-
-            SELECT @CurrentCommand += ' ' + [Type] + ' = N''' + REPLACE(FilePath,'''','''''') + '''' + CASE WHEN ROW_NUMBER() OVER (ORDER BY FilePath ASC) <> @CurrentNumberOfFiles THEN ',' ELSE '' END
-            FROM @CurrentFiles
-            WHERE Mirror = 0
-            ORDER BY FilePath ASC
-
-            IF EXISTS(SELECT * FROM @CurrentFiles WHERE Mirror = 1)
-            BEGIN
-              SET @CurrentCommand += ' MIRROR TO'
+              SET @CurrentCommand += ' TO'
 
               SELECT @CurrentCommand += ' ' + [Type] + ' = N''' + REPLACE(FilePath,'''','''''') + '''' + CASE WHEN ROW_NUMBER() OVER (ORDER BY FilePath ASC) <> @CurrentNumberOfFiles THEN ',' ELSE '' END
               FROM @CurrentFiles
-              WHERE Mirror = 1
+              WHERE Mirror = 0
               ORDER BY FilePath ASC
-            END
 
-            SET @CurrentCommand += ' WITH '
-            IF @Checksum = 'Y' SET @CurrentCommand += 'CHECKSUM'
-            IF @Checksum = 'N' SET @CurrentCommand += 'NO_CHECKSUM'
+              IF EXISTS(SELECT * FROM @CurrentFiles WHERE Mirror = 1)
+              BEGIN
+                SET @CurrentCommand += ' MIRROR TO'
 
-            IF @Version >= 10
-            BEGIN
-              SET @CurrentCommand += CASE WHEN @Compress = 'Y' AND (@CurrentIsEncrypted = 0 OR (@CurrentIsEncrypted = 1 AND ((@Version >= 13 AND @CurrentMaxTransferSize >= 65537) OR @Version >= 15.0404316 OR SERVERPROPERTY('EngineEdition') = 8))) THEN ', COMPRESSION' ELSE ', NO_COMPRESSION' END
-            END
-
-            IF @Compress = 'Y' AND @CompressionAlgorithm IS NOT NULL
-            BEGIN
-              SET @CurrentCommand += ' (ALGORITHM = ' + @CompressionAlgorithm + CASE WHEN @CompressionLevel IS NOT NULL THEN ', LEVEL = ' + @CompressionLevel ELSE '' END + ')'
-            END
-
-            IF @CurrentBackupType = 'DIFF' SET @CurrentCommand += ', DIFFERENTIAL'
-
-            IF EXISTS(SELECT * FROM @CurrentFiles WHERE Mirror = 1)
-            BEGIN
-              SET @CurrentCommand += ', FORMAT'
-            END
-
-            IF @CopyOnly = 'Y' SET @CurrentCommand += ', COPY_ONLY'
-            IF @NoRecovery = 'Y' AND @CurrentBackupType = 'LOG' SET @CurrentCommand += ', NORECOVERY'
-            IF @Init = 'Y' SET @CurrentCommand += ', INIT'
-            IF @Format = 'Y' SET @CurrentCommand += ', FORMAT'
-            IF @BlockSize IS NOT NULL SET @CurrentCommand += ', BLOCKSIZE = ' + CAST(@BlockSize AS nvarchar)
-            IF @BufferCount IS NOT NULL SET @CurrentCommand += ', BUFFERCOUNT = ' + CAST(@BufferCount AS nvarchar)
-            IF @CurrentMaxTransferSize IS NOT NULL SET @CurrentCommand += ', MAXTRANSFERSIZE = ' + CAST(@CurrentMaxTransferSize AS nvarchar)
-            IF @Description IS NOT NULL SET @CurrentCommand += ', DESCRIPTION = N''' + REPLACE(@Description,'''','''''') + ''''
-            IF @BackupSetName IS NOT NULL SET @CurrentCommand += ', NAME = N''' + REPLACE(@BackupSetName,'''','''''') + ''''
-            IF @Stats IS NOT NULL SET @CurrentCommand += ', STATS = ' + CAST(@Stats AS nvarchar)
-            IF @BackupOptions IS NOT NULL SET @CurrentCommand += ', BACKUP_OPTIONS = N''' + REPLACE(@BackupOptions,'''','''''') + ''''
-            IF @Encrypt = 'Y' SET @CurrentCommand += ', ENCRYPTION (ALGORITHM = ' + UPPER(@EncryptionAlgorithm) + ', '
-            IF @Encrypt = 'Y' AND @ServerCertificate IS NOT NULL SET @CurrentCommand += 'SERVER CERTIFICATE = ' + QUOTENAME(@ServerCertificate)
-            IF @Encrypt = 'Y' AND @ServerAsymmetricKey IS NOT NULL SET @CurrentCommand += 'SERVER ASYMMETRIC KEY = ' + QUOTENAME(@ServerAsymmetricKey)
-            IF @Encrypt = 'Y' SET @CurrentCommand += ')'
-            IF @URL IS NOT NULL AND @Credential IS NOT NULL SET @CurrentCommand += ', CREDENTIAL = N''' + REPLACE(@Credential,'''','''''') + ''''
-            IF @ExpireDate IS NOT NULL SET @CurrentCommand += ', EXPIREDATE = ''' + CONVERT(nvarchar, @ExpireDate, 21) + ''''
-            IF @RetainDays IS NOT NULL SET @CurrentCommand += ', RETAINDAYS = ' + CAST(@RetainDays AS nvarchar)
-          END
-
-          IF @BackupSoftware = 'LITESPEED'
-          BEGIN
-            SET @CurrentDatabaseContext = 'master'
-
-            SELECT @CurrentCommandType = CASE
-            WHEN @CurrentBackupType IN('DIFF','FULL') THEN 'xp_backup_database'
-            WHEN @CurrentBackupType = 'LOG' THEN 'xp_backup_log'
-            END
-
-            SELECT @CurrentCommand = CASE
-            WHEN @CurrentBackupType IN('DIFF','FULL') THEN 'DECLARE @ReturnCode int EXECUTE @ReturnCode = dbo.xp_backup_database @database = N''' + REPLACE(@CurrentDatabaseName,'''','''''') + ''''
-            WHEN @CurrentBackupType = 'LOG' THEN 'DECLARE @ReturnCode int EXECUTE @ReturnCode = dbo.xp_backup_log @database = N''' + REPLACE(@CurrentDatabaseName,'''','''''') + ''''
-            END
-
-            SELECT @CurrentCommand += ', @filename = N''' + REPLACE(FilePath,'''','''''') + ''''
-            FROM @CurrentFiles
-            WHERE Mirror = 0
-            ORDER BY FilePath ASC
-
-            IF EXISTS(SELECT * FROM @CurrentFiles WHERE Mirror = 1)
-            BEGIN
-              SELECT @CurrentCommand += ', @mirror = N''' + REPLACE(FilePath,'''','''''') + ''''
-              FROM @CurrentFiles
-              WHERE Mirror = 1
-              ORDER BY FilePath ASC
-            END
-
-            SET @CurrentCommand += ', @with = '''
-            IF @Checksum = 'Y' SET @CurrentCommand += 'CHECKSUM'
-            IF @Checksum = 'N' SET @CurrentCommand += 'NO_CHECKSUM'
-            IF @CurrentBackupType = 'DIFF' SET @CurrentCommand += ', DIFFERENTIAL'
-            IF @CopyOnly = 'Y' SET @CurrentCommand += ', COPY_ONLY'
-            IF @NoRecovery = 'Y' AND @CurrentBackupType = 'LOG' SET @CurrentCommand += ', NORECOVERY'
-            IF @BlockSize IS NOT NULL SET @CurrentCommand += ', BLOCKSIZE = ' + CAST(@BlockSize AS nvarchar)
-            SET @CurrentCommand += ''''
-            IF @ReadWriteFileGroups = 'Y' AND @CurrentDatabaseName <> 'master' SET @CurrentCommand += ', @read_write_filegroups = 1'
-            IF @CompressionLevelNumeric IS NOT NULL SET @CurrentCommand += ', @compressionlevel = ' + CAST(@CompressionLevelNumeric AS nvarchar)
-            IF @AdaptiveCompression IS NOT NULL SET @CurrentCommand += ', @adaptivecompression = ''' + CASE WHEN @AdaptiveCompression = 'SIZE' THEN 'Size' WHEN @AdaptiveCompression = 'SPEED' THEN 'Speed' END + ''''
-            IF @BufferCount IS NOT NULL SET @CurrentCommand += ', @buffercount = ' + CAST(@BufferCount AS nvarchar)
-            IF @CurrentMaxTransferSize IS NOT NULL SET @CurrentCommand += ', @maxtransfersize = ' + CAST(@CurrentMaxTransferSize AS nvarchar)
-            IF @Threads IS NOT NULL SET @CurrentCommand += ', @threads = ' + CAST(@Threads AS nvarchar)
-            IF @Init = 'Y' SET @CurrentCommand += ', @init = 1'
-            IF @Format = 'Y' SET @CurrentCommand += ', @format = 1'
-            IF @Throttle IS NOT NULL SET @CurrentCommand += ', @throttle = ' + CAST(@Throttle AS nvarchar)
-            IF @Description IS NOT NULL SET @CurrentCommand += ', @desc = N''' + REPLACE(@Description,'''','''''') + ''''
-            IF @ObjectLevelRecoveryMap = 'Y' SET @CurrentCommand += ', @olrmap = 1'
-            IF @ExpireDate IS NOT NULL SET @CurrentCommand += ', @expiration = ''' + CONVERT(nvarchar, @ExpireDate, 21) + ''''
-            IF @RetainDays IS NOT NULL SET @CurrentCommand += ', @retaindays = ' + CAST(@RetainDays AS nvarchar)
-
-            IF @EncryptionAlgorithm IS NOT NULL SET @CurrentCommand += ', @cryptlevel = ' + CASE
-            WHEN @EncryptionAlgorithm = 'RC2_40' THEN '0'
-            WHEN @EncryptionAlgorithm = 'RC2_56' THEN '1'
-            WHEN @EncryptionAlgorithm = 'RC2_112' THEN '2'
-            WHEN @EncryptionAlgorithm = 'RC2_128' THEN '3'
-            WHEN @EncryptionAlgorithm = 'TRIPLE_DES_3KEY' THEN '4'
-            WHEN @EncryptionAlgorithm = 'RC4_128' THEN '5'
-            WHEN @EncryptionAlgorithm = 'AES_128' THEN '6'
-            WHEN @EncryptionAlgorithm = 'AES_192' THEN '7'
-            WHEN @EncryptionAlgorithm = 'AES_256' THEN '8'
-            END
-
-            IF @EncryptionKey IS NOT NULL SET @CurrentCommand += ', @encryptionkey = N''' + REPLACE(@EncryptionKey,'''','''''') + ''''
-            SET @CurrentCommand += ' IF @ReturnCode <> 0 RAISERROR(''Error performing LiteSpeed backup.'', 16, 1)'
-          END
-
-          IF @BackupSoftware = 'SQLBACKUP'
-          BEGIN
-            SET @CurrentDatabaseContext = 'master'
-
-            SET @CurrentCommandType = 'sqlbackup'
-
-            SELECT @CurrentCommand = CASE
-            WHEN @CurrentBackupType IN('DIFF','FULL') THEN 'BACKUP DATABASE ' + QUOTENAME(@CurrentDatabaseName)
-            WHEN @CurrentBackupType = 'LOG' THEN 'BACKUP LOG ' + QUOTENAME(@CurrentDatabaseName)
-            END
-
-            IF @ReadWriteFileGroups = 'Y' AND @CurrentDatabaseName <> 'master' SET @CurrentCommand += ' READ_WRITE_FILEGROUPS'
-
-            SET @CurrentCommand += ' TO'
-
-            SELECT @CurrentCommand += ' DISK = N''' + REPLACE(FilePath,'''','''''') + '''' + CASE WHEN ROW_NUMBER() OVER (ORDER BY FilePath ASC) <> @CurrentNumberOfFiles THEN ',' ELSE '' END
-            FROM @CurrentFiles
-            WHERE Mirror = 0
-            ORDER BY FilePath ASC
-
-            SET @CurrentCommand += ' WITH '
-
-            IF EXISTS(SELECT * FROM @CurrentFiles WHERE Mirror = 1)
-            BEGIN
-              SET @CurrentCommand += ' MIRRORFILE' + ' = N''' + REPLACE((SELECT FilePath FROM @CurrentFiles WHERE Mirror = 1),'''','''''') + ''', '
-            END
-
-            IF @Checksum = 'Y' SET @CurrentCommand += 'CHECKSUM'
-            IF @Checksum = 'N' SET @CurrentCommand += 'NO_CHECKSUM'
-            IF @CurrentBackupType = 'DIFF' SET @CurrentCommand += ', DIFFERENTIAL'
-            IF @CopyOnly = 'Y' SET @CurrentCommand += ', COPY_ONLY'
-            IF @NoRecovery = 'Y' AND @CurrentBackupType = 'LOG' SET @CurrentCommand += ', NORECOVERY'
-            IF @Init = 'Y' SET @CurrentCommand += ', INIT'
-            IF @Format = 'Y' SET @CurrentCommand += ', FORMAT'
-            IF @CompressionLevelNumeric IS NOT NULL SET @CurrentCommand += ', COMPRESSION = ' + CAST(@CompressionLevelNumeric AS nvarchar)
-            IF @Threads IS NOT NULL SET @CurrentCommand += ', THREADCOUNT = ' + CAST(@Threads AS nvarchar)
-            IF @CurrentMaxTransferSize IS NOT NULL SET @CurrentCommand += ', MAXTRANSFERSIZE = ' + CAST(@CurrentMaxTransferSize AS nvarchar)
-            IF @Description IS NOT NULL SET @CurrentCommand += ', DESCRIPTION = N''' + REPLACE(@Description,'''','''''') + ''''
-
-            IF @EncryptionAlgorithm IS NOT NULL SET @CurrentCommand += ', KEYSIZE = ' + CASE
-            WHEN @EncryptionAlgorithm = 'AES_128' THEN '128'
-            WHEN @EncryptionAlgorithm = 'AES_256' THEN '256'
-            END
-
-            IF @EncryptionKey IS NOT NULL SET @CurrentCommand += ', PASSWORD = N''' + REPLACE(@EncryptionKey,'''','''''') + ''''
-            SET @CurrentCommand = 'DECLARE @ReturnCode int EXECUTE @ReturnCode = dbo.sqlbackup N''-SQL "' + REPLACE(@CurrentCommand,'''','''''') + '"''' + ' IF @ReturnCode <> 0 RAISERROR(''Error performing SQLBackup backup.'', 16, 1)'
-          END
-
-          IF @BackupSoftware = 'SQLSAFE'
-          BEGIN
-            SET @CurrentDatabaseContext = 'master'
-
-            SET @CurrentCommandType = 'xp_ss_backup'
-
-            SET @CurrentCommand = 'DECLARE @ReturnCode int EXECUTE @ReturnCode = dbo.xp_ss_backup @database = N''' + REPLACE(@CurrentDatabaseName,'''','''''') + ''''
-
-            SELECT @CurrentCommand += ', ' + CASE WHEN ROW_NUMBER() OVER (ORDER BY FilePath ASC) = 1 THEN '@filename' ELSE '@backupfile' END + ' = N''' + REPLACE(FilePath,'''','''''') + ''''
-            FROM @CurrentFiles
-            WHERE Mirror = 0
-            ORDER BY FilePath ASC
-
-            SELECT @CurrentCommand += ', @mirrorfile = N''' + REPLACE(FilePath,'''','''''') + ''''
-            FROM @CurrentFiles
-            WHERE Mirror = 1
-            ORDER BY FilePath ASC
-
-            SET @CurrentCommand += ', @backuptype = ' + CASE WHEN @CurrentBackupType = 'FULL' THEN '''Full''' WHEN @CurrentBackupType = 'DIFF' THEN '''Differential''' WHEN @CurrentBackupType = 'LOG' THEN '''Log''' END
-            IF @ReadWriteFileGroups = 'Y' AND @CurrentDatabaseName <> 'master' SET @CurrentCommand += ', @readwritefilegroups = 1'
-            SET @CurrentCommand += ', @checksum = ' + CASE WHEN @Checksum = 'Y' THEN '1' WHEN @Checksum = 'N' THEN '0' END
-            SET @CurrentCommand += ', @copyonly = ' + CASE WHEN @CopyOnly = 'Y' THEN '1' WHEN @CopyOnly = 'N' THEN '0' END
-            IF @CompressionLevelNumeric IS NOT NULL SET @CurrentCommand += ', @compressionlevel = ' + CAST(@CompressionLevelNumeric AS nvarchar)
-            IF @Threads IS NOT NULL SET @CurrentCommand += ', @threads = ' + CAST(@Threads AS nvarchar)
-            IF @Init = 'Y' SET @CurrentCommand += ', @overwrite = 1'
-            IF @Description IS NOT NULL SET @CurrentCommand += ', @desc = N''' + REPLACE(@Description,'''','''''') + ''''
-
-            IF @EncryptionAlgorithm IS NOT NULL SET @CurrentCommand += ', @encryptiontype = N''' + CASE
-            WHEN @EncryptionAlgorithm = 'AES_128' THEN 'AES128'
-            WHEN @EncryptionAlgorithm = 'AES_256' THEN 'AES256'
-            END + ''''
-
-            IF @EncryptionKey IS NOT NULL SET @CurrentCommand += ', @encryptedbackuppassword = N''' + REPLACE(@EncryptionKey,'''','''''') + ''''
-            SET @CurrentCommand += ' IF @ReturnCode <> 0 RAISERROR(''Error performing SQLsafe backup.'', 16, 1)'
-          END
-
-          IF @BackupSoftware = 'DATA_DOMAIN_BOOST'
-          BEGIN
-            SET @CurrentDatabaseContext = 'master'
-
-            SET @CurrentCommandType = 'emc_run_backup'
-
-            SET @CurrentCommand = 'DECLARE @ReturnCode int EXECUTE @ReturnCode = dbo.emc_run_backup '''
-
-            SET @CurrentCommand += ' -c ' + CASE WHEN @Cluster IS NOT NULL AND @CurrentAvailabilityGroup IS NOT NULL THEN @Cluster ELSE CAST(SERVERPROPERTY('MachineName') AS nvarchar) END
-
-            SET @CurrentCommand += ' -l ' + CASE
-            WHEN @CurrentBackupType = 'FULL' THEN 'full'
-            WHEN @CurrentBackupType = 'DIFF' THEN 'diff'
-            WHEN @CurrentBackupType = 'LOG' THEN 'incr'
-            END
-
-            IF @NoRecovery = 'Y' SET @CurrentCommand += ' -H'
-
-            IF @CleanupTime IS NOT NULL SET @CurrentCommand += ' -y +' + CAST(@CleanupTime/24 + CASE WHEN @CleanupTime%24 > 0 THEN 1 ELSE 0 END AS nvarchar) + 'd'
-
-            IF @Checksum = 'Y' SET @CurrentCommand += ' -k'
-
-            SET @CurrentCommand += ' -S ' + CAST(@CurrentNumberOfFiles AS nvarchar)
-
-            IF @Description IS NOT NULL SET @CurrentCommand += ' -b "' + REPLACE(@Description,'''','''''') + '"'
-
-            IF @BufferCount IS NOT NULL SET @CurrentCommand += ' -O "BUFFERCOUNT=' + CAST(@BufferCount AS nvarchar) + '"'
-
-            IF @ReadWriteFileGroups = 'Y' AND @CurrentDatabaseName <> 'master' SET @CurrentCommand += ' -O "READ_WRITE_FILEGROUPS"'
-
-            IF @DataDomainBoostHost IS NOT NULL SET @CurrentCommand += ' -a "NSR_DFA_SI_DD_HOST=' + REPLACE(@DataDomainBoostHost,'''','''''') + '"'
-            IF @DataDomainBoostUser IS NOT NULL SET @CurrentCommand += ' -a "NSR_DFA_SI_DD_USER=' + REPLACE(@DataDomainBoostUser,'''','''''') + '"'
-            IF @DataDomainBoostDevicePath IS NOT NULL SET @CurrentCommand += ' -a "NSR_DFA_SI_DEVICE_PATH=' + REPLACE(@DataDomainBoostDevicePath,'''','''''') + '"'
-            IF @DataDomainBoostLockboxPath IS NOT NULL SET @CurrentCommand += ' -a "NSR_DFA_SI_DD_LOCKBOX_PATH=' + REPLACE(@DataDomainBoostLockboxPath,'''','''''') + '"'
-            SET @CurrentCommand += ' -a "NSR_SKIP_NON_BACKUPABLE_STATE_DB=TRUE"'
-            SET @CurrentCommand += ' -a "BACKUP_PROMOTION=NONE"'
-            IF @CopyOnly = 'Y' SET @CurrentCommand += ' -a "NSR_COPY_ONLY=TRUE"'
-            IF @BackupSetName IS NOT NULL SET @CurrentCommand += ' -N "' + REPLACE(@BackupSetName,'''','''''') + '"'
-
-            IF SERVERPROPERTY('InstanceName') IS NULL SET @CurrentCommand += ' "MSSQL'
-            IF SERVERPROPERTY('InstanceName') IS NOT NULL SET @CurrentCommand += ' "MSSQL$' + CAST(SERVERPROPERTY('InstanceName') AS nvarchar)
-            SET @CurrentCommand += ':' + REPLACE(REPLACE(@CurrentDatabaseName,'''',''''''),'.','\.') + '"'
-
-            SET @CurrentCommand += ''''
-
-            SET @CurrentCommand += ' IF @ReturnCode <> 0 RAISERROR(''Error performing Data Domain Boost backup.'', 16, 1)'
-          END
-
-          EXECUTE @CurrentCommandOutput = dbo.CommandExecute @DatabaseContext = @CurrentDatabaseContext, @Command = @CurrentCommand, @CommandType = @CurrentCommandType, @Mode = 1, @DatabaseName = @CurrentDatabaseName, @LogToTable = @LogToTable, @Execute = @Execute
-          SET @Error = @@ERROR
-          IF @Error <> 0 SET @CurrentCommandOutput = @Error
-          IF @CurrentCommandOutput <> 0 SET @ReturnCode = @CurrentCommandOutput
-          SET @CurrentBackupOutput = @CurrentCommandOutput
-        END
-
-        -- Verify the backup
-        IF @CurrentBackupOutput = 0 AND @Verify = 'Y'
-        BEGIN
-          WHILE (1 = 1)
-          BEGIN
-            SELECT TOP 1 @CurrentBackupSetID = ID,
-                         @CurrentIsMirror = Mirror
-            FROM @CurrentBackupSet
-            WHERE VerifyCompleted = 0
-            ORDER BY ID ASC
-
-            IF @@ROWCOUNT = 0
-            BEGIN
-              BREAK
-            END
-
-            IF @BackupSoftware IS NULL
-            BEGIN
-              SET @CurrentDatabaseContext = 'master'
-
-              SET @CurrentCommandType = 'RESTORE_VERIFYONLY'
-
-              SET @CurrentCommand = 'RESTORE VERIFYONLY FROM'
-
-              SELECT @CurrentCommand += ' ' + [Type] + ' = N''' + REPLACE(FilePath,'''','''''') + '''' + CASE WHEN ROW_NUMBER() OVER (ORDER BY FilePath ASC) <> @CurrentNumberOfFiles THEN ',' ELSE '' END
-              FROM @CurrentFiles
-              WHERE Mirror = @CurrentIsMirror
-              ORDER BY FilePath ASC
+                SELECT @CurrentCommand += ' ' + [Type] + ' = N''' + REPLACE(FilePath,'''','''''') + '''' + CASE WHEN ROW_NUMBER() OVER (ORDER BY FilePath ASC) <> @CurrentNumberOfFiles THEN ',' ELSE '' END
+                FROM @CurrentFiles
+                WHERE Mirror = 1
+                ORDER BY FilePath ASC
+              END
 
               SET @CurrentCommand += ' WITH '
               IF @Checksum = 'Y' SET @CurrentCommand += 'CHECKSUM'
               IF @Checksum = 'N' SET @CurrentCommand += 'NO_CHECKSUM'
+
+              IF @Version >= 10
+              BEGIN
+                SET @CurrentCommand += CASE WHEN @Compress = 'Y' AND (@CurrentIsEncrypted = 0 OR (@CurrentIsEncrypted = 1 AND ((@Version >= 13 AND @CurrentMaxTransferSize >= 65537) OR @Version >= 15.0404316 OR SERVERPROPERTY('EngineEdition') = 8))) THEN ', COMPRESSION' ELSE ', NO_COMPRESSION' END
+              END
+
+              IF @Compress = 'Y' AND @CompressionAlgorithm IS NOT NULL
+              BEGIN
+                SET @CurrentCommand += ' (ALGORITHM = ' + @CompressionAlgorithm + CASE WHEN @CompressionLevel IS NOT NULL THEN ', LEVEL = ' + @CompressionLevel ELSE '' END + ')'
+              END
+
+              IF @CurrentBackupType = 'DIFF' SET @CurrentCommand += ', DIFFERENTIAL'
+
+              IF EXISTS(SELECT * FROM @CurrentFiles WHERE Mirror = 1)
+              BEGIN
+                SET @CurrentCommand += ', FORMAT'
+              END
+
+              IF @CopyOnly = 'Y' SET @CurrentCommand += ', COPY_ONLY'
+              IF @NoRecovery = 'Y' AND @CurrentBackupType = 'LOG' SET @CurrentCommand += ', NORECOVERY'
+              IF @Init = 'Y' SET @CurrentCommand += ', INIT'
+              IF @Format = 'Y' SET @CurrentCommand += ', FORMAT'
+              IF @BlockSize IS NOT NULL SET @CurrentCommand += ', BLOCKSIZE = ' + CAST(@BlockSize AS nvarchar)
+              IF @BufferCount IS NOT NULL SET @CurrentCommand += ', BUFFERCOUNT = ' + CAST(@BufferCount AS nvarchar)
+              IF @CurrentMaxTransferSize IS NOT NULL SET @CurrentCommand += ', MAXTRANSFERSIZE = ' + CAST(@CurrentMaxTransferSize AS nvarchar)
+              IF @Description IS NOT NULL SET @CurrentCommand += ', DESCRIPTION = N''' + REPLACE(@Description,'''','''''') + ''''
+              IF @BackupSetName IS NOT NULL SET @CurrentCommand += ', NAME = N''' + REPLACE(@BackupSetName,'''','''''') + ''''
               IF @Stats IS NOT NULL SET @CurrentCommand += ', STATS = ' + CAST(@Stats AS nvarchar)
-              IF @BackupOptions IS NOT NULL SET @CurrentCommand += ', RESTORE_OPTIONS = N''' + REPLACE(@BackupOptions,'''','''''') + ''''
+              IF @BackupOptions IS NOT NULL SET @CurrentCommand += ', BACKUP_OPTIONS = N''' + REPLACE(@BackupOptions,'''','''''') + ''''
+              IF @Encrypt = 'Y' SET @CurrentCommand += ', ENCRYPTION (ALGORITHM = ' + UPPER(@EncryptionAlgorithm) + ', '
+              IF @Encrypt = 'Y' AND @ServerCertificate IS NOT NULL SET @CurrentCommand += 'SERVER CERTIFICATE = ' + QUOTENAME(@ServerCertificate)
+              IF @Encrypt = 'Y' AND @ServerAsymmetricKey IS NOT NULL SET @CurrentCommand += 'SERVER ASYMMETRIC KEY = ' + QUOTENAME(@ServerAsymmetricKey)
+              IF @Encrypt = 'Y' SET @CurrentCommand += ')'
               IF @URL IS NOT NULL AND @Credential IS NOT NULL SET @CurrentCommand += ', CREDENTIAL = N''' + REPLACE(@Credential,'''','''''') + ''''
+              IF @ExpireDate IS NOT NULL SET @CurrentCommand += ', EXPIREDATE = ''' + CONVERT(nvarchar, @ExpireDate, 21) + ''''
+              IF @RetainDays IS NOT NULL SET @CurrentCommand += ', RETAINDAYS = ' + CAST(@RetainDays AS nvarchar)
             END
 
             IF @BackupSoftware = 'LITESPEED'
             BEGIN
               SET @CurrentDatabaseContext = 'master'
 
-              SET @CurrentCommandType = 'xp_restore_verifyonly'
+              SELECT @CurrentCommandType = CASE
+              WHEN @CurrentBackupType IN('DIFF','FULL') THEN 'xp_backup_database'
+              WHEN @CurrentBackupType = 'LOG' THEN 'xp_backup_log'
+              END
 
-              SET @CurrentCommand = 'DECLARE @ReturnCode int EXECUTE @ReturnCode = dbo.xp_restore_verifyonly'
+              SELECT @CurrentCommand = CASE
+              WHEN @CurrentBackupType IN('DIFF','FULL') THEN 'DECLARE @ReturnCode int EXECUTE @ReturnCode = dbo.xp_backup_database @database = N''' + REPLACE(@CurrentDatabaseName,'''','''''') + ''''
+              WHEN @CurrentBackupType = 'LOG' THEN 'DECLARE @ReturnCode int EXECUTE @ReturnCode = dbo.xp_backup_log @database = N''' + REPLACE(@CurrentDatabaseName,'''','''''') + ''''
+              END
 
-              SELECT @CurrentCommand += ' @filename = N''' + REPLACE(FilePath,'''','''''') + '''' + CASE WHEN ROW_NUMBER() OVER (ORDER BY FilePath ASC) <> @CurrentNumberOfFiles THEN ',' ELSE '' END
+              SELECT @CurrentCommand += ', @filename = N''' + REPLACE(FilePath,'''','''''') + ''''
               FROM @CurrentFiles
-              WHERE Mirror = @CurrentIsMirror
+              WHERE Mirror = 0
               ORDER BY FilePath ASC
+
+              IF EXISTS(SELECT * FROM @CurrentFiles WHERE Mirror = 1)
+              BEGIN
+                SELECT @CurrentCommand += ', @mirror = N''' + REPLACE(FilePath,'''','''''') + ''''
+                FROM @CurrentFiles
+                WHERE Mirror = 1
+                ORDER BY FilePath ASC
+              END
 
               SET @CurrentCommand += ', @with = '''
               IF @Checksum = 'Y' SET @CurrentCommand += 'CHECKSUM'
               IF @Checksum = 'N' SET @CurrentCommand += 'NO_CHECKSUM'
+              IF @CurrentBackupType = 'DIFF' SET @CurrentCommand += ', DIFFERENTIAL'
+              IF @CopyOnly = 'Y' SET @CurrentCommand += ', COPY_ONLY'
+              IF @NoRecovery = 'Y' AND @CurrentBackupType = 'LOG' SET @CurrentCommand += ', NORECOVERY'
+              IF @BlockSize IS NOT NULL SET @CurrentCommand += ', BLOCKSIZE = ' + CAST(@BlockSize AS nvarchar)
               SET @CurrentCommand += ''''
-              IF @EncryptionKey IS NOT NULL SET @CurrentCommand += ', @encryptionkey = N''' + REPLACE(@EncryptionKey,'''','''''') + ''''
+              IF @ReadWriteFileGroups = 'Y' AND @CurrentDatabaseName <> 'master' SET @CurrentCommand += ', @read_write_filegroups = 1'
+              IF @CompressionLevelNumeric IS NOT NULL SET @CurrentCommand += ', @compressionlevel = ' + CAST(@CompressionLevelNumeric AS nvarchar)
+              IF @AdaptiveCompression IS NOT NULL SET @CurrentCommand += ', @adaptivecompression = ''' + CASE WHEN @AdaptiveCompression = 'SIZE' THEN 'Size' WHEN @AdaptiveCompression = 'SPEED' THEN 'Speed' END + ''''
+              IF @BufferCount IS NOT NULL SET @CurrentCommand += ', @buffercount = ' + CAST(@BufferCount AS nvarchar)
+              IF @CurrentMaxTransferSize IS NOT NULL SET @CurrentCommand += ', @maxtransfersize = ' + CAST(@CurrentMaxTransferSize AS nvarchar)
+              IF @Threads IS NOT NULL SET @CurrentCommand += ', @threads = ' + CAST(@Threads AS nvarchar)
+              IF @Init = 'Y' SET @CurrentCommand += ', @init = 1'
+              IF @Format = 'Y' SET @CurrentCommand += ', @format = 1'
+              IF @Throttle IS NOT NULL SET @CurrentCommand += ', @throttle = ' + CAST(@Throttle AS nvarchar)
+              IF @Description IS NOT NULL SET @CurrentCommand += ', @desc = N''' + REPLACE(@Description,'''','''''') + ''''
+              IF @ObjectLevelRecoveryMap = 'Y' SET @CurrentCommand += ', @olrmap = 1'
+              IF @ExpireDate IS NOT NULL SET @CurrentCommand += ', @expiration = ''' + CONVERT(nvarchar, @ExpireDate, 21) + ''''
+              IF @RetainDays IS NOT NULL SET @CurrentCommand += ', @retaindays = ' + CAST(@RetainDays AS nvarchar)
 
-              SET @CurrentCommand += ' IF @ReturnCode <> 0 RAISERROR(''Error verifying LiteSpeed backup.'', 16, 1)'
+              IF @EncryptionAlgorithm IS NOT NULL SET @CurrentCommand += ', @cryptlevel = ' + CASE
+              WHEN @EncryptionAlgorithm = 'RC2_40' THEN '0'
+              WHEN @EncryptionAlgorithm = 'RC2_56' THEN '1'
+              WHEN @EncryptionAlgorithm = 'RC2_112' THEN '2'
+              WHEN @EncryptionAlgorithm = 'RC2_128' THEN '3'
+              WHEN @EncryptionAlgorithm = 'TRIPLE_DES_3KEY' THEN '4'
+              WHEN @EncryptionAlgorithm = 'RC4_128' THEN '5'
+              WHEN @EncryptionAlgorithm = 'AES_128' THEN '6'
+              WHEN @EncryptionAlgorithm = 'AES_192' THEN '7'
+              WHEN @EncryptionAlgorithm = 'AES_256' THEN '8'
+              END
+
+              IF @EncryptionKey IS NOT NULL SET @CurrentCommand += ', @encryptionkey = N''' + REPLACE(@EncryptionKey,'''','''''') + ''''
+              SET @CurrentCommand += ' IF @ReturnCode <> 0 RAISERROR(''Error performing LiteSpeed backup.'', 16, 1)'
             END
 
             IF @BackupSoftware = 'SQLBACKUP'
@@ -4298,167 +4110,367 @@ BEGIN
 
               SET @CurrentCommandType = 'sqlbackup'
 
-              SET @CurrentCommand = 'RESTORE VERIFYONLY FROM'
+              SELECT @CurrentCommand = CASE
+              WHEN @CurrentBackupType IN('DIFF','FULL') THEN 'BACKUP DATABASE ' + QUOTENAME(@CurrentDatabaseName)
+              WHEN @CurrentBackupType = 'LOG' THEN 'BACKUP LOG ' + QUOTENAME(@CurrentDatabaseName)
+              END
+
+              IF @ReadWriteFileGroups = 'Y' AND @CurrentDatabaseName <> 'master' SET @CurrentCommand += ' READ_WRITE_FILEGROUPS'
+
+              SET @CurrentCommand += ' TO'
 
               SELECT @CurrentCommand += ' DISK = N''' + REPLACE(FilePath,'''','''''') + '''' + CASE WHEN ROW_NUMBER() OVER (ORDER BY FilePath ASC) <> @CurrentNumberOfFiles THEN ',' ELSE '' END
               FROM @CurrentFiles
-              WHERE Mirror = @CurrentIsMirror
+              WHERE Mirror = 0
               ORDER BY FilePath ASC
 
               SET @CurrentCommand += ' WITH '
+
+              IF EXISTS(SELECT * FROM @CurrentFiles WHERE Mirror = 1)
+              BEGIN
+                SET @CurrentCommand += ' MIRRORFILE' + ' = N''' + REPLACE((SELECT FilePath FROM @CurrentFiles WHERE Mirror = 1),'''','''''') + ''', '
+              END
+
               IF @Checksum = 'Y' SET @CurrentCommand += 'CHECKSUM'
               IF @Checksum = 'N' SET @CurrentCommand += 'NO_CHECKSUM'
-              IF @EncryptionKey IS NOT NULL SET @CurrentCommand += ', PASSWORD = N''' + REPLACE(@EncryptionKey,'''','''''') + ''''
+              IF @CurrentBackupType = 'DIFF' SET @CurrentCommand += ', DIFFERENTIAL'
+              IF @CopyOnly = 'Y' SET @CurrentCommand += ', COPY_ONLY'
+              IF @NoRecovery = 'Y' AND @CurrentBackupType = 'LOG' SET @CurrentCommand += ', NORECOVERY'
+              IF @Init = 'Y' SET @CurrentCommand += ', INIT'
+              IF @Format = 'Y' SET @CurrentCommand += ', FORMAT'
+              IF @CompressionLevelNumeric IS NOT NULL SET @CurrentCommand += ', COMPRESSION = ' + CAST(@CompressionLevelNumeric AS nvarchar)
+              IF @Threads IS NOT NULL SET @CurrentCommand += ', THREADCOUNT = ' + CAST(@Threads AS nvarchar)
+              IF @CurrentMaxTransferSize IS NOT NULL SET @CurrentCommand += ', MAXTRANSFERSIZE = ' + CAST(@CurrentMaxTransferSize AS nvarchar)
+              IF @Description IS NOT NULL SET @CurrentCommand += ', DESCRIPTION = N''' + REPLACE(@Description,'''','''''') + ''''
 
-              SET @CurrentCommand = 'DECLARE @ReturnCode int EXECUTE @ReturnCode = dbo.sqlbackup N''-SQL "' + REPLACE(@CurrentCommand,'''','''''') + '"''' + ' IF @ReturnCode <> 0 RAISERROR(''Error verifying SQLBackup backup.'', 16, 1)'
+              IF @EncryptionAlgorithm IS NOT NULL SET @CurrentCommand += ', KEYSIZE = ' + CASE
+              WHEN @EncryptionAlgorithm = 'AES_128' THEN '128'
+              WHEN @EncryptionAlgorithm = 'AES_256' THEN '256'
+              END
+
+              IF @EncryptionKey IS NOT NULL SET @CurrentCommand += ', PASSWORD = N''' + REPLACE(@EncryptionKey,'''','''''') + ''''
+              SET @CurrentCommand = 'DECLARE @ReturnCode int EXECUTE @ReturnCode = dbo.sqlbackup N''-SQL "' + REPLACE(@CurrentCommand,'''','''''') + '"''' + ' IF @ReturnCode <> 0 RAISERROR(''Error performing SQLBackup backup.'', 16, 1)'
             END
 
             IF @BackupSoftware = 'SQLSAFE'
             BEGIN
               SET @CurrentDatabaseContext = 'master'
 
-              SET @CurrentCommandType = 'xp_ss_verify'
+              SET @CurrentCommandType = 'xp_ss_backup'
 
-              SET @CurrentCommand = 'DECLARE @ReturnCode int EXECUTE @ReturnCode = dbo.xp_ss_verify @database = N''' + REPLACE(@CurrentDatabaseName,'''','''''') + ''''
+              SET @CurrentCommand = 'DECLARE @ReturnCode int EXECUTE @ReturnCode = dbo.xp_ss_backup @database = N''' + REPLACE(@CurrentDatabaseName,'''','''''') + ''''
 
               SELECT @CurrentCommand += ', ' + CASE WHEN ROW_NUMBER() OVER (ORDER BY FilePath ASC) = 1 THEN '@filename' ELSE '@backupfile' END + ' = N''' + REPLACE(FilePath,'''','''''') + ''''
               FROM @CurrentFiles
-              WHERE Mirror = @CurrentIsMirror
+              WHERE Mirror = 0
               ORDER BY FilePath ASC
 
-              SET @CurrentCommand += ' IF @ReturnCode <> 0 RAISERROR(''Error verifying SQLsafe backup.'', 16, 1)'
+              SELECT @CurrentCommand += ', @mirrorfile = N''' + REPLACE(FilePath,'''','''''') + ''''
+              FROM @CurrentFiles
+              WHERE Mirror = 1
+              ORDER BY FilePath ASC
+
+              SET @CurrentCommand += ', @backuptype = ' + CASE WHEN @CurrentBackupType = 'FULL' THEN '''Full''' WHEN @CurrentBackupType = 'DIFF' THEN '''Differential''' WHEN @CurrentBackupType = 'LOG' THEN '''Log''' END
+              IF @ReadWriteFileGroups = 'Y' AND @CurrentDatabaseName <> 'master' SET @CurrentCommand += ', @readwritefilegroups = 1'
+              SET @CurrentCommand += ', @checksum = ' + CASE WHEN @Checksum = 'Y' THEN '1' WHEN @Checksum = 'N' THEN '0' END
+              SET @CurrentCommand += ', @copyonly = ' + CASE WHEN @CopyOnly = 'Y' THEN '1' WHEN @CopyOnly = 'N' THEN '0' END
+              IF @CompressionLevelNumeric IS NOT NULL SET @CurrentCommand += ', @compressionlevel = ' + CAST(@CompressionLevelNumeric AS nvarchar)
+              IF @Threads IS NOT NULL SET @CurrentCommand += ', @threads = ' + CAST(@Threads AS nvarchar)
+              IF @Init = 'Y' SET @CurrentCommand += ', @overwrite = 1'
+              IF @Description IS NOT NULL SET @CurrentCommand += ', @desc = N''' + REPLACE(@Description,'''','''''') + ''''
+
+              IF @EncryptionAlgorithm IS NOT NULL SET @CurrentCommand += ', @encryptiontype = N''' + CASE
+              WHEN @EncryptionAlgorithm = 'AES_128' THEN 'AES128'
+              WHEN @EncryptionAlgorithm = 'AES_256' THEN 'AES256'
+              END + ''''
+
+              IF @EncryptionKey IS NOT NULL SET @CurrentCommand += ', @encryptedbackuppassword = N''' + REPLACE(@EncryptionKey,'''','''''') + ''''
+              SET @CurrentCommand += ' IF @ReturnCode <> 0 RAISERROR(''Error performing SQLsafe backup.'', 16, 1)'
+            END
+
+            IF @BackupSoftware = 'DATA_DOMAIN_BOOST'
+            BEGIN
+              SET @CurrentDatabaseContext = 'master'
+
+              SET @CurrentCommandType = 'emc_run_backup'
+
+              SET @CurrentCommand = 'DECLARE @ReturnCode int EXECUTE @ReturnCode = dbo.emc_run_backup '''
+
+              SET @CurrentCommand += ' -c ' + CASE WHEN @Cluster IS NOT NULL AND @CurrentAvailabilityGroup IS NOT NULL THEN @Cluster ELSE CAST(SERVERPROPERTY('MachineName') AS nvarchar) END
+
+              SET @CurrentCommand += ' -l ' + CASE
+              WHEN @CurrentBackupType = 'FULL' THEN 'full'
+              WHEN @CurrentBackupType = 'DIFF' THEN 'diff'
+              WHEN @CurrentBackupType = 'LOG' THEN 'incr'
+              END
+
+              IF @NoRecovery = 'Y' SET @CurrentCommand += ' -H'
+
+              IF @CleanupTime IS NOT NULL SET @CurrentCommand += ' -y +' + CAST(@CleanupTime/24 + CASE WHEN @CleanupTime%24 > 0 THEN 1 ELSE 0 END AS nvarchar) + 'd'
+
+              IF @Checksum = 'Y' SET @CurrentCommand += ' -k'
+
+              SET @CurrentCommand += ' -S ' + CAST(@CurrentNumberOfFiles AS nvarchar)
+
+              IF @Description IS NOT NULL SET @CurrentCommand += ' -b "' + REPLACE(@Description,'''','''''') + '"'
+
+              IF @BufferCount IS NOT NULL SET @CurrentCommand += ' -O "BUFFERCOUNT=' + CAST(@BufferCount AS nvarchar) + '"'
+
+              IF @ReadWriteFileGroups = 'Y' AND @CurrentDatabaseName <> 'master' SET @CurrentCommand += ' -O "READ_WRITE_FILEGROUPS"'
+
+              IF @DataDomainBoostHost IS NOT NULL SET @CurrentCommand += ' -a "NSR_DFA_SI_DD_HOST=' + REPLACE(@DataDomainBoostHost,'''','''''') + '"'
+              IF @DataDomainBoostUser IS NOT NULL SET @CurrentCommand += ' -a "NSR_DFA_SI_DD_USER=' + REPLACE(@DataDomainBoostUser,'''','''''') + '"'
+              IF @DataDomainBoostDevicePath IS NOT NULL SET @CurrentCommand += ' -a "NSR_DFA_SI_DEVICE_PATH=' + REPLACE(@DataDomainBoostDevicePath,'''','''''') + '"'
+              IF @DataDomainBoostLockboxPath IS NOT NULL SET @CurrentCommand += ' -a "NSR_DFA_SI_DD_LOCKBOX_PATH=' + REPLACE(@DataDomainBoostLockboxPath,'''','''''') + '"'
+              SET @CurrentCommand += ' -a "NSR_SKIP_NON_BACKUPABLE_STATE_DB=TRUE"'
+              SET @CurrentCommand += ' -a "BACKUP_PROMOTION=NONE"'
+              IF @CopyOnly = 'Y' SET @CurrentCommand += ' -a "NSR_COPY_ONLY=TRUE"'
+              IF @BackupSetName IS NOT NULL SET @CurrentCommand += ' -N "' + REPLACE(@BackupSetName,'''','''''') + '"'
+
+              IF SERVERPROPERTY('InstanceName') IS NULL SET @CurrentCommand += ' "MSSQL'
+              IF SERVERPROPERTY('InstanceName') IS NOT NULL SET @CurrentCommand += ' "MSSQL$' + CAST(SERVERPROPERTY('InstanceName') AS nvarchar)
+              SET @CurrentCommand += ':' + REPLACE(REPLACE(@CurrentDatabaseName,'''',''''''),'.','\.') + '"'
+
+              SET @CurrentCommand += ''''
+
+              SET @CurrentCommand += ' IF @ReturnCode <> 0 RAISERROR(''Error performing Data Domain Boost backup.'', 16, 1)'
             END
 
             EXECUTE @CurrentCommandOutput = dbo.CommandExecute @DatabaseContext = @CurrentDatabaseContext, @Command = @CurrentCommand, @CommandType = @CurrentCommandType, @Mode = 1, @DatabaseName = @CurrentDatabaseName, @LogToTable = @LogToTable, @Execute = @Execute
             SET @Error = @@ERROR
             IF @Error <> 0 SET @CurrentCommandOutput = @Error
             IF @CurrentCommandOutput <> 0 SET @ReturnCode = @CurrentCommandOutput
-
-            UPDATE @CurrentBackupSet
-            SET VerifyCompleted = 1,
-                VerifyOutput = @CurrentCommandOutput
-            WHERE ID = @CurrentBackupSetID
-
-            SET @CurrentBackupSetID = NULL
-            SET @CurrentIsMirror = NULL
-
-            SET @CurrentDatabaseContext = NULL
-            SET @CurrentCommand = NULL
-            SET @CurrentCommandOutput = NULL
-            SET @CurrentCommandType = NULL
+            SET @CurrentBackupOutput = @CurrentCommandOutput
           END
-        END
 
-        IF @CleanupMode = 'AFTER_BACKUP'
-        BEGIN
-          INSERT INTO @CurrentCleanupDates (CleanupDate, Mirror)
-          SELECT DATEADD(hh,-(@CleanupTime),SYSDATETIME()), 0
-
-          IF NOT EXISTS(SELECT * FROM @CurrentCleanupDates WHERE (Mirror = 0 OR Mirror IS NULL) AND CleanupDate IS NULL)
+          -- Verify the backup
+          IF @CurrentBackupOutput = 0 AND @Verify = 'Y'
           BEGIN
-            UPDATE @CurrentDirectories
-            SET CleanupDate = (SELECT MIN(CleanupDate)
-                               FROM @CurrentCleanupDates
-                               WHERE (Mirror = 0 OR Mirror IS NULL)),
-                CleanupMode = 'AFTER_BACKUP'
-            WHERE Mirror = 0
+            WHILE (1 = 1)
+            BEGIN
+              SELECT TOP 1 @CurrentBackupSetID = ID,
+                           @CurrentIsMirror = Mirror
+              FROM @CurrentBackupSet
+              WHERE VerifyCompleted = 0
+              ORDER BY ID ASC
+
+              IF @@ROWCOUNT = 0
+              BEGIN
+                BREAK
+              END
+
+              IF @BackupSoftware IS NULL
+              BEGIN
+                SET @CurrentDatabaseContext = 'master'
+
+                SET @CurrentCommandType = 'RESTORE_VERIFYONLY'
+
+                SET @CurrentCommand = 'RESTORE VERIFYONLY FROM'
+
+                SELECT @CurrentCommand += ' ' + [Type] + ' = N''' + REPLACE(FilePath,'''','''''') + '''' + CASE WHEN ROW_NUMBER() OVER (ORDER BY FilePath ASC) <> @CurrentNumberOfFiles THEN ',' ELSE '' END
+                FROM @CurrentFiles
+                WHERE Mirror = @CurrentIsMirror
+                ORDER BY FilePath ASC
+
+                SET @CurrentCommand += ' WITH '
+                IF @Checksum = 'Y' SET @CurrentCommand += 'CHECKSUM'
+                IF @Checksum = 'N' SET @CurrentCommand += 'NO_CHECKSUM'
+                IF @Stats IS NOT NULL SET @CurrentCommand += ', STATS = ' + CAST(@Stats AS nvarchar)
+                IF @BackupOptions IS NOT NULL SET @CurrentCommand += ', RESTORE_OPTIONS = N''' + REPLACE(@BackupOptions,'''','''''') + ''''
+                IF @URL IS NOT NULL AND @Credential IS NOT NULL SET @CurrentCommand += ', CREDENTIAL = N''' + REPLACE(@Credential,'''','''''') + ''''
+              END
+
+              IF @BackupSoftware = 'LITESPEED'
+              BEGIN
+                SET @CurrentDatabaseContext = 'master'
+
+                SET @CurrentCommandType = 'xp_restore_verifyonly'
+
+                SET @CurrentCommand = 'DECLARE @ReturnCode int EXECUTE @ReturnCode = dbo.xp_restore_verifyonly'
+
+                SELECT @CurrentCommand += ' @filename = N''' + REPLACE(FilePath,'''','''''') + '''' + CASE WHEN ROW_NUMBER() OVER (ORDER BY FilePath ASC) <> @CurrentNumberOfFiles THEN ',' ELSE '' END
+                FROM @CurrentFiles
+                WHERE Mirror = @CurrentIsMirror
+                ORDER BY FilePath ASC
+
+                SET @CurrentCommand += ', @with = '''
+                IF @Checksum = 'Y' SET @CurrentCommand += 'CHECKSUM'
+                IF @Checksum = 'N' SET @CurrentCommand += 'NO_CHECKSUM'
+                SET @CurrentCommand += ''''
+                IF @EncryptionKey IS NOT NULL SET @CurrentCommand += ', @encryptionkey = N''' + REPLACE(@EncryptionKey,'''','''''') + ''''
+
+                SET @CurrentCommand += ' IF @ReturnCode <> 0 RAISERROR(''Error verifying LiteSpeed backup.'', 16, 1)'
+              END
+
+              IF @BackupSoftware = 'SQLBACKUP'
+              BEGIN
+                SET @CurrentDatabaseContext = 'master'
+
+                SET @CurrentCommandType = 'sqlbackup'
+
+                SET @CurrentCommand = 'RESTORE VERIFYONLY FROM'
+
+                SELECT @CurrentCommand += ' DISK = N''' + REPLACE(FilePath,'''','''''') + '''' + CASE WHEN ROW_NUMBER() OVER (ORDER BY FilePath ASC) <> @CurrentNumberOfFiles THEN ',' ELSE '' END
+                FROM @CurrentFiles
+                WHERE Mirror = @CurrentIsMirror
+                ORDER BY FilePath ASC
+
+                SET @CurrentCommand += ' WITH '
+                IF @Checksum = 'Y' SET @CurrentCommand += 'CHECKSUM'
+                IF @Checksum = 'N' SET @CurrentCommand += 'NO_CHECKSUM'
+                IF @EncryptionKey IS NOT NULL SET @CurrentCommand += ', PASSWORD = N''' + REPLACE(@EncryptionKey,'''','''''') + ''''
+
+                SET @CurrentCommand = 'DECLARE @ReturnCode int EXECUTE @ReturnCode = dbo.sqlbackup N''-SQL "' + REPLACE(@CurrentCommand,'''','''''') + '"''' + ' IF @ReturnCode <> 0 RAISERROR(''Error verifying SQLBackup backup.'', 16, 1)'
+              END
+
+              IF @BackupSoftware = 'SQLSAFE'
+              BEGIN
+                SET @CurrentDatabaseContext = 'master'
+
+                SET @CurrentCommandType = 'xp_ss_verify'
+
+                SET @CurrentCommand = 'DECLARE @ReturnCode int EXECUTE @ReturnCode = dbo.xp_ss_verify @database = N''' + REPLACE(@CurrentDatabaseName,'''','''''') + ''''
+
+                SELECT @CurrentCommand += ', ' + CASE WHEN ROW_NUMBER() OVER (ORDER BY FilePath ASC) = 1 THEN '@filename' ELSE '@backupfile' END + ' = N''' + REPLACE(FilePath,'''','''''') + ''''
+                FROM @CurrentFiles
+                WHERE Mirror = @CurrentIsMirror
+                ORDER BY FilePath ASC
+
+                SET @CurrentCommand += ' IF @ReturnCode <> 0 RAISERROR(''Error verifying SQLsafe backup.'', 16, 1)'
+              END
+
+              EXECUTE @CurrentCommandOutput = dbo.CommandExecute @DatabaseContext = @CurrentDatabaseContext, @Command = @CurrentCommand, @CommandType = @CurrentCommandType, @Mode = 1, @DatabaseName = @CurrentDatabaseName, @LogToTable = @LogToTable, @Execute = @Execute
+              SET @Error = @@ERROR
+              IF @Error <> 0 SET @CurrentCommandOutput = @Error
+              IF @CurrentCommandOutput <> 0 SET @ReturnCode = @CurrentCommandOutput
+
+              UPDATE @CurrentBackupSet
+              SET VerifyCompleted = 1,
+                  VerifyOutput = @CurrentCommandOutput
+              WHERE ID = @CurrentBackupSetID
+
+              SET @CurrentBackupSetID = NULL
+              SET @CurrentIsMirror = NULL
+
+              SET @CurrentDatabaseContext = NULL
+              SET @CurrentCommand = NULL
+              SET @CurrentCommandOutput = NULL
+              SET @CurrentCommandType = NULL
+            END
           END
-        END
 
-        IF @MirrorCleanupMode = 'AFTER_BACKUP'
-        BEGIN
-          INSERT INTO @CurrentCleanupDates (CleanupDate, Mirror)
-          SELECT DATEADD(hh,-(@MirrorCleanupTime),SYSDATETIME()), 1
-
-          IF NOT EXISTS(SELECT * FROM @CurrentCleanupDates WHERE (Mirror = 1 OR Mirror IS NULL) AND CleanupDate IS NULL)
+          IF @CleanupMode = 'AFTER_BACKUP'
           BEGIN
-            UPDATE @CurrentDirectories
-            SET CleanupDate = (SELECT MIN(CleanupDate)
-                               FROM @CurrentCleanupDates
-                               WHERE (Mirror = 1 OR Mirror IS NULL)),
-                CleanupMode = 'AFTER_BACKUP'
-            WHERE Mirror = 1
-          END
-        END
+            INSERT INTO @CurrentCleanupDates (CleanupDate, Mirror)
+            SELECT DATEADD(hh,-(@CleanupTime),SYSDATETIME()), 0
 
-        -- Delete old backup files, after backup
-        IF ((@CurrentBackupOutput = 0 AND @Verify = 'N')
-        OR (@CurrentBackupOutput = 0 AND @Verify = 'Y' AND NOT EXISTS (SELECT * FROM @CurrentBackupSet WHERE VerifyOutput <> 0 OR VerifyOutput IS NULL)))
-        AND (@BackupSoftware <> 'DATA_DOMAIN_BOOST' OR @BackupSoftware IS NULL)
-        AND @CurrentBackupType = @BackupType
-        BEGIN
-          WHILE (1 = 1)
+            IF NOT EXISTS(SELECT * FROM @CurrentCleanupDates WHERE (Mirror = 0 OR Mirror IS NULL) AND CleanupDate IS NULL)
+            BEGIN
+              UPDATE @CurrentDirectories
+              SET CleanupDate = (SELECT MIN(CleanupDate)
+                                 FROM @CurrentCleanupDates
+                                 WHERE (Mirror = 0 OR Mirror IS NULL)),
+                  CleanupMode = 'AFTER_BACKUP'
+              WHERE Mirror = 0
+            END
+          END
+
+          IF @MirrorCleanupMode = 'AFTER_BACKUP'
           BEGIN
-            SELECT TOP 1 @CurrentDirectoryID = ID,
-                         @CurrentDirectoryPath = DirectoryPath,
-                         @CurrentCleanupDate = CleanupDate
-            FROM @CurrentDirectories
-            WHERE CleanupDate IS NOT NULL
-            AND CleanupMode = 'AFTER_BACKUP'
-            AND CleanupCompleted = 0
-            ORDER BY ID ASC
+            INSERT INTO @CurrentCleanupDates (CleanupDate, Mirror)
+            SELECT DATEADD(hh,-(@MirrorCleanupTime),SYSDATETIME()), 1
 
-            IF @@ROWCOUNT = 0
+            IF NOT EXISTS(SELECT * FROM @CurrentCleanupDates WHERE (Mirror = 1 OR Mirror IS NULL) AND CleanupDate IS NULL)
             BEGIN
-              BREAK
+              UPDATE @CurrentDirectories
+              SET CleanupDate = (SELECT MIN(CleanupDate)
+                                 FROM @CurrentCleanupDates
+                                 WHERE (Mirror = 1 OR Mirror IS NULL)),
+                  CleanupMode = 'AFTER_BACKUP'
+              WHERE Mirror = 1
             END
-
-            IF @BackupSoftware IS NULL
-            BEGIN
-              SET @CurrentDatabaseContext = 'master'
-
-              SET @CurrentCommandType = 'xp_delete_file'
-
-              SET @CurrentCommand = 'DECLARE @ReturnCode int EXECUTE @ReturnCode = dbo.xp_delete_file 0, N''' + REPLACE(@CurrentDirectoryPath,'''','''''') + ''', ''' + @CurrentFileExtension + ''', ''' + CONVERT(nvarchar(19),@CurrentCleanupDate,126) + ''' IF @ReturnCode <> 0 RAISERROR(''Error deleting files.'', 16, 1)'
-            END
-
-            IF @BackupSoftware = 'LITESPEED'
-            BEGIN
-              SET @CurrentDatabaseContext = 'master'
-
-              SET @CurrentCommandType = 'xp_slssqlmaint'
-
-              SET @CurrentCommand = 'DECLARE @ReturnCode int EXECUTE @ReturnCode = dbo.xp_slssqlmaint N''-MAINTDEL -DELFOLDER "' + REPLACE(@CurrentDirectoryPath,'''','''''') + '" -DELEXTENSION "' + @CurrentFileExtension + '" -DELUNIT "' + CAST(DATEDIFF(mi,@CurrentCleanupDate,SYSDATETIME()) + 1 AS nvarchar) + '" -DELUNITTYPE "minutes" -DELUSEAGE'' IF @ReturnCode <> 0 RAISERROR(''Error deleting LiteSpeed backup files.'', 16, 1)'
-            END
-
-            IF @BackupSoftware = 'SQLBACKUP'
-            BEGIN
-              SET @CurrentDatabaseContext = 'master'
-
-              SET @CurrentCommandType = 'sqbutility'
-
-              SET @CurrentCommand = 'DECLARE @ReturnCode int EXECUTE @ReturnCode = dbo.sqbutility 1032, N''' + REPLACE(@CurrentDatabaseName,'''','''''') + ''', N''' + REPLACE(@CurrentDirectoryPath,'''','''''') + ''', ''' + CASE WHEN @CurrentBackupType = 'FULL' THEN 'D' WHEN @CurrentBackupType = 'DIFF' THEN 'I' WHEN @CurrentBackupType = 'LOG' THEN 'L' END + ''', ''' + CAST(DATEDIFF(hh,@CurrentCleanupDate,SYSDATETIME()) + 1 AS nvarchar) + 'h'', ' + ISNULL('''' + REPLACE(@EncryptionKey,'''','''''') + '''','NULL') + ' IF @ReturnCode <> 0 RAISERROR(''Error deleting SQLBackup backup files.'', 16, 1)'
-            END
-
-            IF @BackupSoftware = 'SQLSAFE'
-            BEGIN
-              SET @CurrentDatabaseContext = 'master'
-
-              SET @CurrentCommandType = 'xp_ss_delete'
-
-              SET @CurrentCommand = 'DECLARE @ReturnCode int EXECUTE @ReturnCode = dbo.xp_ss_delete @filename = N''' + REPLACE(@CurrentDirectoryPath,'''','''''') + '\*.' + @CurrentFileExtension + ''', @age = ''' + CAST(DATEDIFF(mi,@CurrentCleanupDate,SYSDATETIME()) + 1 AS nvarchar) + 'Minutes'' IF @ReturnCode <> 0 RAISERROR(''Error deleting SQLsafe backup files.'', 16, 1)'
-            END
-
-            EXECUTE @CurrentCommandOutput = dbo.CommandExecute @DatabaseContext = @CurrentDatabaseContext, @Command = @CurrentCommand, @CommandType = @CurrentCommandType, @Mode = 1, @DatabaseName = @CurrentDatabaseName, @LogToTable = @LogToTable, @Execute = @Execute
-            SET @Error = @@ERROR
-            IF @Error <> 0 SET @CurrentCommandOutput = @Error
-            IF @CurrentCommandOutput <> 0 SET @ReturnCode = @CurrentCommandOutput
-
-            UPDATE @CurrentDirectories
-            SET CleanupCompleted = 1,
-                CleanupOutput = @CurrentCommandOutput
-            WHERE ID = @CurrentDirectoryID
-
-            SET @CurrentDirectoryID = NULL
-            SET @CurrentDirectoryPath = NULL
-            SET @CurrentCleanupDate = NULL
-
-            SET @CurrentDatabaseContext = NULL
-            SET @CurrentCommand = NULL
-            SET @CurrentCommandOutput = NULL
-            SET @CurrentCommandType = NULL
           END
-        END
+
+          -- Delete old backup files, after backup
+          IF ((@CurrentBackupOutput = 0 AND @Verify = 'N')
+          OR (@CurrentBackupOutput = 0 AND @Verify = 'Y' AND NOT EXISTS (SELECT * FROM @CurrentBackupSet WHERE VerifyOutput <> 0 OR VerifyOutput IS NULL)))
+          AND (@BackupSoftware <> 'DATA_DOMAIN_BOOST' OR @BackupSoftware IS NULL)
+          AND @CurrentBackupType = @BackupType
+          BEGIN
+            WHILE (1 = 1)
+            BEGIN
+              SELECT TOP 1 @CurrentDirectoryID = ID,
+                           @CurrentDirectoryPath = DirectoryPath,
+                           @CurrentCleanupDate = CleanupDate
+              FROM @CurrentDirectories
+              WHERE CleanupDate IS NOT NULL
+              AND CleanupMode = 'AFTER_BACKUP'
+              AND CleanupCompleted = 0
+              ORDER BY ID ASC
+
+              IF @@ROWCOUNT = 0
+              BEGIN
+                BREAK
+              END
+
+              IF @BackupSoftware IS NULL
+              BEGIN
+                SET @CurrentDatabaseContext = 'master'
+
+                SET @CurrentCommandType = 'xp_delete_file'
+
+                SET @CurrentCommand = 'DECLARE @ReturnCode int EXECUTE @ReturnCode = dbo.xp_delete_file 0, N''' + REPLACE(@CurrentDirectoryPath,'''','''''') + ''', ''' + @CurrentFileExtension + ''', ''' + CONVERT(nvarchar(19),@CurrentCleanupDate,126) + ''' IF @ReturnCode <> 0 RAISERROR(''Error deleting files.'', 16, 1)'
+              END
+
+              IF @BackupSoftware = 'LITESPEED'
+              BEGIN
+                SET @CurrentDatabaseContext = 'master'
+
+                SET @CurrentCommandType = 'xp_slssqlmaint'
+
+                SET @CurrentCommand = 'DECLARE @ReturnCode int EXECUTE @ReturnCode = dbo.xp_slssqlmaint N''-MAINTDEL -DELFOLDER "' + REPLACE(@CurrentDirectoryPath,'''','''''') + '" -DELEXTENSION "' + @CurrentFileExtension + '" -DELUNIT "' + CAST(DATEDIFF(mi,@CurrentCleanupDate,SYSDATETIME()) + 1 AS nvarchar) + '" -DELUNITTYPE "minutes" -DELUSEAGE'' IF @ReturnCode <> 0 RAISERROR(''Error deleting LiteSpeed backup files.'', 16, 1)'
+              END
+
+              IF @BackupSoftware = 'SQLBACKUP'
+              BEGIN
+                SET @CurrentDatabaseContext = 'master'
+
+                SET @CurrentCommandType = 'sqbutility'
+
+                SET @CurrentCommand = 'DECLARE @ReturnCode int EXECUTE @ReturnCode = dbo.sqbutility 1032, N''' + REPLACE(@CurrentDatabaseName,'''','''''') + ''', N''' + REPLACE(@CurrentDirectoryPath,'''','''''') + ''', ''' + CASE WHEN @CurrentBackupType = 'FULL' THEN 'D' WHEN @CurrentBackupType = 'DIFF' THEN 'I' WHEN @CurrentBackupType = 'LOG' THEN 'L' END + ''', ''' + CAST(DATEDIFF(hh,@CurrentCleanupDate,SYSDATETIME()) + 1 AS nvarchar) + 'h'', ' + ISNULL('''' + REPLACE(@EncryptionKey,'''','''''') + '''','NULL') + ' IF @ReturnCode <> 0 RAISERROR(''Error deleting SQLBackup backup files.'', 16, 1)'
+              END
+
+              IF @BackupSoftware = 'SQLSAFE'
+              BEGIN
+                SET @CurrentDatabaseContext = 'master'
+
+                SET @CurrentCommandType = 'xp_ss_delete'
+
+                SET @CurrentCommand = 'DECLARE @ReturnCode int EXECUTE @ReturnCode = dbo.xp_ss_delete @filename = N''' + REPLACE(@CurrentDirectoryPath,'''','''''') + '\*.' + @CurrentFileExtension + ''', @age = ''' + CAST(DATEDIFF(mi,@CurrentCleanupDate,SYSDATETIME()) + 1 AS nvarchar) + 'Minutes'' IF @ReturnCode <> 0 RAISERROR(''Error deleting SQLsafe backup files.'', 16, 1)'
+              END
+
+              EXECUTE @CurrentCommandOutput = dbo.CommandExecute @DatabaseContext = @CurrentDatabaseContext, @Command = @CurrentCommand, @CommandType = @CurrentCommandType, @Mode = 1, @DatabaseName = @CurrentDatabaseName, @LogToTable = @LogToTable, @Execute = @Execute
+              SET @Error = @@ERROR
+              IF @Error <> 0 SET @CurrentCommandOutput = @Error
+              IF @CurrentCommandOutput <> 0 SET @ReturnCode = @CurrentCommandOutput
+
+              UPDATE @CurrentDirectories
+              SET CleanupCompleted = 1,
+                  CleanupOutput = @CurrentCommandOutput
+              WHERE ID = @CurrentDirectoryID
+
+              SET @CurrentDirectoryID = NULL
+              SET @CurrentDirectoryPath = NULL
+              SET @CurrentCleanupDate = NULL
+
+              SET @CurrentDatabaseContext = NULL
+              SET @CurrentCommand = NULL
+              SET @CurrentCommandOutput = NULL
+              SET @CurrentCommandType = NULL
+            END
+          END
+
+        END -- End of file group check
 
         UPDATE @tmpFileGroups
         SET Completed = 1
