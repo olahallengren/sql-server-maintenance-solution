@@ -91,7 +91,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2025-06-09 16:43:17                                                               //--
+  --// Version: 2025-06-14 16:13:00                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -899,8 +899,19 @@ BEGIN
         BREAK
       END
 
-      INSERT INTO @DirectoryInfo (FileExists, FileIsADirectory, ParentDirectoryExists)
-      EXECUTE [master].dbo.xp_fileexist @CurrentRootDirectoryPath
+      IF @Version >= 14
+      BEGIN
+        INSERT INTO @DirectoryInfo (FileExists, FileIsADirectory, ParentDirectoryExists)
+        SELECT file_exists,
+               file_is_a_directory,
+               parent_directory_exists
+        FROM sys.dm_os_file_exists (@CurrentRootDirectoryPath)
+      END
+      ELSE
+      BEGIN
+        INSERT INTO @DirectoryInfo (FileExists, FileIsADirectory, ParentDirectoryExists)
+        EXECUTE [master].dbo.xp_fileexist @CurrentRootDirectoryPath
+      END
 
       IF NOT EXISTS (SELECT * FROM @DirectoryInfo WHERE FileExists = 0 AND FileIsADirectory = 1 AND ParentDirectoryExists = 1)
       BEGIN
@@ -3555,8 +3566,19 @@ BEGIN
 
           IF @DirectoryCheck = 'Y'
           BEGIN
-            INSERT INTO @DirectoryInfo (FileExists, FileIsADirectory, ParentDirectoryExists)
-            EXECUTE [master].dbo.xp_fileexist @CurrentDirectoryPath
+            IF @Version >= 14
+            BEGIN
+              INSERT INTO @DirectoryInfo (FileExists, FileIsADirectory, ParentDirectoryExists)
+              SELECT file_exists,
+                     file_is_a_directory,
+                     parent_directory_exists
+              FROM sys.dm_os_file_exists (@CurrentDirectoryPath)
+            END
+            ELSE
+            BEGIN
+              INSERT INTO @DirectoryInfo (FileExists, FileIsADirectory, ParentDirectoryExists)
+              EXECUTE [master].dbo.xp_fileexist @CurrentDirectoryPath
+            END
           END
 
           IF NOT EXISTS (SELECT * FROM @DirectoryInfo WHERE FileExists = 0 AND FileIsADirectory = 1 AND ParentDirectoryExists = 1)
