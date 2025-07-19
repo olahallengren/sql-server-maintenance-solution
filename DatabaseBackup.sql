@@ -92,7 +92,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2025-07-08 19:42:27                                                               //--
+  --// Version: 2025-07-20 01:19:05                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -161,6 +161,8 @@ BEGIN
   DECLARE @CurrentAvailabilityGroupID uniqueidentifier
   DECLARE @CurrentAvailabilityGroup nvarchar(max)
   DECLARE @CurrentAvailabilityGroupRole nvarchar(max)
+  DECLARE @CurrentAvailabilityGroupDatabaseReplicaSynchronizationState nvarchar(max)
+  DECLARE @CurrentAvailabilityGroupDatabaseReplicaSynchronizationHealth nvarchar(max)
   DECLARE @CurrentAvailabilityGroupBackupPreference nvarchar(max)
   DECLARE @CurrentIsPreferredBackupReplica bit
   DECLARE @CurrentDatabaseMirroringRole nvarchar(max)
@@ -974,8 +976,19 @@ BEGIN
         BREAK
       END
 
-      INSERT INTO @DirectoryInfo (FileExists, FileIsADirectory, ParentDirectoryExists)
-      EXECUTE [master].dbo.xp_fileexist @CurrentRootDirectoryPath
+      IF @Version >= 14
+      BEGIN
+        INSERT INTO @DirectoryInfo (FileExists, FileIsADirectory, ParentDirectoryExists)
+        SELECT file_exists,
+               file_is_a_directory,
+               parent_directory_exists
+        FROM sys.dm_os_file_exists (@CurrentRootDirectoryPath)
+      END
+      ELSE
+      BEGIN
+        INSERT INTO @DirectoryInfo (FileExists, FileIsADirectory, ParentDirectoryExists)
+        EXECUTE [master].dbo.xp_fileexist @CurrentRootDirectoryPath
+      END
 
       IF NOT EXISTS (SELECT * FROM @DirectoryInfo WHERE FileExists = 0 AND FileIsADirectory = 1 AND ParentDirectoryExists = 1)
       BEGIN
@@ -2947,18 +2960,6 @@ BEGIN
       UPDATE tmpFileGroups
       SET [Order] = RowNumber
 
-      SET @ErrorMessage = ''
-      SELECT @ErrorMessage = @ErrorMessage + QUOTENAME(DatabaseName) + '.' + QUOTENAME(FileGroupName) + ', '
-      FROM @SelectedFileGroups SelectedFileGroups
-      WHERE DatabaseName = @CurrentDatabaseName
-      AND FileGroupName NOT LIKE '%[%]%'
-      AND NOT EXISTS (SELECT * FROM @tmpFileGroups WHERE FileGroupName = SelectedFileGroups.FileGroupName)
-      IF @@ROWCOUNT > 0
-      BEGIN
-        SET @ErrorMessage = 'The following file groups do not exist: ' + LEFT(@ErrorMessage,LEN(@ErrorMessage)-1) + '.' + CHAR(13) + CHAR(10) + ' '
-        RAISERROR(@ErrorMessage,16,1) WITH NOWAIT
-        SET @Error = @@ERROR
-      END
     END
 
     SET @CurrentDatabase_sp_executesql = QUOTENAME(@CurrentDatabaseName) + '.sys.sp_executesql'
@@ -3020,6 +3021,12 @@ BEGIN
       SELECT @CurrentAvailabilityGroupRole = role_desc
       FROM sys.dm_hadr_availability_replica_states
       WHERE replica_id = @CurrentReplicaID
+
+      SELECT @CurrentAvailabilityGroupDatabaseReplicaSynchronizationState = synchronization_state_desc,
+             @CurrentAvailabilityGroupDatabaseReplicaSynchronizationHealth = synchronization_health_desc
+      FROM sys.dm_hadr_database_replica_states
+      WHERE replica_id = @CurrentReplicaID
+      AND database_id = DB_ID(@CurrentDatabaseName)
 
       SELECT @CurrentAvailabilityGroup = [name],
              @CurrentAvailabilityGroupBackupPreference = UPPER(automated_backup_preference_desc)
@@ -3143,6 +3150,12 @@ BEGIN
       SET @DatabaseMessage = 'Availability group role: ' + ISNULL(@CurrentAvailabilityGroupRole,'N/A')
       RAISERROR('%s',10,1,@DatabaseMessage) WITH NOWAIT
 
+      SET @DatabaseMessage = 'Availability group database replica synchronization state: ' + ISNULL(@CurrentAvailabilityGroupDatabaseReplicaSynchronizationState,'N/A')
+      RAISERROR('%s',10,1,@DatabaseMessage) WITH NOWAIT
+
+      SET @DatabaseMessage = 'Availability group database replica synchronization health: ' + ISNULL(@CurrentAvailabilityGroupDatabaseReplicaSynchronizationHealth,'N/A')
+      RAISERROR('%s',10,1,@DatabaseMessage) WITH NOWAIT
+
       SET @DatabaseMessage = 'Availability group backup preference: ' + ISNULL(@CurrentAvailabilityGroupBackupPreference,'N/A')
       RAISERROR('%s',10,1,@DatabaseMessage) WITH NOWAIT
 
@@ -3192,6 +3205,19 @@ BEGIN
       RAISERROR('%s',10,1,@DatabaseMessage) WITH NOWAIT
     END
 
+    SET @ErrorMessage = ''
+    SELECT @ErrorMessage = @ErrorMessage + QUOTENAME(DatabaseName) + '.' + QUOTENAME(FileGroupName) + ', '
+    FROM @SelectedFileGroups SelectedFileGroups
+    WHERE DatabaseName = @CurrentDatabaseName
+    AND FileGroupName NOT LIKE '%[%]%'
+    AND NOT EXISTS (SELECT * FROM @tmpFileGroups WHERE FileGroupName = SelectedFileGroups.FileGroupName)
+    IF @@ROWCOUNT > 0
+    BEGIN
+      SET @ErrorMessage = 'The following file groups do not exist: ' + LEFT(@ErrorMessage,LEN(@ErrorMessage)-1) + '.' + CHAR(13) + CHAR(10) + ' '
+      RAISERROR(@ErrorMessage,16,1) WITH NOWAIT
+      SET @Error = @@ERROR
+    END
+
     IF EXISTS (SELECT * FROM @tmpFileGroups WHERE [Type] = 'FX')
     BEGIN
       IF (EXISTS (SELECT * FROM @tmpFileGroups WHERE [Type] = 'FX' AND Selected = 1)
@@ -3214,9 +3240,12 @@ BEGIN
     AND NOT (@CurrentBackupType = 'LOG' AND @CurrentRecoveryModel IN('FULL','BULK_LOGGED') AND @CurrentLogLSN IS NULL)
     AND NOT (@CurrentBackupType = 'DIFF' AND @CurrentDifferentialBaseLSN IS NULL)
     AND NOT (@CurrentBackupType IN('DIFF','LOG') AND @CurrentDatabaseName = 'master')
-    AND NOT (@CurrentAvailabilityGroup IS NOT NULL AND @CurrentBackupType = 'FULL' AND @CopyOnly = 'N' AND (@CurrentAvailabilityGroupRole <> 'PRIMARY' OR @CurrentAvailabilityGroupRole IS NULL))
-    AND NOT (@CurrentAvailabilityGroup IS NOT NULL AND @CurrentBackupType = 'FULL' AND @CopyOnly = 'Y' AND (@CurrentIsPreferredBackupReplica <> 1 OR @CurrentIsPreferredBackupReplica IS NULL) AND @OverrideBackupPreference = 'N')
-    AND NOT (@CurrentAvailabilityGroup IS NOT NULL AND @CurrentBackupType = 'DIFF' AND (@CurrentAvailabilityGroupRole <> 'PRIMARY' OR @CurrentAvailabilityGroupRole IS NULL))
+    AND NOT (@CurrentAvailabilityGroup IS NOT NULL AND @CurrentBackupType = 'FULL' AND @CopyOnly = 'N' AND @Version < 17 AND (@CurrentAvailabilityGroupRole <> 'PRIMARY' OR @CurrentAvailabilityGroupRole IS NULL))
+    AND NOT (@CurrentAvailabilityGroup IS NOT NULL AND @CurrentBackupType = 'FULL' AND @CopyOnly = 'Y' AND @Version < 17 AND (@CurrentIsPreferredBackupReplica <> 1 OR @CurrentIsPreferredBackupReplica IS NULL) AND @OverrideBackupPreference = 'N')
+    AND NOT (@CurrentAvailabilityGroup IS NOT NULL AND @CurrentBackupType = 'FULL' AND @Version >= 17 AND (@CurrentIsPreferredBackupReplica <> 1 OR @CurrentIsPreferredBackupReplica IS NULL) AND @OverrideBackupPreference = 'N')
+    AND NOT (@CurrentAvailabilityGroup IS NOT NULL AND @CurrentBackupType = 'DIFF' AND @Version < 17 AND (@CurrentAvailabilityGroupRole <> 'PRIMARY' OR @CurrentAvailabilityGroupRole IS NULL))
+    AND NOT (@CurrentAvailabilityGroup IS NOT NULL AND @CurrentBackupType = 'DIFF' AND @CopyOnly = 'N' AND @Version >= 17 AND (@CurrentIsPreferredBackupReplica <> 1 OR @CurrentIsPreferredBackupReplica IS NULL) AND @OverrideBackupPreference = 'N')
+    AND NOT (@CurrentAvailabilityGroup IS NOT NULL AND @CurrentBackupType = 'DIFF' AND @CopyOnly = 'Y' AND @Version >= 17 AND (@CurrentAvailabilityGroupRole <> 'PRIMARY' OR @CurrentAvailabilityGroupRole IS NULL))
     AND NOT (@CurrentAvailabilityGroup IS NOT NULL AND @CurrentBackupType = 'LOG' AND @CopyOnly = 'N' AND (@CurrentIsPreferredBackupReplica <> 1 OR @CurrentIsPreferredBackupReplica IS NULL) AND @OverrideBackupPreference = 'N')
     AND NOT (@CurrentAvailabilityGroup IS NOT NULL AND @CurrentBackupType = 'LOG' AND @CopyOnly = 'Y' AND (@CurrentAvailabilityGroupRole <> 'PRIMARY' OR @CurrentAvailabilityGroupRole IS NULL))
     AND NOT ((@CurrentLogShippingRole = 'PRIMARY' AND @CurrentLogShippingRole IS NOT NULL) AND @CurrentBackupType = 'LOG' AND @ExcludeLogShippedFromLogBackup = 'Y')
@@ -3459,9 +3488,9 @@ BEGIN
           SET @CurrentDirectoryStructure = REPLACE(@CurrentDirectoryStructure,'{AvailabilityGroupName}',ISNULL(@CurrentAvailabilityGroup,''))
           SET @CurrentDirectoryStructure = REPLACE(@CurrentDirectoryStructure,'{DatabaseName}',@CurrentDatabaseNameFS)
 
-          IF @CurrentFileGroupName = 'PRIMARY' AND EXISTS (SELECT * FROM @tmpFileGroups WHERE [type] = 'FX' AND Selected = 1)
+          IF @CurrentFileGroupName = 'PRIMARY' AND EXISTS (SELECT * FROM @tmpFileGroups WHERE [type] = 'FX')
           BEGIN
-            SET @CurrentDirectoryStructure = REPLACE(@CurrentDirectoryStructure,'{FileGroupName}',ISNULL(@CurrentFileGroupName + '_' + (SELECT FileGroupName FROM @tmpFileGroups WHERE [type] = 'FX' AND Selected = 1),''))
+            SET @CurrentDirectoryStructure = REPLACE(@CurrentDirectoryStructure,'{FileGroupName}',ISNULL(@CurrentFileGroupName + '_' + (SELECT FileGroupName FROM @tmpFileGroups WHERE [type] = 'FX'),''))
           END
           ELSE
           BEGIN
@@ -3634,9 +3663,9 @@ BEGIN
         SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'{ClusterName}',ISNULL(@Cluster,''))
         SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'{AvailabilityGroupName}',ISNULL(@CurrentAvailabilityGroup,''))
 
-        IF @CurrentFileGroupName = 'PRIMARY' AND EXISTS (SELECT * FROM @tmpFileGroups WHERE [type] = 'FX' AND Selected = 1)
+        IF @CurrentFileGroupName = 'PRIMARY' AND EXISTS (SELECT * FROM @tmpFileGroups WHERE [type] = 'FX')
         BEGIN
-          SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'{FileGroupName}',ISNULL(@CurrentFileGroupName + '_' + (SELECT FileGroupName FROM @tmpFileGroups WHERE [type] = 'FX' AND Selected = 1),''))
+          SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'{FileGroupName}',ISNULL(@CurrentFileGroupName + '_' + (SELECT FileGroupName FROM @tmpFileGroups WHERE [type] = 'FX'),''))
         END
         ELSE
         BEGIN
@@ -3832,8 +3861,19 @@ BEGIN
 
             IF @DirectoryCheck = 'Y'
             BEGIN
-              INSERT INTO @DirectoryInfo (FileExists, FileIsADirectory, ParentDirectoryExists)
-              EXECUTE [master].dbo.xp_fileexist @CurrentDirectoryPath
+              IF @Version >= 14
+              BEGIN
+                INSERT INTO @DirectoryInfo (FileExists, FileIsADirectory, ParentDirectoryExists)
+                SELECT file_exists,
+                       file_is_a_directory,
+                       parent_directory_exists
+                FROM sys.dm_os_file_exists (@CurrentDirectoryPath)
+              END
+              ELSE
+              BEGIN
+                INSERT INTO @DirectoryInfo (FileExists, FileIsADirectory, ParentDirectoryExists)
+                EXECUTE [master].dbo.xp_fileexist @CurrentDirectoryPath
+              END
             END
 
             IF NOT EXISTS (SELECT * FROM @DirectoryInfo WHERE FileExists = 0 AND FileIsADirectory = 1 AND ParentDirectoryExists = 1)
@@ -4004,7 +4044,7 @@ BEGIN
 
             IF @FileGroups IS NOT NULL SET @CurrentCommand += ' FILEGROUP = ''' + @CurrentFileGroupName + ''''
 
-            IF @CurrentFileGroupName = 'PRIMARY' AND EXISTS (SELECT * FROM @tmpFileGroups WHERE [type] = 'FX' AND Selected = 1)
+            IF @CurrentFileGroupName = 'PRIMARY' AND EXISTS (SELECT * FROM @tmpFileGroups WHERE [type] = 'FX')
             BEGIN
               SET @CurrentCommand += ', FILEGROUP = ''' + (SELECT FileGroupName FROM @tmpFileGroups WHERE [type] = 'FX') + ''''
             END
@@ -4506,7 +4546,7 @@ BEGIN
         AND Completed = 0
         AND ID = @CurrentFGID
 
-        IF @CurrentFileGroupName = 'PRIMARY' AND EXISTS (SELECT * FROM @tmpFileGroups WHERE [type] = 'FX' AND Selected = 1)
+        IF @CurrentFileGroupName = 'PRIMARY' AND EXISTS (SELECT * FROM @tmpFileGroups WHERE [type] = 'FX')
         BEGIN
           UPDATE @tmpFileGroups
           SET Completed = 1
@@ -4596,6 +4636,8 @@ BEGIN
     SET @CurrentAvailabilityGroupID = NULL
     SET @CurrentAvailabilityGroup = NULL
     SET @CurrentAvailabilityGroupRole = NULL
+    SET @CurrentAvailabilityGroupDatabaseReplicaSynchronizationState = NULL
+    SET @CurrentAvailabilityGroupDatabaseReplicaSynchronizationHealth = NULL
     SET @CurrentAvailabilityGroupBackupPreference = NULL
     SET @CurrentIsPreferredBackupReplica = NULL
     SET @CurrentDatabaseMirroringRole = NULL
