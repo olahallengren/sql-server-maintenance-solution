@@ -10,7 +10,7 @@ License: https://ola.hallengren.com/license.html
 
 GitHub: https://github.com/olahallengren/sql-server-maintenance-solution
 
-Version: 2025-07-20 12:40:03
+Version: 2025-07-21 22:55:20
 
 You can contact me by e-mail at ola@hallengren.com.
 
@@ -137,7 +137,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2025-07-20 12:40:03                                                               //--
+  --// Version: 2025-07-21 22:55:20                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -485,7 +485,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2025-07-20 12:40:03                                                               //--
+  --// Version: 2025-07-21 22:55:20                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -560,6 +560,7 @@ BEGIN
   DECLARE @CurrentIsPreferredBackupReplica bit
   DECLARE @CurrentDatabaseMirroringRole nvarchar(max)
   DECLARE @CurrentLogShippingRole nvarchar(max)
+  DECLARE @CurrentBackupOperationSupportedOnSecondaryReplicas bit
 
   DECLARE @CurrentBackupSetID int
   DECLARE @CurrentIsMirror bit
@@ -3543,6 +3544,21 @@ BEGIN
 
     IF @CurrentAvailabilityGroup IS NOT NULL
     BEGIN
+      IF ((@CurrentBackupType = 'FULL' AND @CopyOnly = 'N' AND @FileGroups IS NULL AND @Version >= 17)
+      OR (@CurrentBackupType = 'DIFF' AND @CopyOnly = 'N' AND @FileGroups IS NULL AND @Version >= 17)
+      OR (@CurrentBackupType = 'FULL' AND @CopyOnly = 'Y')
+      OR (@CurrentBackupType = 'LOG' AND @CopyOnly = 'N'))
+      BEGIN
+        SET @CurrentBackupOperationSupportedOnSecondaryReplicas = 1
+      END
+      ELSE
+      BEGIN
+        SET @CurrentBackupOperationSupportedOnSecondaryReplicas = 0
+      END
+    END
+
+    IF @CurrentAvailabilityGroup IS NOT NULL
+    BEGIN
       SET @DatabaseMessage = 'Availability group: ' + ISNULL(@CurrentAvailabilityGroup,'N/A')
       RAISERROR('%s',10,1,@DatabaseMessage) WITH NOWAIT
 
@@ -3560,6 +3576,12 @@ BEGIN
 
       SET @DatabaseMessage = 'Is preferred backup replica: ' + CASE WHEN @CurrentIsPreferredBackupReplica = 1 THEN 'Yes' WHEN @CurrentIsPreferredBackupReplica = 0 THEN 'No' ELSE 'N/A' END
       RAISERROR('%s',10,1,@DatabaseMessage) WITH NOWAIT
+
+      IF @CurrentAvailabilityGroupBackupPreference IN('SECONDARY', 'SECONDARY_ONLY')
+      BEGIN
+        SET @DatabaseMessage = 'Is backup operation supported on secondary replicas: ' + CASE WHEN @CurrentBackupOperationSupportedOnSecondaryReplicas = 1 THEN 'Yes' WHEN @CurrentBackupOperationSupportedOnSecondaryReplicas = 0 THEN 'No' ELSE 'N/A' END
+        RAISERROR('%s',10,1,@DatabaseMessage) WITH NOWAIT
+      END
     END
 
     IF @CurrentDatabaseMirroringRole IS NOT NULL
@@ -3639,15 +3661,8 @@ BEGIN
     AND NOT (@CurrentBackupType = 'LOG' AND @CurrentRecoveryModel IN('FULL','BULK_LOGGED') AND @CurrentLogLSN IS NULL)
     AND NOT (@CurrentBackupType = 'DIFF' AND @CurrentDifferentialBaseLSN IS NULL)
     AND NOT (@CurrentBackupType IN('DIFF','LOG') AND @CurrentDatabaseName = 'master')
-    AND NOT (@CurrentAvailabilityGroup IS NOT NULL AND @CurrentBackupType = 'FULL' AND @CopyOnly = 'N' AND @Version < 17 AND (@CurrentAvailabilityGroupRole <> 'PRIMARY' OR @CurrentAvailabilityGroupRole IS NULL))
-    AND NOT (@CurrentAvailabilityGroup IS NOT NULL AND @CurrentBackupType = 'FULL' AND @CopyOnly = 'Y' AND @Version < 17 AND (@CurrentIsPreferredBackupReplica <> 1 OR @CurrentIsPreferredBackupReplica IS NULL) AND @OverrideBackupPreference = 'N')
-    AND NOT (@CurrentAvailabilityGroup IS NOT NULL AND @CurrentBackupType = 'FULL' AND @Version >= 17 AND (@CurrentIsPreferredBackupReplica <> 1 OR @CurrentIsPreferredBackupReplica IS NULL) AND @OverrideBackupPreference = 'N')
-    AND NOT (@CurrentAvailabilityGroup IS NOT NULL AND @CurrentBackupType = 'DIFF' AND @Version < 17 AND (@CurrentAvailabilityGroupRole <> 'PRIMARY' OR @CurrentAvailabilityGroupRole IS NULL))
-    AND NOT (@CurrentAvailabilityGroup IS NOT NULL AND @CurrentBackupType = 'DIFF' AND @CopyOnly = 'N' AND @Version >= 17 AND (@CurrentIsPreferredBackupReplica <> 1 OR @CurrentIsPreferredBackupReplica IS NULL) AND @OverrideBackupPreference = 'N')
-    AND NOT (@CurrentAvailabilityGroup IS NOT NULL AND @CurrentBackupType = 'DIFF' AND @CopyOnly = 'Y' AND @Version >= 17 AND (@CurrentAvailabilityGroupRole <> 'PRIMARY' OR @CurrentAvailabilityGroupRole IS NULL))
-    AND NOT (@CurrentAvailabilityGroup IS NOT NULL AND @CurrentBackupType = 'LOG' AND @CopyOnly = 'N' AND (@CurrentIsPreferredBackupReplica <> 1 OR @CurrentIsPreferredBackupReplica IS NULL) AND @OverrideBackupPreference = 'N')
-    AND NOT (@CurrentAvailabilityGroup IS NOT NULL AND @CurrentBackupType = 'LOG' AND @CopyOnly = 'Y' AND (@CurrentAvailabilityGroupRole <> 'PRIMARY' OR @CurrentAvailabilityGroupRole IS NULL))
-    AND NOT ((@CurrentLogShippingRole = 'PRIMARY' AND @CurrentLogShippingRole IS NOT NULL) AND @CurrentBackupType = 'LOG' AND @ExcludeLogShippedFromLogBackup = 'Y')
+    AND NOT (@CurrentAvailabilityGroup IS NOT NULL AND @CurrentBackupOperationSupportedOnSecondaryReplicas = 0 AND (@CurrentAvailabilityGroupRole <> 'PRIMARY' OR @CurrentAvailabilityGroupRole IS NULL))
+    AND NOT (@CurrentAvailabilityGroup IS NOT NULL AND @CurrentBackupOperationSupportedOnSecondaryReplicas = 1 AND (@CurrentIsPreferredBackupReplica <> 1 OR @CurrentIsPreferredBackupReplica IS NULL) AND @OverrideBackupPreference = 'N')
     AND NOT (@CurrentIsReadOnly = 1 AND @Updateability = 'READ_WRITE')
     AND NOT (@CurrentIsReadOnly = 0 AND @Updateability = 'READ_ONLY')
     AND NOT (@CurrentBackupType = 'LOG' AND @LogSizeSinceLastLogBackup IS NOT NULL AND @TimeSinceLastLogBackup IS NOT NULL AND NOT(@CurrentLogSizeSinceLastLogBackup >= @LogSizeSinceLastLogBackup OR @CurrentLogSizeSinceLastLogBackup IS NULL OR DATEDIFF(SECOND,@CurrentLastLogBackup,SYSDATETIME()) >= @TimeSinceLastLogBackup OR @CurrentLastLogBackup IS NULL))
@@ -4956,6 +4971,11 @@ BEGIN
             AND [type] = 'FX'
           END
 
+          SET @CurrentFGID = NULL
+          SET @CurrentFileGroupID = NULL
+          SET @CurrentFileGroupName = NULL
+          SET @CurrentFileGroupExists = NULL
+
           SET @CurrentDatabaseContext = NULL
           SET @CurrentCommand = NULL
           SET @CurrentCommandOutput = NULL
@@ -5045,6 +5065,7 @@ BEGIN
     SET @CurrentIsPreferredBackupReplica = NULL
     SET @CurrentDatabaseMirroringRole = NULL
     SET @CurrentLogShippingRole = NULL
+    SET @CurrentBackupOperationSupportedOnSecondaryReplicas = NULL
     SET @CurrentLastLogBackup = NULL
     SET @CurrentLogSizeSinceLastLogBackup = NULL
     SET @CurrentAllocatedExtentPageCount = NULL
@@ -5115,7 +5136,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2025-07-20 12:40:03                                                               //--
+  --// Version: 2025-07-21 22:55:20                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -7014,7 +7035,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2025-07-20 12:40:03                                                               //--
+  --// Version: 2025-07-21 22:55:20                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
