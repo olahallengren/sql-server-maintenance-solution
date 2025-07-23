@@ -10,7 +10,7 @@ License: https://ola.hallengren.com/license.html
 
 GitHub: https://github.com/olahallengren/sql-server-maintenance-solution
 
-Version: 2025-07-21 22:55:20
+Version: 2025-07-23 20:45:46
 
 You can contact me by e-mail at ola@hallengren.com.
 
@@ -137,7 +137,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2025-07-21 22:55:20                                                               //--
+  --// Version: 2025-07-23 20:45:46                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -485,7 +485,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2025-07-21 22:55:20                                                               //--
+  --// Version: 2025-07-23 20:45:46                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -3708,7 +3708,8 @@ BEGIN
           END
         END
 
-        IF @CurrentFileGroupExists = 1 OR @CurrentFileGroupExists IS NULL
+        IF (@CurrentFileGroupExists = 1 OR @CurrentFileGroupExists IS NULL)
+        AND NOT (@CurrentFileGroupName = 'PRIMARY' AND @CurrentRecoveryModel = 'SIMPLE')
         BEGIN -- Start of file group backup check
 
           IF @CurrentBackupType = 'LOG' AND (@CleanupTime IS NOT NULL OR @MirrorCleanupTime IS NOT NULL)
@@ -4956,45 +4957,45 @@ BEGIN
             END
           END
 
+        END -- End of file group backup check
+
+        UPDATE @tmpFileGroups
+        SET Completed = 1
+        WHERE Selected = 1
+        AND Completed = 0
+        AND ID = @CurrentFGID
+
+        IF @CurrentFileGroupName = 'PRIMARY' AND EXISTS (SELECT * FROM @tmpFileGroups WHERE [type] = 'FX' AND Selected = 1)
+        BEGIN
           UPDATE @tmpFileGroups
           SET Completed = 1
           WHERE Selected = 1
           AND Completed = 0
-          AND ID = @CurrentFGID
+          AND [type] = 'FX'
+        END
 
-          IF @CurrentFileGroupName = 'PRIMARY' AND EXISTS (SELECT * FROM @tmpFileGroups WHERE [type] = 'FX' AND Selected = 1)
-          BEGIN
-            UPDATE @tmpFileGroups
-            SET Completed = 1
-            WHERE Selected = 1
-            AND Completed = 0
-            AND [type] = 'FX'
-          END
+        SET @CurrentFGID = NULL
+        SET @CurrentFileGroupID = NULL
+        SET @CurrentFileGroupName = NULL
+        SET @CurrentFileGroupExists = NULL
 
-          SET @CurrentFGID = NULL
-          SET @CurrentFileGroupID = NULL
-          SET @CurrentFileGroupName = NULL
-          SET @CurrentFileGroupExists = NULL
+        SET @CurrentDatabaseContext = NULL
+        SET @CurrentCommand = NULL
+        SET @CurrentCommandOutput = NULL
+        SET @CurrentCommandType = NULL
 
-          SET @CurrentDatabaseContext = NULL
-          SET @CurrentCommand = NULL
-          SET @CurrentCommandOutput = NULL
-          SET @CurrentCommandType = NULL
+        SET @CurrentBackupOutput = NULL
 
-          SET @CurrentBackupOutput = NULL
+        DELETE FROM @CurrentDirectories
+        DELETE FROM @CurrentURLs
+        DELETE FROM @CurrentFiles
+        DELETE FROM @CurrentCleanupDates
+        DELETE FROM @CurrentBackupSet
 
-          DELETE FROM @CurrentDirectories
-          DELETE FROM @CurrentURLs
-          DELETE FROM @CurrentFiles
-          DELETE FROM @CurrentCleanupDates
-          DELETE FROM @CurrentBackupSet
-
-          IF @FileGroups IS NULL
-          BEGIN
-            BREAK
-          END
-
-        END -- End of file group backup check
+        IF @FileGroups IS NULL
+        BEGIN
+          BREAK
+        END
 
       END -- End of file group loop
 
@@ -5136,7 +5137,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2025-07-21 22:55:20                                                               //--
+  --// Version: 2025-07-23 20:45:46                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -7035,7 +7036,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2025-07-21 22:55:20                                                               //--
+  --// Version: 2025-07-23 20:45:46                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
