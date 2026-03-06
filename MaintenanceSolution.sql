@@ -9492,7 +9492,7 @@ DECLARE @AmazonRDS bit = CASE WHEN SERVERPROPERTY('EngineEdition') IN (5, 8) THE
 IF @AmazonRDS = 0
 BEGIN
 
-  DECLARE JobCursor CURSOR FAST_FORWARD FOR SELECT job_id, step_id, command FROM msdb.dbo.sysjobsteps WHERE command LIKE '%DatabaseBackup%@CheckSum%' COLLATE SQL_Latin1_General_CP1_CS_AS
+  DECLARE JobCursor CURSOR FAST_FORWARD FOR SELECT js.job_id, js.step_id, js.command FROM msdb.dbo.sysjobsteps js WHERE js.command LIKE '%DatabaseBackup%@CheckSum%' COLLATE SQL_Latin1_General_CP1_CS_AS AND (js.database_name IS NULL OR js.database_name = '' OR EXISTS (SELECT 1 FROM sys.databases d WHERE d.[name] = js.database_name))
 
   OPEN JobCursor
 
