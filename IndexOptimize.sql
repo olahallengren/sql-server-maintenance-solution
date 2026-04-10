@@ -240,6 +240,9 @@ BEGIN
   DECLARE @BulkStatsLoaded bit
   DECLARE @BulkFragmentationLoaded bit
 
+  DECLARE @HasActionsPreferred bit
+  DECLARE @HasDistinctActions bit
+
   DECLARE @SelectedDatabases TABLE (DatabaseName nvarchar(max),
                                     DatabaseType nvarchar(max),
                                     AvailabilityGroup nvarchar(max),
@@ -269,20 +272,8 @@ BEGIN
 
   DECLARE @CurrentActionsAllowed TABLE ([Action] nvarchar(max))
 
-  DECLARE @CurrentAlterIndexWithClauseArguments TABLE (ID int IDENTITY,
-                                                       Argument nvarchar(max),
-                                                       Added bit DEFAULT 0)
-
-  DECLARE @CurrentAlterIndexArgumentID int
-  DECLARE @CurrentAlterIndexArgument nvarchar(max)
   DECLARE @CurrentAlterIndexWithClause nvarchar(max)
 
-  DECLARE @CurrentUpdateStatisticsWithClauseArguments TABLE (ID int IDENTITY,
-                                                             Argument nvarchar(max),
-                                                             Added bit DEFAULT 0)
-
-  DECLARE @CurrentUpdateStatisticsArgumentID int
-  DECLARE @CurrentUpdateStatisticsArgument nvarchar(max)
   DECLARE @CurrentUpdateStatisticsWithClause nvarchar(max)
 
   DECLARE @Error int = 0
@@ -1846,6 +1837,10 @@ BEGIN
         RAISERROR(@EmptyLine,10,1) WITH NOWAIT
       END
 
+      -- Pre-compute flags to avoid repeated table variable scans in the loop
+      SET @HasActionsPreferred = CASE WHEN EXISTS(SELECT * FROM @ActionsPreferred) THEN 1 ELSE 0 END
+      SET @HasDistinctActions = CASE WHEN EXISTS(SELECT [Priority], [Action], COUNT(*) FROM @ActionsPreferred GROUP BY [Priority], [Action] HAVING COUNT(*) <> 3) THEN 1 ELSE 0 END
+
       -- Bulk load statistics modification data (one query instead of per-item sp_executesql calls)
       SET @BulkStatsLoaded = 0
       IF @UpdateStatistics IS NOT NULL AND EXISTS(SELECT * FROM @tmpIndexesStatistics WHERE Selected = 1 AND StatisticsID IS NOT NULL)
@@ -1888,8 +1883,8 @@ BEGIN
       -- Bulk load fragmentation data (one query instead of per-index dm_db_index_physical_stats calls)
       SET @BulkFragmentationLoaded = 0
       IF EXISTS(SELECT * FROM @tmpIndexesStatistics WHERE Selected = 1 AND IndexID IS NOT NULL)
-      AND EXISTS(SELECT * FROM @ActionsPreferred)
-      AND (EXISTS(SELECT [Priority], [Action], COUNT(*) FROM @ActionsPreferred GROUP BY [Priority], [Action] HAVING COUNT(*) <> 3) OR @MinNumberOfPages > 0 OR @MaxNumberOfPages IS NOT NULL)
+      AND @HasActionsPreferred = 1
+      AND (@HasDistinctActions = 1 OR @MinNumberOfPages > 0 OR @MaxNumberOfPages IS NOT NULL)
       AND NOT (@EngineEdition = 8 AND @CurrentDatabaseName IN ('master', 'model'))
       BEGIN
         BEGIN TRY
@@ -1954,7 +1949,7 @@ BEGIN
         IF @CurrentPartitionNumber IS NULL OR @CurrentPartitionCount = 1 BEGIN SET @CurrentIsPartition = 0 END ELSE BEGIN SET @CurrentIsPartition = 1 END
 
         -- Does the index exist?
-        IF @CurrentIndexID IS NOT NULL AND EXISTS(SELECT * FROM @ActionsPreferred)
+        IF @CurrentIndexID IS NOT NULL AND @HasActionsPreferred = 1
         BEGIN
           SET @CurrentCommand = ''
 
@@ -2086,8 +2081,8 @@ BEGIN
         -- Is the index fragmented?
         IF @CurrentIndexID IS NOT NULL
         AND @CurrentOnReadOnlyFileGroup = 0
-        AND EXISTS(SELECT * FROM @ActionsPreferred)
-        AND (EXISTS(SELECT [Priority], [Action], COUNT(*) FROM @ActionsPreferred GROUP BY [Priority], [Action] HAVING COUNT(*) <> 3) OR @MinNumberOfPages > 0 OR @MaxNumberOfPages IS NOT NULL)
+        AND @HasActionsPreferred = 1
+        AND (@HasDistinctActions = 1 OR @MinNumberOfPages > 0 OR @MaxNumberOfPages IS NOT NULL)
         AND NOT (@EngineEdition = 8 AND @CurrentDatabaseName IN ('master', 'model'))
         BEGIN
           IF @BulkFragmentationLoaded = 1
@@ -2125,7 +2120,7 @@ BEGIN
         END
 
         -- Select fragmentation group
-        IF @CurrentIndexID IS NOT NULL AND @CurrentOnReadOnlyFileGroup = 0 AND EXISTS(SELECT * FROM @ActionsPreferred)
+        IF @CurrentIndexID IS NOT NULL AND @CurrentOnReadOnlyFileGroup = 0 AND @HasActionsPreferred = 1
         BEGIN
           SET @CurrentFragmentationGroup = CASE
           WHEN @CurrentFragmentationLevel >= @FragmentationLevel2 THEN 'High'
@@ -2135,7 +2130,7 @@ BEGIN
         END
 
         -- Which actions are allowed?
-        IF @CurrentIndexID IS NOT NULL AND EXISTS(SELECT * FROM @ActionsPreferred)
+        IF @CurrentIndexID IS NOT NULL AND @HasActionsPreferred = 1
         BEGIN
           IF NOT (@CurrentOnReadOnlyFileGroup = 1)
           AND NOT (@CurrentIsMemoryOptimized = 1)
@@ -2173,12 +2168,12 @@ BEGIN
 
         -- Decide action
         IF @CurrentIndexID IS NOT NULL
-        AND EXISTS(SELECT * FROM @ActionsPreferred)
+        AND @HasActionsPreferred = 1
         AND (@CurrentPageCount >= @MinNumberOfPages OR @MinNumberOfPages = 0)
         AND (@CurrentPageCount <= @MaxNumberOfPages OR @MaxNumberOfPages IS NULL)
         AND @CurrentResumableIndexOperation = 0
         BEGIN
-          IF EXISTS(SELECT [Priority], [Action], COUNT(*) FROM @ActionsPreferred GROUP BY [Priority], [Action] HAVING COUNT(*) <> 3)
+          IF @HasDistinctActions = 1
           BEGIN
             SELECT @CurrentAction = [Action]
             FROM @ActionsPreferred
@@ -2285,104 +2280,55 @@ BEGIN
           IF @CurrentAction IN('INDEX_REORGANIZE') AND @CurrentResumableIndexOperation = 0 SET @CurrentCommand += ' REORGANIZE'
           IF @CurrentIsPartition = 1 AND @CurrentResumableIndexOperation = 0 SET @CurrentCommand += ' PARTITION = ' + CAST(@CurrentPartitionNumber AS nvarchar)
 
-          IF @CurrentAction IN('INDEX_REBUILD_ONLINE','INDEX_REBUILD_OFFLINE') AND @SortInTempdb = 'Y' AND @CurrentIndexType IN(1,2,3,4) AND @CurrentResumableIndexOperation = 0
-          BEGIN
-            INSERT INTO @CurrentAlterIndexWithClauseArguments (Argument)
-            SELECT 'SORT_IN_TEMPDB = ON'
-          END
+          -- Build WITH clause directly via string concatenation (no table variable + WHILE loop)
+          SET @CurrentAlterIndexWithClause = NULL
 
-          IF @CurrentAction IN('INDEX_REBUILD_ONLINE','INDEX_REBUILD_OFFLINE') AND @SortInTempdb = 'N' AND @CurrentIndexType IN(1,2,3,4) AND @CurrentResumableIndexOperation = 0
+          IF @CurrentAction IN('INDEX_REBUILD_ONLINE','INDEX_REBUILD_OFFLINE') AND @CurrentIndexType IN(1,2,3,4) AND @CurrentResumableIndexOperation = 0
           BEGIN
-            INSERT INTO @CurrentAlterIndexWithClauseArguments (Argument)
-            SELECT 'SORT_IN_TEMPDB = OFF'
+            SET @CurrentAlterIndexWithClause = ISNULL(@CurrentAlterIndexWithClause + ', ', '') + 'SORT_IN_TEMPDB = ' + CASE WHEN @SortInTempdb = 'Y' THEN 'ON' ELSE 'OFF' END
           END
 
           IF @CurrentAction = 'INDEX_REBUILD_ONLINE' AND (@CurrentIsPartition = 0 OR @Version >= 12) AND @CurrentResumableIndexOperation = 0
           BEGIN
-            INSERT INTO @CurrentAlterIndexWithClauseArguments (Argument)
-            SELECT 'ONLINE = ON' + CASE WHEN @WaitAtLowPriorityMaxDuration IS NOT NULL THEN ' (WAIT_AT_LOW_PRIORITY (MAX_DURATION = ' + CAST(@WaitAtLowPriorityMaxDuration AS nvarchar) + ', ABORT_AFTER_WAIT = ' + UPPER(@WaitAtLowPriorityAbortAfterWait) + '))' ELSE '' END
+            SET @CurrentAlterIndexWithClause = ISNULL(@CurrentAlterIndexWithClause + ', ', '') + 'ONLINE = ON' + CASE WHEN @WaitAtLowPriorityMaxDuration IS NOT NULL THEN ' (WAIT_AT_LOW_PRIORITY (MAX_DURATION = ' + CAST(@WaitAtLowPriorityMaxDuration AS nvarchar) + ', ABORT_AFTER_WAIT = ' + UPPER(@WaitAtLowPriorityAbortAfterWait) + '))' ELSE '' END
           END
 
           IF @CurrentAction = 'INDEX_REBUILD_OFFLINE' AND (@CurrentIsPartition = 0 OR @Version >= 12) AND @CurrentResumableIndexOperation = 0
           BEGIN
-            INSERT INTO @CurrentAlterIndexWithClauseArguments (Argument)
-            SELECT 'ONLINE = OFF'
+            SET @CurrentAlterIndexWithClause = ISNULL(@CurrentAlterIndexWithClause + ', ', '') + 'ONLINE = OFF'
           END
 
           IF @CurrentAction IN('INDEX_REBUILD_ONLINE','INDEX_REBUILD_OFFLINE') AND @CurrentMaxDOP IS NOT NULL
           BEGIN
-            INSERT INTO @CurrentAlterIndexWithClauseArguments (Argument)
-            SELECT 'MAXDOP = ' + CAST(@CurrentMaxDOP AS nvarchar)
+            SET @CurrentAlterIndexWithClause = ISNULL(@CurrentAlterIndexWithClause + ', ', '') + 'MAXDOP = ' + CAST(@CurrentMaxDOP AS nvarchar)
           END
 
           IF @CurrentAction IN('INDEX_REBUILD_ONLINE','INDEX_REBUILD_OFFLINE') AND @FillFactor IS NOT NULL AND @CurrentIsPartition = 0 AND @CurrentIndexType IN(1,2,3,4) AND @CurrentResumableIndexOperation = 0
           BEGIN
-            INSERT INTO @CurrentAlterIndexWithClauseArguments (Argument)
-            SELECT 'FILLFACTOR = ' + CAST(@FillFactor AS nvarchar)
+            SET @CurrentAlterIndexWithClause = ISNULL(@CurrentAlterIndexWithClause + ', ', '') + 'FILLFACTOR = ' + CAST(@FillFactor AS nvarchar)
           END
 
           IF @CurrentAction IN('INDEX_REBUILD_ONLINE','INDEX_REBUILD_OFFLINE') AND @PadIndex = 'Y' AND @CurrentIsPartition = 0 AND @CurrentIndexType IN(1,2,3,4) AND @CurrentResumableIndexOperation = 0
           BEGIN
-            INSERT INTO @CurrentAlterIndexWithClauseArguments (Argument)
-            SELECT 'PAD_INDEX = ON'
+            SET @CurrentAlterIndexWithClause = ISNULL(@CurrentAlterIndexWithClause + ', ', '') + 'PAD_INDEX = ON'
           END
 
           IF (@Version >= 14 OR @EngineEdition IN (5,8)) AND @CurrentAction = 'INDEX_REBUILD_ONLINE' AND @CurrentResumableIndexOperation = 0
           BEGIN
-            INSERT INTO @CurrentAlterIndexWithClauseArguments (Argument)
-            SELECT CASE WHEN @Resumable = 'Y' AND @CurrentIndexType IN(1,2) AND @CurrentIsComputed = 0 AND @CurrentIsClusteredIndexComputed = 0 AND @CurrentIsTimestamp = 0 AND @CurrentHasFilter = 0 THEN 'RESUMABLE = ON' ELSE 'RESUMABLE = OFF' END
+            SET @CurrentAlterIndexWithClause = ISNULL(@CurrentAlterIndexWithClause + ', ', '') + CASE WHEN @Resumable = 'Y' AND @CurrentIndexType IN(1,2) AND @CurrentIsComputed = 0 AND @CurrentIsClusteredIndexComputed = 0 AND @CurrentIsTimestamp = 0 AND @CurrentHasFilter = 0 THEN 'RESUMABLE = ON' ELSE 'RESUMABLE = OFF' END
           END
 
-          IF (@Version >= 14 OR @EngineEdition IN (5,8)) AND @CurrentAction = 'INDEX_REBUILD_ONLINE' AND @Resumable = 'Y'  AND @CurrentIndexType IN(1,2) AND @CurrentIsComputed = 0 AND @CurrentIsClusteredIndexComputed = 0 AND @CurrentIsTimestamp = 0 AND @CurrentHasFilter = 0 AND @TimeLimit IS NOT NULL
+          IF (@Version >= 14 OR @EngineEdition IN (5,8)) AND @CurrentAction = 'INDEX_REBUILD_ONLINE' AND @Resumable = 'Y' AND @CurrentIndexType IN(1,2) AND @CurrentIsComputed = 0 AND @CurrentIsClusteredIndexComputed = 0 AND @CurrentIsTimestamp = 0 AND @CurrentHasFilter = 0 AND @TimeLimit IS NOT NULL
           BEGIN
-            INSERT INTO @CurrentAlterIndexWithClauseArguments (Argument)
-            SELECT 'MAX_DURATION = ' + CAST(DATEDIFF(MINUTE,SYSDATETIME(),DATEADD(SECOND,@TimeLimit,@StartTime)) AS nvarchar(max))
+            SET @CurrentAlterIndexWithClause = ISNULL(@CurrentAlterIndexWithClause + ', ', '') + 'MAX_DURATION = ' + CAST(DATEDIFF(MINUTE,SYSDATETIME(),DATEADD(SECOND,@TimeLimit,@StartTime)) AS nvarchar(max))
           END
 
-          IF @CurrentAction IN('INDEX_REORGANIZE') AND @LOBCompaction = 'Y'
+          IF @CurrentAction IN('INDEX_REORGANIZE')
           BEGIN
-            INSERT INTO @CurrentAlterIndexWithClauseArguments (Argument)
-            SELECT 'LOB_COMPACTION = ON'
+            SET @CurrentAlterIndexWithClause = ISNULL(@CurrentAlterIndexWithClause + ', ', '') + 'LOB_COMPACTION = ' + CASE WHEN @LOBCompaction = 'Y' THEN 'ON' ELSE 'OFF' END
           END
 
-          IF @CurrentAction IN('INDEX_REORGANIZE') AND @LOBCompaction = 'N'
-          BEGIN
-            INSERT INTO @CurrentAlterIndexWithClauseArguments (Argument)
-            SELECT 'LOB_COMPACTION = OFF'
-          END
-
-          IF EXISTS (SELECT * FROM @CurrentAlterIndexWithClauseArguments)
-          BEGIN
-            SET @CurrentAlterIndexWithClause = ' WITH ('
-
-            WHILE (1 = 1)
-            BEGIN
-              SELECT TOP 1 @CurrentAlterIndexArgumentID = ID,
-                           @CurrentAlterIndexArgument = Argument
-              FROM @CurrentAlterIndexWithClauseArguments
-              WHERE Added = 0
-              ORDER BY ID ASC
-
-              IF @@ROWCOUNT = 0
-              BEGIN
-                BREAK
-              END
-
-              SET @CurrentAlterIndexWithClause += @CurrentAlterIndexArgument + ', '
-
-              UPDATE @CurrentAlterIndexWithClauseArguments
-              SET Added = 1
-              WHERE [ID] = @CurrentAlterIndexArgumentID
-            END
-
-            SET @CurrentAlterIndexWithClause = RTRIM(@CurrentAlterIndexWithClause)
-
-            SET @CurrentAlterIndexWithClause = LEFT(@CurrentAlterIndexWithClause,LEN(@CurrentAlterIndexWithClause) - 1)
-
-            SET @CurrentAlterIndexWithClause = @CurrentAlterIndexWithClause + ')'
-          END
-
-          IF @CurrentAlterIndexWithClause IS NOT NULL SET @CurrentCommand += @CurrentAlterIndexWithClause
+          IF @CurrentAlterIndexWithClause IS NOT NULL SET @CurrentCommand += ' WITH (' + @CurrentAlterIndexWithClause + ')'
 
           EXECUTE @CurrentCommandOutput = dbo.CommandExecute @DatabaseContext = @CurrentDatabaseName, @Command = @CurrentCommand, @CommandType = @CurrentCommandType, @Mode = 2, @Comment = @CurrentComment, @DatabaseName = @CurrentDatabaseName, @SchemaName = @CurrentSchemaName, @ObjectName = @CurrentObjectName, @ObjectType = @CurrentObjectType, @IndexName = @CurrentIndexName, @IndexType = @CurrentIndexType, @PartitionNumber = @CurrentPartitionNumber, @ExtendedInfo = @CurrentExtendedInfo, @LockMessageSeverity = @LockMessageSeverity, @ExecuteAsUser = @ExecuteAsUser, @LogToTable = @LogToTable, @Execute = @Execute
           SET @Error = @@ERROR
@@ -2427,64 +2373,35 @@ BEGIN
           IF @LockTimeout IS NOT NULL SET @CurrentCommand = 'SET LOCK_TIMEOUT ' + CAST(@LockTimeout * 1000 AS nvarchar) + '; '
           SET @CurrentCommand += 'UPDATE STATISTICS ' + QUOTENAME(@CurrentSchemaName) + '.' + QUOTENAME(@CurrentObjectName) + ' ' + QUOTENAME(@CurrentStatisticsName)
 
+          -- Build WITH clause directly via string concatenation (no table variable + WHILE loop)
+          SET @CurrentUpdateStatisticsWithClause = NULL
+
           IF @CurrentMaxDOP IS NOT NULL AND ((@Version >= 12.06024 AND @Version < 13) OR (@Version >= 13.05026 AND @Version < 14) OR @Version >= 14.030154)
           BEGIN
-            INSERT INTO @CurrentUpdateStatisticsWithClauseArguments (Argument)
-            SELECT 'MAXDOP = ' + CAST(@CurrentMaxDOP AS nvarchar)
+            SET @CurrentUpdateStatisticsWithClause = ISNULL(@CurrentUpdateStatisticsWithClause + ', ', '') + 'MAXDOP = ' + CAST(@CurrentMaxDOP AS nvarchar)
           END
 
           IF @CurrentStatisticsSample = 100
           BEGIN
-            INSERT INTO @CurrentUpdateStatisticsWithClauseArguments (Argument)
-            SELECT 'FULLSCAN'
+            SET @CurrentUpdateStatisticsWithClause = ISNULL(@CurrentUpdateStatisticsWithClause + ', ', '') + 'FULLSCAN'
           END
 
           IF @CurrentStatisticsSample IS NOT NULL AND @CurrentStatisticsSample <> 100
           BEGIN
-            INSERT INTO @CurrentUpdateStatisticsWithClauseArguments (Argument)
-            SELECT 'SAMPLE ' + CAST(@CurrentStatisticsSample AS nvarchar) + ' PERCENT'
+            SET @CurrentUpdateStatisticsWithClause = ISNULL(@CurrentUpdateStatisticsWithClause + ', ', '') + 'SAMPLE ' + CAST(@CurrentStatisticsSample AS nvarchar) + ' PERCENT'
           END
 
           IF @CurrentNoRecompute = 1
           BEGIN
-            INSERT INTO @CurrentUpdateStatisticsWithClauseArguments (Argument)
-            SELECT 'NORECOMPUTE'
+            SET @CurrentUpdateStatisticsWithClause = ISNULL(@CurrentUpdateStatisticsWithClause + ', ', '') + 'NORECOMPUTE'
           END
 
           IF @CurrentStatisticsResample = 'Y'
           BEGIN
-            INSERT INTO @CurrentUpdateStatisticsWithClauseArguments (Argument)
-            SELECT 'RESAMPLE'
+            SET @CurrentUpdateStatisticsWithClause = ISNULL(@CurrentUpdateStatisticsWithClause + ', ', '') + 'RESAMPLE'
           END
 
-          IF EXISTS (SELECT * FROM @CurrentUpdateStatisticsWithClauseArguments)
-          BEGIN
-            SET @CurrentUpdateStatisticsWithClause = ' WITH'
-
-            WHILE (1 = 1)
-            BEGIN
-              SELECT TOP 1 @CurrentUpdateStatisticsArgumentID = ID,
-                           @CurrentUpdateStatisticsArgument = Argument
-              FROM @CurrentUpdateStatisticsWithClauseArguments
-              WHERE Added = 0
-              ORDER BY ID ASC
-
-              IF @@ROWCOUNT = 0
-              BEGIN
-                BREAK
-              END
-
-              SET @CurrentUpdateStatisticsWithClause = @CurrentUpdateStatisticsWithClause + ' ' + @CurrentUpdateStatisticsArgument + ','
-
-              UPDATE @CurrentUpdateStatisticsWithClauseArguments
-              SET Added = 1
-              WHERE [ID] = @CurrentUpdateStatisticsArgumentID
-            END
-
-            SET @CurrentUpdateStatisticsWithClause = LEFT(@CurrentUpdateStatisticsWithClause,LEN(@CurrentUpdateStatisticsWithClause) - 1)
-          END
-
-          IF @CurrentUpdateStatisticsWithClause IS NOT NULL SET @CurrentCommand += @CurrentUpdateStatisticsWithClause
+          IF @CurrentUpdateStatisticsWithClause IS NOT NULL SET @CurrentCommand += ' WITH ' + @CurrentUpdateStatisticsWithClause
 
           IF @PartitionLevelStatistics = 1 AND @CurrentIsIncremental = 1 AND @CurrentPartitionNumber IS NOT NULL SET @CurrentCommand += ' ON PARTITIONS(' + CAST(@CurrentPartitionNumber AS nvarchar(max)) + ')'
 
@@ -2556,16 +2473,10 @@ BEGIN
         SET @CurrentUpdateStatistics = NULL
         SET @CurrentStatisticsSample = NULL
         SET @CurrentStatisticsResample = NULL
-        SET @CurrentAlterIndexArgumentID = NULL
-        SET @CurrentAlterIndexArgument = NULL
         SET @CurrentAlterIndexWithClause = NULL
-        SET @CurrentUpdateStatisticsArgumentID = NULL
-        SET @CurrentUpdateStatisticsArgument = NULL
         SET @CurrentUpdateStatisticsWithClause = NULL
 
         DELETE FROM @CurrentActionsAllowed
-        DELETE FROM @CurrentAlterIndexWithClauseArguments
-        DELETE FROM @CurrentUpdateStatisticsWithClauseArguments
 
       END
 
