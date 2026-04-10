@@ -31,6 +31,7 @@ ALTER PROCEDURE [dbo].[IndexOptimize]
 @PartitionLevel nvarchar(max) = 'Y',
 @MSShippedObjects nvarchar(max) = 'N',
 @Indexes nvarchar(max) = NULL,
+@IndexTypes nvarchar(max) = 'ALL',  -- ALL, CLUSTERED, NONCLUSTERED
 @TimeLimit int = NULL,
 @Delay int = NULL,
 @WaitAtLowPriorityMaxDuration int = NULL,
@@ -304,6 +305,7 @@ BEGIN
   SET @Parameters += ', @PartitionLevel = ' + ISNULL('''' + REPLACE(@PartitionLevel,'''','''''') + '''','NULL')
   SET @Parameters += ', @MSShippedObjects = ' + ISNULL('''' + REPLACE(@MSShippedObjects,'''','''''') + '''','NULL')
   SET @Parameters += ', @Indexes = ' + ISNULL('''' + REPLACE(@Indexes,'''','''''') + '''','NULL')
+  SET @Parameters += ', @IndexTypes = ' + ISNULL('''' + REPLACE(@IndexTypes,'''','''''') + '''','NULL')
   SET @Parameters += ', @TimeLimit = ' + ISNULL(CAST(@TimeLimit AS nvarchar),'NULL')
   SET @Parameters += ', @Delay = ' + ISNULL(CAST(@Delay AS nvarchar),'NULL')
   SET @Parameters += ', @WaitAtLowPriorityMaxDuration = ' + ISNULL(CAST(@WaitAtLowPriorityMaxDuration AS nvarchar),'NULL')
@@ -978,6 +980,14 @@ BEGIN
 
   ----------------------------------------------------------------------------------------------------
 
+  IF @IndexTypes NOT IN ('ALL', 'CLUSTERED', 'NONCLUSTERED') OR @IndexTypes IS NULL
+    BEGIN
+      INSERT INTO @Errors ([Message], Severity, [State])
+      SELECT 'The value for the parameter @IndexTypes is not supported.', 16, 1
+    END
+
+  ----------------------------------------------------------------------------------------------------
+
   IF @TimeLimit < 0
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
@@ -1608,7 +1618,11 @@ BEGIN
 
           SET @CurrentCommand = @CurrentCommand + ' WHERE objects.[type] IN(''U'',''V'')'
                                                     + CASE WHEN @MSShippedObjects = 'N' THEN ' AND objects.is_ms_shipped = 0' ELSE '' END
-                                                    + ' AND indexes.[type] IN(1,2,3,4,5,6,7)'
+                                                    + ' AND indexes.[type] IN(' + CASE
+                                                            WHEN @IndexTypes = 'CLUSTERED'    THEN '1,5'
+                                                            WHEN @IndexTypes = 'NONCLUSTERED' THEN '2,3,4,6,7'
+                                                            ELSE '1,2,3,4,5,6,7'
+                                                          END + ')'
                                                     + ' AND indexes.is_disabled = 0 AND indexes.is_hypothetical = 0'
         END
 
@@ -2501,4 +2515,3 @@ BEGIN
 END
 
 GO
-
