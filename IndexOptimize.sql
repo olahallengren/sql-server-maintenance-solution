@@ -2147,10 +2147,10 @@ BEGIN
         BEGIN
           IF @BulkFragmentationLoaded = 1
           BEGIN
-            SELECT @CurrentFragmentationLevel = FragmentationLevel, @CurrentPageCount = PageCount
+            SELECT @CurrentFragmentationLevel = MAX(FragmentationLevel), @CurrentPageCount = SUM(PageCount)
             FROM @tmpFragmentation
             WHERE ObjectID = @CurrentObjectID AND IndexID = @CurrentIndexID
-            AND (PartitionNumber = @CurrentPartitionNumber OR (@CurrentPartitionNumber IS NULL AND PartitionNumber IS NULL))
+            AND (PartitionNumber = @CurrentPartitionNumber OR @CurrentPartitionNumber IS NULL)
           END
           ELSE
           BEGIN
