@@ -235,7 +235,8 @@ BEGIN
                                    IndexID int,
                                    PartitionNumber int,
                                    FragmentationLevel float,
-                                   PageCount bigint)
+                                   PageCount bigint,
+                                   PRIMARY KEY(ObjectID, IndexID, PartitionNumber))
 
   DECLARE @BulkStatsLoaded bit
   DECLARE @BulkFragmentationLoaded bit
@@ -1901,6 +1902,65 @@ BEGIN
           DELETE FROM @tmpFragmentation
           SET @BulkFragmentationLoaded = 0
         END CATCH
+      END
+
+      -- Pre-filter: remove index rows where fragmentation/page count shows no action is needed
+      IF @BulkFragmentationLoaded = 1 AND @HasActionsPreferred = 1
+      BEGIN
+        DELETE tis
+        FROM @tmpIndexesStatistics tis
+        OUTER APPLY (
+          SELECT MAX(f.FragmentationLevel) AS FragmentationLevel, SUM(f.PageCount) AS PageCount
+          FROM @tmpFragmentation f
+          WHERE f.ObjectID = tis.ObjectID AND f.IndexID = tis.IndexID
+          AND (f.PartitionNumber = tis.PartitionNumber OR tis.PartitionNumber IS NULL)
+        ) frag
+        WHERE tis.Selected = 1
+        AND tis.IndexID IS NOT NULL
+        AND ISNULL(tis.OnReadOnlyFileGroup, 0) = 0
+        AND ISNULL(tis.ResumableIndexOperation, 0) = 0
+        AND (
+          -- Below minimum page count
+          (@MinNumberOfPages > 0 AND ISNULL(frag.PageCount, 0) < @MinNumberOfPages)
+          OR
+          -- Above maximum page count
+          (@MaxNumberOfPages IS NOT NULL AND ISNULL(frag.PageCount, 0) > @MaxNumberOfPages)
+          OR
+          -- Fragmentation-based: no action configured for this fragmentation group
+          (
+            @HasDistinctActions = 1
+            AND (
+              (@FragmentationLow IS NULL AND ISNULL(frag.FragmentationLevel, 0) < @FragmentationLevel1)
+              OR (@FragmentationMedium IS NULL AND ISNULL(frag.FragmentationLevel, 0) >= @FragmentationLevel1 AND ISNULL(frag.FragmentationLevel, 0) < @FragmentationLevel2)
+            )
+          )
+        )
+        -- Only delete if no statistics update is needed for this row either
+        AND (
+          @UpdateStatistics IS NULL
+          OR tis.StatisticsID IS NULL
+          OR @UpdateStatistics = 'COLUMNS'
+          OR (
+            @BulkStatsLoaded = 1
+            AND (@OnlyModifiedStatistics = 'Y' OR @StatisticsModificationLevel IS NOT NULL)
+            AND ISNULL((SELECT TOP 1 sp.ModificationCounter FROM @tmpStatsProperties sp WHERE sp.ObjectID = tis.ObjectID AND sp.StatisticsID = tis.StatisticsID), 0) = 0
+            AND NOT (ISNULL(tis.IsMemoryOptimized, 0) = 1 AND NOT (@Version >= 13 OR @EngineEdition IN (5,8)))
+          )
+        )
+      END
+
+      -- Pre-filter: remove statistics-only rows where no modification occurred (when modification check is active)
+      IF @BulkStatsLoaded = 1 AND @UpdateStatistics IS NOT NULL
+      AND (@OnlyModifiedStatistics = 'Y' OR @StatisticsModificationLevel IS NOT NULL)
+      BEGIN
+        DELETE tis
+        FROM @tmpIndexesStatistics tis
+        LEFT JOIN @tmpStatsProperties sp ON tis.ObjectID = sp.ObjectID AND tis.StatisticsID = sp.StatisticsID
+        WHERE tis.Selected = 1
+        AND tis.IndexID IS NULL
+        AND tis.StatisticsID IS NOT NULL
+        AND ISNULL(sp.ModificationCounter, 0) = 0
+        AND NOT (ISNULL(tis.IsMemoryOptimized, 0) = 1 AND NOT (@Version >= 13 OR @EngineEdition IN (5,8)))
       END
 
       WHILE (SYSDATETIME() < DATEADD(SECOND,@TimeLimit,@StartTime) OR @TimeLimit IS NULL)
