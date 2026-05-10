@@ -54,7 +54,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-04-06 02:01:02                                                               //--
+  --// Version: 2026-05-10 18:54:20                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -248,17 +248,8 @@ BEGIN
                                                        Argument nvarchar(max),
                                                        Added bit DEFAULT 0)
 
-  DECLARE @CurrentAlterIndexArgumentID int
-  DECLARE @CurrentAlterIndexArgument nvarchar(max)
-  DECLARE @CurrentAlterIndexWithClause nvarchar(max)
-
   DECLARE @CurrentUpdateStatisticsWithClauseArguments TABLE (ID int IDENTITY,
-                                                             Argument nvarchar(max),
-                                                             Added bit DEFAULT 0)
-
-  DECLARE @CurrentUpdateStatisticsArgumentID int
-  DECLARE @CurrentUpdateStatisticsArgument nvarchar(max)
-  DECLARE @CurrentUpdateStatisticsWithClause nvarchar(max)
+                                                             Argument nvarchar(max))
 
   DECLARE @Error int = 0
   DECLARE @ReturnCode int = 0
@@ -1136,49 +1127,49 @@ BEGIN
   --// Check that selected databases and availability groups exist                                //--
   ----------------------------------------------------------------------------------------------------
 
-  SET @ErrorMessage = ''
-  SELECT @ErrorMessage = @ErrorMessage + QUOTENAME(DatabaseName) + ', '
+  SELECT @ErrorMessage = STRING_AGG(QUOTENAME(DatabaseName), ', ')
   FROM @SelectedDatabases
   WHERE DatabaseName NOT LIKE '%[%]%'
   AND DatabaseName NOT IN (SELECT DatabaseName FROM @tmpDatabases)
-  IF @@ROWCOUNT > 0
+
+  IF @ErrorMessage IS NOT NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The following databases in the @Databases parameter do not exist: ' + LEFT(@ErrorMessage,LEN(@ErrorMessage)-1) + '.', 10, 1
+    SELECT 'The following databases in the @Databases parameter do not exist: ' + @ErrorMessage + '.', 10, 1
   END
 
-  SET @ErrorMessage = ''
-  SELECT @ErrorMessage = @ErrorMessage + QUOTENAME(DatabaseName) + ', '
+  SELECT @ErrorMessage = STRING_AGG(QUOTENAME(DatabaseName), ', ')
   FROM @SelectedIndexes
   WHERE DatabaseName NOT LIKE '%[%]%'
   AND DatabaseName NOT IN (SELECT DatabaseName FROM @tmpDatabases)
-  IF @@ROWCOUNT > 0
+
+  IF @ErrorMessage IS NOT NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The following databases in the @Indexes parameter do not exist: ' + LEFT(@ErrorMessage,LEN(@ErrorMessage)-1) + '.', 10, 1
+    SELECT 'The following databases in the @Indexes parameter do not exist: ' + @ErrorMessage + '.', 10, 1
   END
 
-  SET @ErrorMessage = ''
-  SELECT @ErrorMessage = @ErrorMessage + QUOTENAME(AvailabilityGroupName) + ', '
+  SELECT @ErrorMessage = STRING_AGG(QUOTENAME(AvailabilityGroupName), ', ')
   FROM @SelectedAvailabilityGroups
   WHERE AvailabilityGroupName NOT LIKE '%[%]%'
   AND AvailabilityGroupName NOT IN (SELECT AvailabilityGroupName FROM @tmpAvailabilityGroups)
-  IF @@ROWCOUNT > 0
+
+  IF @ErrorMessage IS NOT NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The following availability groups do not exist: ' + LEFT(@ErrorMessage,LEN(@ErrorMessage)-1) + '.', 10, 1
+    SELECT 'The following availability groups do not exist: ' + @ErrorMessage + '.', 10, 1
   END
 
-  SET @ErrorMessage = ''
-  SELECT @ErrorMessage = @ErrorMessage + QUOTENAME(DatabaseName) + ', '
+  SELECT @ErrorMessage = STRING_AGG(QUOTENAME(DatabaseName), ', ')
   FROM @SelectedIndexes
   WHERE DatabaseName NOT LIKE '%[%]%'
   AND DatabaseName IN (SELECT DatabaseName FROM @tmpDatabases)
   AND DatabaseName NOT IN (SELECT DatabaseName FROM @tmpDatabases WHERE Selected = 1)
-  IF @@ROWCOUNT > 0
+
+  IF @ErrorMessage IS NOT NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The following databases have been selected in the @Indexes parameter, but not in the @Databases or @AvailabilityGroups parameters: ' + LEFT(@ErrorMessage,LEN(@ErrorMessage)-1) + '.', 10, 1
+    SELECT 'The following databases have been selected in the @Indexes parameter, but not in the @Databases or @AvailabilityGroups parameters: ' + @ErrorMessage + '.', 10, 1
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -1767,33 +1758,33 @@ BEGIN
       UPDATE tmpIndexesStatistics
       SET [Order] = RowNumber
 
-      SET @ErrorMessage = ''
-      SELECT @ErrorMessage = @ErrorMessage + QUOTENAME(DatabaseName) + '.' + QUOTENAME(SchemaName) + '.' + QUOTENAME(ObjectName) + ', '
+      SELECT @ErrorMessage = STRING_AGG(QUOTENAME(DatabaseName) + '.' + QUOTENAME(SchemaName) + '.' + QUOTENAME(ObjectName), ', ')
       FROM @SelectedIndexes SelectedIndexes
       WHERE DatabaseName = @CurrentDatabaseName
       AND SchemaName NOT LIKE '%[%]%'
       AND ObjectName NOT LIKE '%[%]%'
       AND IndexName LIKE '%[%]%'
       AND NOT EXISTS (SELECT * FROM @tmpIndexesStatistics WHERE SchemaName = SelectedIndexes.SchemaName AND ObjectName = SelectedIndexes.ObjectName)
-      IF @@ROWCOUNT > 0
+
+      IF @ErrorMessage IS NOT NULL
       BEGIN
-        SET @ErrorMessage = 'The following objects in the @Indexes parameter do not exist: ' + LEFT(@ErrorMessage,LEN(@ErrorMessage)-1) + '.'
+        SET @ErrorMessage = 'The following objects in the @Indexes parameter do not exist: ' + @ErrorMessage + '.'
         RAISERROR('%s',10,1,@ErrorMessage) WITH NOWAIT
         SET @Error = @@ERROR
         RAISERROR(@EmptyLine,10,1) WITH NOWAIT
       END
 
-      SET @ErrorMessage = ''
-      SELECT @ErrorMessage = @ErrorMessage + QUOTENAME(DatabaseName) + QUOTENAME(SchemaName) + '.' + QUOTENAME(ObjectName) + '.' + QUOTENAME(IndexName) + ', '
+      SELECT @ErrorMessage = STRING_AGG(QUOTENAME(DatabaseName) + '.' + QUOTENAME(SchemaName) + '.' + QUOTENAME(ObjectName) + '.' + QUOTENAME(IndexName), ', ')
       FROM @SelectedIndexes SelectedIndexes
       WHERE DatabaseName = @CurrentDatabaseName
       AND SchemaName NOT LIKE '%[%]%'
       AND ObjectName NOT LIKE '%[%]%'
       AND IndexName NOT LIKE '%[%]%'
       AND NOT EXISTS (SELECT * FROM @tmpIndexesStatistics WHERE SchemaName = SelectedIndexes.SchemaName AND ObjectName = SelectedIndexes.ObjectName AND IndexName = SelectedIndexes.IndexName)
-      IF @@ROWCOUNT > 0
+
+      IF @ErrorMessage IS NOT NULL
       BEGIN
-        SET @ErrorMessage = 'The following indexes in the @Indexes parameter do not exist: ' + LEFT(@ErrorMessage,LEN(@ErrorMessage)-1) + '.'
+        SET @ErrorMessage = 'The following indexes in the @Indexes parameter do not exist: ' + @ErrorMessage + '.'
         RAISERROR('%s',10,1,@ErrorMessage) WITH NOWAIT
         SET @Error = @@ERROR
         RAISERROR(@EmptyLine,10,1) WITH NOWAIT
@@ -2213,36 +2204,9 @@ BEGIN
 
           IF EXISTS (SELECT * FROM @CurrentAlterIndexWithClauseArguments)
           BEGIN
-            SET @CurrentAlterIndexWithClause = ' WITH ('
-
-            WHILE (1 = 1)
-            BEGIN
-              SELECT TOP 1 @CurrentAlterIndexArgumentID = ID,
-                           @CurrentAlterIndexArgument = Argument
-              FROM @CurrentAlterIndexWithClauseArguments
-              WHERE Added = 0
-              ORDER BY ID ASC
-
-              IF @@ROWCOUNT = 0
-              BEGIN
-                BREAK
-              END
-
-              SET @CurrentAlterIndexWithClause += @CurrentAlterIndexArgument + ', '
-
-              UPDATE @CurrentAlterIndexWithClauseArguments
-              SET Added = 1
-              WHERE [ID] = @CurrentAlterIndexArgumentID
-            END
-
-            SET @CurrentAlterIndexWithClause = RTRIM(@CurrentAlterIndexWithClause)
-
-            SET @CurrentAlterIndexWithClause = LEFT(@CurrentAlterIndexWithClause,LEN(@CurrentAlterIndexWithClause) - 1)
-
-            SET @CurrentAlterIndexWithClause = @CurrentAlterIndexWithClause + ')'
+            SELECT @CurrentCommand += ' WITH (' + STRING_AGG(Argument, ', ') WITHIN GROUP (ORDER BY ID ASC) + ')'
+            FROM @CurrentAlterIndexWithClauseArguments
           END
-
-          IF @CurrentAlterIndexWithClause IS NOT NULL SET @CurrentCommand += @CurrentAlterIndexWithClause
 
           EXECUTE @CurrentCommandOutput = dbo.CommandExecute @DatabaseContext = @CurrentDatabaseName, @Command = @CurrentCommand, @CommandType = @CurrentCommandType, @Mode = 2, @Comment = @CurrentComment, @DatabaseName = @CurrentDatabaseName, @SchemaName = @CurrentSchemaName, @ObjectName = @CurrentObjectName, @ObjectType = @CurrentObjectType, @IndexName = @CurrentIndexName, @IndexType = @CurrentIndexType, @PartitionNumber = @CurrentPartitionNumber, @ExtendedInfo = @CurrentExtendedInfo, @LockMessageSeverity = @LockMessageSeverity, @ExecuteAsUser = @ExecuteAsUser, @LogToTable = @LogToTable, @Execute = @Execute
           SET @Error = @@ERROR
@@ -2319,32 +2283,9 @@ BEGIN
 
           IF EXISTS (SELECT * FROM @CurrentUpdateStatisticsWithClauseArguments)
           BEGIN
-            SET @CurrentUpdateStatisticsWithClause = ' WITH'
-
-            WHILE (1 = 1)
-            BEGIN
-              SELECT TOP 1 @CurrentUpdateStatisticsArgumentID = ID,
-                           @CurrentUpdateStatisticsArgument = Argument
-              FROM @CurrentUpdateStatisticsWithClauseArguments
-              WHERE Added = 0
-              ORDER BY ID ASC
-
-              IF @@ROWCOUNT = 0
-              BEGIN
-                BREAK
-              END
-
-              SET @CurrentUpdateStatisticsWithClause = @CurrentUpdateStatisticsWithClause + ' ' + @CurrentUpdateStatisticsArgument + ','
-
-              UPDATE @CurrentUpdateStatisticsWithClauseArguments
-              SET Added = 1
-              WHERE [ID] = @CurrentUpdateStatisticsArgumentID
-            END
-
-            SET @CurrentUpdateStatisticsWithClause = LEFT(@CurrentUpdateStatisticsWithClause,LEN(@CurrentUpdateStatisticsWithClause) - 1)
+            SELECT @CurrentCommand += ' WITH ' + STRING_AGG(Argument, ', ') WITHIN GROUP (ORDER BY ID ASC)
+            FROM @CurrentUpdateStatisticsWithClauseArguments
           END
-
-          IF @CurrentUpdateStatisticsWithClause IS NOT NULL SET @CurrentCommand += @CurrentUpdateStatisticsWithClause
 
           IF @PartitionLevelStatistics = 1 AND @CurrentIsIncremental = 1 AND @CurrentPartitionNumber IS NOT NULL SET @CurrentCommand += ' ON PARTITIONS(' + CAST(@CurrentPartitionNumber AS nvarchar(max)) + ')'
 
@@ -2416,12 +2357,6 @@ BEGIN
         SET @CurrentUpdateStatistics = NULL
         SET @CurrentStatisticsSample = NULL
         SET @CurrentStatisticsResample = NULL
-        SET @CurrentAlterIndexArgumentID = NULL
-        SET @CurrentAlterIndexArgument = NULL
-        SET @CurrentAlterIndexWithClause = NULL
-        SET @CurrentUpdateStatisticsArgumentID = NULL
-        SET @CurrentUpdateStatisticsArgument = NULL
-        SET @CurrentUpdateStatisticsWithClause = NULL
 
         DELETE FROM @CurrentActionsAllowed
         DELETE FROM @CurrentAlterIndexWithClauseArguments
