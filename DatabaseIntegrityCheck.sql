@@ -40,7 +40,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-04-06 02:01:02                                                               //--
+  --// Version: 2026-05-13 20:06:11                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -942,72 +942,72 @@ BEGIN
   --// Check that selected databases and availability groups exist                                //--
   ----------------------------------------------------------------------------------------------------
 
-  SET @ErrorMessage = ''
-  SELECT @ErrorMessage = @ErrorMessage + QUOTENAME(DatabaseName) + ', '
+  SELECT @ErrorMessage = STRING_AGG(QUOTENAME(DatabaseName), ', ')
   FROM @SelectedDatabases
   WHERE DatabaseName NOT LIKE '%[%]%'
   AND DatabaseName NOT IN (SELECT DatabaseName FROM @tmpDatabases)
-  IF @@ROWCOUNT > 0
+
+  IF @ErrorMessage IS NOT NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The following databases in the @Databases parameter do not exist: ' + LEFT(@ErrorMessage,LEN(@ErrorMessage)-1) + '.', 10, 1
+    SELECT 'The following databases in the @Databases parameter do not exist: ' + @ErrorMessage + '.', 10, 1
   END
 
-  SET @ErrorMessage = ''
-  SELECT @ErrorMessage = @ErrorMessage + QUOTENAME(DatabaseName) + ', '
+  SELECT @ErrorMessage = STRING_AGG(QUOTENAME(DatabaseName), ', ')
   FROM @SelectedFileGroups
   WHERE DatabaseName NOT LIKE '%[%]%'
   AND DatabaseName NOT IN (SELECT DatabaseName FROM @tmpDatabases)
-  IF @@ROWCOUNT > 0
+
+  IF @ErrorMessage IS NOT NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The following databases in the @FileGroups parameter do not exist: ' + LEFT(@ErrorMessage,LEN(@ErrorMessage)-1) + '.', 10, 1
+    SELECT 'The following databases in the @FileGroups parameter do not exist: ' + @ErrorMessage + '.', 10, 1
   END
 
-  SET @ErrorMessage = ''
-  SELECT @ErrorMessage = @ErrorMessage + QUOTENAME(DatabaseName) + ', '
+  SELECT @ErrorMessage = STRING_AGG(QUOTENAME(DatabaseName), ', ')
   FROM @SelectedObjects
   WHERE DatabaseName NOT LIKE '%[%]%'
   AND DatabaseName NOT IN (SELECT DatabaseName FROM @tmpDatabases)
-  IF @@ROWCOUNT > 0
+
+  IF @ErrorMessage IS NOT NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The following databases in the @Objects parameter do not exist: ' + LEFT(@ErrorMessage,LEN(@ErrorMessage)-1) + '.', 10, 1
+    SELECT 'The following databases in the @Objects parameter do not exist: ' + @ErrorMessage + '.', 10, 1
   END
 
-  SET @ErrorMessage = ''
-  SELECT @ErrorMessage = @ErrorMessage + QUOTENAME(AvailabilityGroupName) + ', '
+  SELECT @ErrorMessage = STRING_AGG(QUOTENAME(AvailabilityGroupName), ', ')
   FROM @SelectedAvailabilityGroups
   WHERE AvailabilityGroupName NOT LIKE '%[%]%'
   AND AvailabilityGroupName NOT IN (SELECT AvailabilityGroupName FROM @tmpAvailabilityGroups)
-  IF @@ROWCOUNT > 0
+
+  IF @ErrorMessage IS NOT NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The following availability groups do not exist: ' + LEFT(@ErrorMessage,LEN(@ErrorMessage)-1) + '.', 10, 1
+    SELECT 'The following availability groups do not exist: ' + @ErrorMessage + '.', 10, 1
   END
 
-  SET @ErrorMessage = ''
-  SELECT @ErrorMessage = @ErrorMessage + QUOTENAME(DatabaseName) + ', '
+  SELECT @ErrorMessage = STRING_AGG(QUOTENAME(DatabaseName), ', ')
   FROM @SelectedFileGroups
   WHERE DatabaseName NOT LIKE '%[%]%'
   AND DatabaseName IN (SELECT DatabaseName FROM @tmpDatabases)
   AND DatabaseName NOT IN (SELECT DatabaseName FROM @tmpDatabases WHERE Selected = 1)
-  IF @@ROWCOUNT > 0
+
+  IF @ErrorMessage IS NOT NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The following databases have been selected in the @FileGroups parameter, but not in the @Databases or @AvailabilityGroups parameters: ' + LEFT(@ErrorMessage,LEN(@ErrorMessage)-1) + '.', 10, 1
+    SELECT 'The following databases have been selected in the @FileGroups parameter, but not in the @Databases or @AvailabilityGroups parameters: ' + @ErrorMessage + '.', 10, 1
   END
 
-  SET @ErrorMessage = ''
-  SELECT @ErrorMessage = @ErrorMessage + QUOTENAME(DatabaseName) + ', '
+  SELECT @ErrorMessage = STRING_AGG(QUOTENAME(DatabaseName), ', ')
   FROM @SelectedObjects
   WHERE DatabaseName NOT LIKE '%[%]%'
   AND DatabaseName IN (SELECT DatabaseName FROM @tmpDatabases)
   AND DatabaseName NOT IN (SELECT DatabaseName FROM @tmpDatabases WHERE Selected = 1)
-  IF @@ROWCOUNT > 0
+
+  IF @ErrorMessage IS NOT NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The following databases have been selected in the @Objects parameter, but not in the @Databases or @AvailabilityGroups parameters: ' + LEFT(@ErrorMessage,LEN(@ErrorMessage)-1) + '.', 10, 1
+    SELECT 'The following databases have been selected in the @Objects parameter, but not in the @Databases or @AvailabilityGroups parameters: ' + @ErrorMessage + '.', 10, 1
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -1521,15 +1521,15 @@ BEGIN
         UPDATE tmpFileGroups
         SET [Order] = RowNumber
 
-        SET @ErrorMessage = ''
-        SELECT @ErrorMessage = @ErrorMessage + QUOTENAME(DatabaseName) + '.' + QUOTENAME(FileGroupName) + ', '
+        SELECT @ErrorMessage = STRING_AGG(QUOTENAME(DatabaseName) + '.' + QUOTENAME(FileGroupName), ', ')
         FROM @SelectedFileGroups SelectedFileGroups
         WHERE DatabaseName = @CurrentDatabaseName
         AND FileGroupName NOT LIKE '%[%]%'
         AND NOT EXISTS (SELECT * FROM @tmpFileGroups WHERE FileGroupName = SelectedFileGroups.FileGroupName)
-        IF @@ROWCOUNT > 0
+
+        IF @ErrorMessage IS NOT NULL
         BEGIN
-          SET @ErrorMessage = 'The following file groups do not exist: ' + LEFT(@ErrorMessage,LEN(@ErrorMessage)-1) + '.'
+          SET @ErrorMessage = 'The following file groups do not exist: ' + @ErrorMessage + '.'
           RAISERROR('%s',10,1,@ErrorMessage) WITH NOWAIT
           SET @Error = @@ERROR
           RAISERROR(@EmptyLine,10,1) WITH NOWAIT
@@ -1686,16 +1686,16 @@ BEGIN
         UPDATE tmpObjects
         SET [Order] = RowNumber
 
-        SET @ErrorMessage = ''
-        SELECT @ErrorMessage = @ErrorMessage + QUOTENAME(DatabaseName) + '.' + QUOTENAME(SchemaName) + '.' + QUOTENAME(ObjectName) + ', '
+        SELECT @ErrorMessage = STRING_AGG(QUOTENAME(DatabaseName) + '.' + QUOTENAME(SchemaName) + '.' + QUOTENAME(ObjectName), ', ')
         FROM @SelectedObjects SelectedObjects
         WHERE DatabaseName = @CurrentDatabaseName
         AND SchemaName NOT LIKE '%[%]%'
         AND ObjectName NOT LIKE '%[%]%'
         AND NOT EXISTS (SELECT * FROM @tmpObjects WHERE SchemaName = SelectedObjects.SchemaName AND ObjectName = SelectedObjects.ObjectName)
-        IF @@ROWCOUNT > 0
+
+        IF @ErrorMessage IS NOT NULL
         BEGIN
-          SET @ErrorMessage = 'The following objects do not exist: ' + LEFT(@ErrorMessage,LEN(@ErrorMessage)-1) + '.'
+          SET @ErrorMessage = 'The following objects do not exist: ' + @ErrorMessage + '.'
           RAISERROR('%s',10,1,@ErrorMessage) WITH NOWAIT
           SET @Error = @@ERROR
           RAISERROR(@EmptyLine,10,1) WITH NOWAIT

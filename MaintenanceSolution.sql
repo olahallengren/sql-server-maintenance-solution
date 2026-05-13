@@ -1,6 +1,6 @@
 ﻿/*
 
-SQL Server Maintenance Solution - SQL Server 2008, SQL Server 2008 R2, SQL Server 2012, SQL Server 2014, SQL Server 2016, SQL Server 2017, SQL Server 2019, SQL Server 2022, and SQL Server 2025
+SQL Server Maintenance Solution - SQL Server 2017, SQL Server 2019, SQL Server 2022, and SQL Server 2025
 
 Backup: https://ola.hallengren.com/sql-server-backup.html
 Integrity Check: https://ola.hallengren.com/sql-server-integrity-check.html
@@ -10,7 +10,7 @@ License: https://ola.hallengren.com/license.html
 
 GitHub: https://github.com/olahallengren/sql-server-maintenance-solution
 
-Version: 2026-04-06 02:01:02
+Version: 2026-05-13 20:06:11
 
 You can contact me by e-mail at ola@hallengren.com.
 
@@ -137,7 +137,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-04-06 02:01:02                                                               //--
+  --// Version: 2026-05-13 20:06:11                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -484,7 +484,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-04-06 02:01:02                                                               //--
+  --// Version: 2026-05-13 20:06:11                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -1085,30 +1085,29 @@ BEGIN
   --// Check database names                                                                       //--
   ----------------------------------------------------------------------------------------------------
 
-  SET @ErrorMessage = ''
-  SELECT @ErrorMessage = @ErrorMessage + QUOTENAME(DatabaseName) + ', '
+  SELECT @ErrorMessage = STRING_AGG(QUOTENAME(DatabaseName), ', ')
+                         WITHIN GROUP (ORDER BY DatabaseName ASC)
   FROM @tmpDatabases
   WHERE Selected = 1
   AND DATALENGTH(DatabaseNameFS) = 0
-  ORDER BY DatabaseName ASC
-  IF @@ROWCOUNT > 0
+
+  IF @ErrorMessage IS NOT NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The names of the following databases are not supported: ' + LEFT(@ErrorMessage,LEN(@ErrorMessage)-1) + '.', 16, 1
+    SELECT 'The names of the following databases are not supported: ' + @ErrorMessage + '.', 16, 1
   END
 
-  SET @ErrorMessage = ''
-  SELECT @ErrorMessage = @ErrorMessage + QUOTENAME(DatabaseName) + ', '
+  SELECT @ErrorMessage = STRING_AGG(QUOTENAME(DatabaseName), ', ')
+                         WITHIN GROUP (ORDER BY DatabaseName ASC)
   FROM @tmpDatabases
   WHERE UPPER(DatabaseNameFS) IN(SELECT UPPER(DatabaseNameFS) FROM @tmpDatabases GROUP BY UPPER(DatabaseNameFS) HAVING COUNT(*) > 1 AND MAX(CAST(Selected AS int)) = 1)
-
   AND DATALENGTH(DatabaseNameFS) > 0
-  ORDER BY DatabaseName ASC
   OPTION (RECOMPILE)
-  IF @@ROWCOUNT > 0
+
+  IF @ErrorMessage IS NOT NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The names of the following databases are not unique in the file system: ' + LEFT(@ErrorMessage,LEN(@ErrorMessage)-1) + '.', 16, 1
+    SELECT 'The names of the following databases are not unique in the file system: ' + @ErrorMessage + '.', 16, 1
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -2847,26 +2846,26 @@ BEGIN
   --// Check that selected databases and availability groups exist                                //--
   ----------------------------------------------------------------------------------------------------
 
-  SET @ErrorMessage = ''
-  SELECT @ErrorMessage = @ErrorMessage + QUOTENAME(DatabaseName) + ', '
+  SELECT @ErrorMessage = STRING_AGG(QUOTENAME(DatabaseName), ', ')
   FROM @SelectedDatabases
   WHERE DatabaseName NOT LIKE '%[%]%'
   AND DatabaseName NOT IN (SELECT DatabaseName FROM @tmpDatabases)
-  IF @@ROWCOUNT > 0
+
+  IF @ErrorMessage IS NOT NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The following databases in the @Databases parameter do not exist: ' + LEFT(@ErrorMessage,LEN(@ErrorMessage)-1) + '.', 10, 1
+    SELECT 'The following databases in the @Databases parameter do not exist: ' + @ErrorMessage + '.', 10, 1
   END
 
-  SET @ErrorMessage = ''
-  SELECT @ErrorMessage = @ErrorMessage + QUOTENAME(AvailabilityGroupName) + ', '
+  SELECT @ErrorMessage = STRING_AGG(QUOTENAME(AvailabilityGroupName), ', ')
   FROM @SelectedAvailabilityGroups
   WHERE AvailabilityGroupName NOT LIKE '%[%]%'
   AND AvailabilityGroupName NOT IN (SELECT AvailabilityGroupName FROM @tmpAvailabilityGroups)
-  IF @@ROWCOUNT > 0
+
+  IF @ErrorMessage IS NOT NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The following availability groups do not exist: ' + LEFT(@ErrorMessage,LEN(@ErrorMessage)-1) + '.', 10, 1
+    SELECT 'The following availability groups do not exist: ' + @ErrorMessage + '.', 10, 1
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -4179,19 +4178,19 @@ BEGIN
 
           SET @CurrentCommand += ' TO'
 
-          SELECT @CurrentCommand += ' ' + [Type] + ' = N''' + REPLACE(FilePath,'''','''''') + '''' + CASE WHEN ROW_NUMBER() OVER (ORDER BY FilePath ASC) <> @CurrentNumberOfFiles THEN ',' ELSE '' END
+          SELECT @CurrentCommand += ' ' + STRING_AGG([Type] + ' = N''' + REPLACE(FilePath, '''', '''''') + '''', ', ')
+                                          WITHIN GROUP (ORDER BY FilePath ASC)
           FROM @CurrentFiles
           WHERE Mirror = 0
-          ORDER BY FilePath ASC
 
           IF EXISTS(SELECT * FROM @CurrentFiles WHERE Mirror = 1)
           BEGIN
             SET @CurrentCommand += ' MIRROR TO'
 
-            SELECT @CurrentCommand += ' ' + [Type] + ' = N''' + REPLACE(FilePath,'''','''''') + '''' + CASE WHEN ROW_NUMBER() OVER (ORDER BY FilePath ASC) <> @CurrentNumberOfFiles THEN ',' ELSE '' END
+            SELECT @CurrentCommand += ' ' + STRING_AGG([Type] + ' = N''' + REPLACE(FilePath, '''', '''''') + '''', ', ')
+                                            WITHIN GROUP (ORDER BY FilePath ASC)
             FROM @CurrentFiles
             WHERE Mirror = 1
-            ORDER BY FilePath ASC
           END
 
           SET @CurrentCommand += ' WITH '
@@ -4249,17 +4248,17 @@ BEGIN
           WHEN @CurrentBackupType = 'LOG' THEN 'DECLARE @ReturnCode int EXECUTE @ReturnCode = dbo.xp_backup_log @database = N''' + REPLACE(@CurrentDatabaseName,'''','''''') + ''''
           END
 
-          SELECT @CurrentCommand += ', @filename = N''' + REPLACE(FilePath,'''','''''') + ''''
+          SELECT @CurrentCommand += ', ' + STRING_AGG('@filename = N''' + REPLACE(FilePath, '''', '''''') + '''', ', ')
+                                           WITHIN GROUP (ORDER BY FilePath ASC)
           FROM @CurrentFiles
           WHERE Mirror = 0
-          ORDER BY FilePath ASC
 
           IF EXISTS(SELECT * FROM @CurrentFiles WHERE Mirror = 1)
           BEGIN
-            SELECT @CurrentCommand += ', @mirror = N''' + REPLACE(FilePath,'''','''''') + ''''
+            SELECT @CurrentCommand += ', ' + STRING_AGG('@mirror = N''' + REPLACE(FilePath, '''', '''''') + '''', ', ')
+                                             WITHIN GROUP (ORDER BY FilePath ASC)
             FROM @CurrentFiles
             WHERE Mirror = 1
-            ORDER BY FilePath ASC
           END
 
           SET @CurrentCommand += ', @with = '''
@@ -4315,10 +4314,10 @@ BEGIN
 
           SET @CurrentCommand += ' TO'
 
-          SELECT @CurrentCommand += ' DISK = N''' + REPLACE(FilePath,'''','''''') + '''' + CASE WHEN ROW_NUMBER() OVER (ORDER BY FilePath ASC) <> @CurrentNumberOfFiles THEN ',' ELSE '' END
+          SELECT @CurrentCommand += ' ' + STRING_AGG('DISK = N''' + REPLACE(FilePath, '''', '''''') + '''', ', ')
+                                          WITHIN GROUP (ORDER BY FilePath ASC)
           FROM @CurrentFiles
           WHERE Mirror = 0
-          ORDER BY FilePath ASC
 
           SET @CurrentCommand += ' WITH '
 
@@ -4354,17 +4353,25 @@ BEGIN
 
           SET @CurrentCommandType = 'xp_ss_backup'
 
-          SET @CurrentCommand = 'DECLARE @ReturnCode int EXECUTE @ReturnCode = dbo.xp_ss_backup @database = N''' + REPLACE(@CurrentDatabaseName,'''','''''') + ''''
+          SET @CurrentCommand = 'DECLARE @ReturnCode int EXECUTE @ReturnCode = dbo.xp_ss_backup @database = N''' + REPLACE(@CurrentDatabaseName,'''','''''') + '''';
 
-          SELECT @CurrentCommand += ', ' + CASE WHEN ROW_NUMBER() OVER (ORDER BY FilePath ASC) = 1 THEN '@filename' ELSE '@backupfile' END + ' = N''' + REPLACE(FilePath,'''','''''') + ''''
-          FROM @CurrentFiles
-          WHERE Mirror = 0
-          ORDER BY FilePath ASC
+          WITH CurrentFiles AS
+          (
+          SELECT FilePath, ROW_NUMBER() OVER (ORDER BY FilePath ASC) AS RowNumber
+                                FROM @CurrentFiles
+                                WHERE Mirror = 0
+          )
+          SELECT @CurrentCommand += ', ' + STRING_AGG(CASE WHEN RowNumber = 1 THEN '@filename' ELSE '@backupfile' END + ' = N''' + REPLACE(FilePath, '''', '''''') + '''', ', ')
+                                           WITHIN GROUP (ORDER BY RowNumber ASC)
+          FROM CurrentFiles
 
-          SELECT @CurrentCommand += ', @mirrorfile = N''' + REPLACE(FilePath,'''','''''') + ''''
-          FROM @CurrentFiles
-          WHERE Mirror = 1
-          ORDER BY FilePath ASC
+          IF EXISTS(SELECT * FROM @CurrentFiles WHERE Mirror = 1)
+          BEGIN
+            SELECT @CurrentCommand += ', ' + STRING_AGG('@mirrorfile = N''' + REPLACE(FilePath, '''', '''''') + '''', ', ')
+                                             WITHIN GROUP (ORDER BY FilePath ASC)
+            FROM @CurrentFiles
+            WHERE Mirror = 1
+          END
 
           SET @CurrentCommand += ', @backuptype = ' + CASE WHEN @CurrentBackupType = 'FULL' THEN '''Full''' WHEN @CurrentBackupType = 'DIFF' THEN '''Differential''' WHEN @CurrentBackupType = 'LOG' THEN '''Log''' END
           IF @ReadWriteFileGroups = 'Y' AND @CurrentDatabaseName <> 'master' SET @CurrentCommand += ', @readwritefilegroups = 1'
@@ -4463,10 +4470,10 @@ BEGIN
 
             SET @CurrentCommand = 'RESTORE VERIFYONLY FROM'
 
-            SELECT @CurrentCommand += ' ' + [Type] + ' = N''' + REPLACE(FilePath,'''','''''') + '''' + CASE WHEN ROW_NUMBER() OVER (ORDER BY FilePath ASC) <> @CurrentNumberOfFiles THEN ',' ELSE '' END
+            SELECT @CurrentCommand += ' ' + STRING_AGG([Type] + ' = N''' + REPLACE(FilePath, '''', '''''') + '''', ', ')
+                                            WITHIN GROUP (ORDER BY FilePath ASC)
             FROM @CurrentFiles
             WHERE Mirror = @CurrentIsMirror
-            ORDER BY FilePath ASC
 
             SET @CurrentCommand += ' WITH '
             IF @Checksum = 'Y' SET @CurrentCommand += 'CHECKSUM'
@@ -4484,10 +4491,10 @@ BEGIN
 
             SET @CurrentCommand = 'DECLARE @ReturnCode int EXECUTE @ReturnCode = dbo.xp_restore_verifyonly'
 
-            SELECT @CurrentCommand += ' @filename = N''' + REPLACE(FilePath,'''','''''') + '''' + CASE WHEN ROW_NUMBER() OVER (ORDER BY FilePath ASC) <> @CurrentNumberOfFiles THEN ',' ELSE '' END
+            SELECT @CurrentCommand += ' ' + STRING_AGG('@filename = N''' + REPLACE(FilePath, '''', '''''') + '''', ', ')
+                                            WITHIN GROUP (ORDER BY FilePath ASC)
             FROM @CurrentFiles
             WHERE Mirror = @CurrentIsMirror
-            ORDER BY FilePath ASC
 
             SET @CurrentCommand += ', @with = '''
             IF @Checksum = 'Y' SET @CurrentCommand += 'CHECKSUM'
@@ -4506,10 +4513,10 @@ BEGIN
 
             SET @CurrentCommand = 'RESTORE VERIFYONLY FROM'
 
-            SELECT @CurrentCommand += ' DISK = N''' + REPLACE(FilePath,'''','''''') + '''' + CASE WHEN ROW_NUMBER() OVER (ORDER BY FilePath ASC) <> @CurrentNumberOfFiles THEN ',' ELSE '' END
+            SELECT @CurrentCommand += ' ' + STRING_AGG('DISK = N''' + REPLACE(FilePath, '''', '''''') + '''', ', ')
+                                            WITHIN GROUP (ORDER BY FilePath ASC)
             FROM @CurrentFiles
             WHERE Mirror = @CurrentIsMirror
-            ORDER BY FilePath ASC
 
             SET @CurrentCommand += ' WITH '
             IF @Checksum = 'Y' SET @CurrentCommand += 'CHECKSUM'
@@ -4525,12 +4532,17 @@ BEGIN
 
             SET @CurrentCommandType = 'xp_ss_verify'
 
-            SET @CurrentCommand = 'DECLARE @ReturnCode int EXECUTE @ReturnCode = dbo.xp_ss_verify @database = N''' + REPLACE(@CurrentDatabaseName,'''','''''') + ''''
+            SET @CurrentCommand = 'DECLARE @ReturnCode int EXECUTE @ReturnCode = dbo.xp_ss_verify @database = N''' + REPLACE(@CurrentDatabaseName,'''','''''') + '''';
 
-            SELECT @CurrentCommand += ', ' + CASE WHEN ROW_NUMBER() OVER (ORDER BY FilePath ASC) = 1 THEN '@filename' ELSE '@backupfile' END + ' = N''' + REPLACE(FilePath,'''','''''') + ''''
+            WITH CurrentFiles AS
+            (
+            SELECT FilePath, ROW_NUMBER() OVER (ORDER BY FilePath ASC) AS RowNumber
             FROM @CurrentFiles
             WHERE Mirror = @CurrentIsMirror
-            ORDER BY FilePath ASC
+            )
+            SELECT @CurrentCommand += ', ' + STRING_AGG(CASE WHEN RowNumber = 1 THEN '@filename' ELSE '@backupfile' END + ' = N''' + REPLACE(FilePath, '''', '''''') + '''', ', ')
+                                             WITHIN GROUP (ORDER BY RowNumber ASC)
+            FROM CurrentFiles
 
             SET @CurrentCommand += ' IF @ReturnCode <> 0 RAISERROR(''Error verifying SQLsafe backup.'', 16, 1)'
           END
@@ -4814,7 +4826,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-04-06 02:01:02                                                               //--
+  --// Version: 2026-05-13 20:06:11                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -5716,72 +5728,72 @@ BEGIN
   --// Check that selected databases and availability groups exist                                //--
   ----------------------------------------------------------------------------------------------------
 
-  SET @ErrorMessage = ''
-  SELECT @ErrorMessage = @ErrorMessage + QUOTENAME(DatabaseName) + ', '
+  SELECT @ErrorMessage = STRING_AGG(QUOTENAME(DatabaseName), ', ')
   FROM @SelectedDatabases
   WHERE DatabaseName NOT LIKE '%[%]%'
   AND DatabaseName NOT IN (SELECT DatabaseName FROM @tmpDatabases)
-  IF @@ROWCOUNT > 0
+
+  IF @ErrorMessage IS NOT NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The following databases in the @Databases parameter do not exist: ' + LEFT(@ErrorMessage,LEN(@ErrorMessage)-1) + '.', 10, 1
+    SELECT 'The following databases in the @Databases parameter do not exist: ' + @ErrorMessage + '.', 10, 1
   END
 
-  SET @ErrorMessage = ''
-  SELECT @ErrorMessage = @ErrorMessage + QUOTENAME(DatabaseName) + ', '
+  SELECT @ErrorMessage = STRING_AGG(QUOTENAME(DatabaseName), ', ')
   FROM @SelectedFileGroups
   WHERE DatabaseName NOT LIKE '%[%]%'
   AND DatabaseName NOT IN (SELECT DatabaseName FROM @tmpDatabases)
-  IF @@ROWCOUNT > 0
+
+  IF @ErrorMessage IS NOT NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The following databases in the @FileGroups parameter do not exist: ' + LEFT(@ErrorMessage,LEN(@ErrorMessage)-1) + '.', 10, 1
+    SELECT 'The following databases in the @FileGroups parameter do not exist: ' + @ErrorMessage + '.', 10, 1
   END
 
-  SET @ErrorMessage = ''
-  SELECT @ErrorMessage = @ErrorMessage + QUOTENAME(DatabaseName) + ', '
+  SELECT @ErrorMessage = STRING_AGG(QUOTENAME(DatabaseName), ', ')
   FROM @SelectedObjects
   WHERE DatabaseName NOT LIKE '%[%]%'
   AND DatabaseName NOT IN (SELECT DatabaseName FROM @tmpDatabases)
-  IF @@ROWCOUNT > 0
+
+  IF @ErrorMessage IS NOT NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The following databases in the @Objects parameter do not exist: ' + LEFT(@ErrorMessage,LEN(@ErrorMessage)-1) + '.', 10, 1
+    SELECT 'The following databases in the @Objects parameter do not exist: ' + @ErrorMessage + '.', 10, 1
   END
 
-  SET @ErrorMessage = ''
-  SELECT @ErrorMessage = @ErrorMessage + QUOTENAME(AvailabilityGroupName) + ', '
+  SELECT @ErrorMessage = STRING_AGG(QUOTENAME(AvailabilityGroupName), ', ')
   FROM @SelectedAvailabilityGroups
   WHERE AvailabilityGroupName NOT LIKE '%[%]%'
   AND AvailabilityGroupName NOT IN (SELECT AvailabilityGroupName FROM @tmpAvailabilityGroups)
-  IF @@ROWCOUNT > 0
+
+  IF @ErrorMessage IS NOT NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The following availability groups do not exist: ' + LEFT(@ErrorMessage,LEN(@ErrorMessage)-1) + '.', 10, 1
+    SELECT 'The following availability groups do not exist: ' + @ErrorMessage + '.', 10, 1
   END
 
-  SET @ErrorMessage = ''
-  SELECT @ErrorMessage = @ErrorMessage + QUOTENAME(DatabaseName) + ', '
+  SELECT @ErrorMessage = STRING_AGG(QUOTENAME(DatabaseName), ', ')
   FROM @SelectedFileGroups
   WHERE DatabaseName NOT LIKE '%[%]%'
   AND DatabaseName IN (SELECT DatabaseName FROM @tmpDatabases)
   AND DatabaseName NOT IN (SELECT DatabaseName FROM @tmpDatabases WHERE Selected = 1)
-  IF @@ROWCOUNT > 0
+
+  IF @ErrorMessage IS NOT NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The following databases have been selected in the @FileGroups parameter, but not in the @Databases or @AvailabilityGroups parameters: ' + LEFT(@ErrorMessage,LEN(@ErrorMessage)-1) + '.', 10, 1
+    SELECT 'The following databases have been selected in the @FileGroups parameter, but not in the @Databases or @AvailabilityGroups parameters: ' + @ErrorMessage + '.', 10, 1
   END
 
-  SET @ErrorMessage = ''
-  SELECT @ErrorMessage = @ErrorMessage + QUOTENAME(DatabaseName) + ', '
+  SELECT @ErrorMessage = STRING_AGG(QUOTENAME(DatabaseName), ', ')
   FROM @SelectedObjects
   WHERE DatabaseName NOT LIKE '%[%]%'
   AND DatabaseName IN (SELECT DatabaseName FROM @tmpDatabases)
   AND DatabaseName NOT IN (SELECT DatabaseName FROM @tmpDatabases WHERE Selected = 1)
-  IF @@ROWCOUNT > 0
+
+  IF @ErrorMessage IS NOT NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The following databases have been selected in the @Objects parameter, but not in the @Databases or @AvailabilityGroups parameters: ' + LEFT(@ErrorMessage,LEN(@ErrorMessage)-1) + '.', 10, 1
+    SELECT 'The following databases have been selected in the @Objects parameter, but not in the @Databases or @AvailabilityGroups parameters: ' + @ErrorMessage + '.', 10, 1
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -6295,15 +6307,15 @@ BEGIN
         UPDATE tmpFileGroups
         SET [Order] = RowNumber
 
-        SET @ErrorMessage = ''
-        SELECT @ErrorMessage = @ErrorMessage + QUOTENAME(DatabaseName) + '.' + QUOTENAME(FileGroupName) + ', '
+        SELECT @ErrorMessage = STRING_AGG(QUOTENAME(DatabaseName) + '.' + QUOTENAME(FileGroupName), ', ')
         FROM @SelectedFileGroups SelectedFileGroups
         WHERE DatabaseName = @CurrentDatabaseName
         AND FileGroupName NOT LIKE '%[%]%'
         AND NOT EXISTS (SELECT * FROM @tmpFileGroups WHERE FileGroupName = SelectedFileGroups.FileGroupName)
-        IF @@ROWCOUNT > 0
+
+        IF @ErrorMessage IS NOT NULL
         BEGIN
-          SET @ErrorMessage = 'The following file groups do not exist: ' + LEFT(@ErrorMessage,LEN(@ErrorMessage)-1) + '.'
+          SET @ErrorMessage = 'The following file groups do not exist: ' + @ErrorMessage + '.'
           RAISERROR('%s',10,1,@ErrorMessage) WITH NOWAIT
           SET @Error = @@ERROR
           RAISERROR(@EmptyLine,10,1) WITH NOWAIT
@@ -6460,16 +6472,16 @@ BEGIN
         UPDATE tmpObjects
         SET [Order] = RowNumber
 
-        SET @ErrorMessage = ''
-        SELECT @ErrorMessage = @ErrorMessage + QUOTENAME(DatabaseName) + '.' + QUOTENAME(SchemaName) + '.' + QUOTENAME(ObjectName) + ', '
+        SELECT @ErrorMessage = STRING_AGG(QUOTENAME(DatabaseName) + '.' + QUOTENAME(SchemaName) + '.' + QUOTENAME(ObjectName), ', ')
         FROM @SelectedObjects SelectedObjects
         WHERE DatabaseName = @CurrentDatabaseName
         AND SchemaName NOT LIKE '%[%]%'
         AND ObjectName NOT LIKE '%[%]%'
         AND NOT EXISTS (SELECT * FROM @tmpObjects WHERE SchemaName = SelectedObjects.SchemaName AND ObjectName = SelectedObjects.ObjectName)
-        IF @@ROWCOUNT > 0
+
+        IF @ErrorMessage IS NOT NULL
         BEGIN
-          SET @ErrorMessage = 'The following objects do not exist: ' + LEFT(@ErrorMessage,LEN(@ErrorMessage)-1) + '.'
+          SET @ErrorMessage = 'The following objects do not exist: ' + @ErrorMessage + '.'
           RAISERROR('%s',10,1,@ErrorMessage) WITH NOWAIT
           SET @Error = @@ERROR
           RAISERROR(@EmptyLine,10,1) WITH NOWAIT
@@ -6713,7 +6725,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-04-06 02:01:02                                                               //--
+  --// Version: 2026-05-13 20:06:11                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -6904,20 +6916,10 @@ BEGIN
   DECLARE @CurrentActionsAllowed TABLE ([Action] nvarchar(max))
 
   DECLARE @CurrentAlterIndexWithClauseArguments TABLE (ID int IDENTITY,
-                                                       Argument nvarchar(max),
-                                                       Added bit DEFAULT 0)
-
-  DECLARE @CurrentAlterIndexArgumentID int
-  DECLARE @CurrentAlterIndexArgument nvarchar(max)
-  DECLARE @CurrentAlterIndexWithClause nvarchar(max)
+                                                       Argument nvarchar(max))
 
   DECLARE @CurrentUpdateStatisticsWithClauseArguments TABLE (ID int IDENTITY,
-                                                             Argument nvarchar(max),
-                                                             Added bit DEFAULT 0)
-
-  DECLARE @CurrentUpdateStatisticsArgumentID int
-  DECLARE @CurrentUpdateStatisticsArgument nvarchar(max)
-  DECLARE @CurrentUpdateStatisticsWithClause nvarchar(max)
+                                                             Argument nvarchar(max))
 
   DECLARE @Error int = 0
   DECLARE @ReturnCode int = 0
@@ -7795,49 +7797,49 @@ BEGIN
   --// Check that selected databases and availability groups exist                                //--
   ----------------------------------------------------------------------------------------------------
 
-  SET @ErrorMessage = ''
-  SELECT @ErrorMessage = @ErrorMessage + QUOTENAME(DatabaseName) + ', '
+  SELECT @ErrorMessage = STRING_AGG(QUOTENAME(DatabaseName), ', ')
   FROM @SelectedDatabases
   WHERE DatabaseName NOT LIKE '%[%]%'
   AND DatabaseName NOT IN (SELECT DatabaseName FROM @tmpDatabases)
-  IF @@ROWCOUNT > 0
+
+  IF @ErrorMessage IS NOT NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The following databases in the @Databases parameter do not exist: ' + LEFT(@ErrorMessage,LEN(@ErrorMessage)-1) + '.', 10, 1
+    SELECT 'The following databases in the @Databases parameter do not exist: ' + @ErrorMessage + '.', 10, 1
   END
 
-  SET @ErrorMessage = ''
-  SELECT @ErrorMessage = @ErrorMessage + QUOTENAME(DatabaseName) + ', '
+  SELECT @ErrorMessage = STRING_AGG(QUOTENAME(DatabaseName), ', ')
   FROM @SelectedIndexes
   WHERE DatabaseName NOT LIKE '%[%]%'
   AND DatabaseName NOT IN (SELECT DatabaseName FROM @tmpDatabases)
-  IF @@ROWCOUNT > 0
+
+  IF @ErrorMessage IS NOT NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The following databases in the @Indexes parameter do not exist: ' + LEFT(@ErrorMessage,LEN(@ErrorMessage)-1) + '.', 10, 1
+    SELECT 'The following databases in the @Indexes parameter do not exist: ' + @ErrorMessage + '.', 10, 1
   END
 
-  SET @ErrorMessage = ''
-  SELECT @ErrorMessage = @ErrorMessage + QUOTENAME(AvailabilityGroupName) + ', '
+  SELECT @ErrorMessage = STRING_AGG(QUOTENAME(AvailabilityGroupName), ', ')
   FROM @SelectedAvailabilityGroups
   WHERE AvailabilityGroupName NOT LIKE '%[%]%'
   AND AvailabilityGroupName NOT IN (SELECT AvailabilityGroupName FROM @tmpAvailabilityGroups)
-  IF @@ROWCOUNT > 0
+
+  IF @ErrorMessage IS NOT NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The following availability groups do not exist: ' + LEFT(@ErrorMessage,LEN(@ErrorMessage)-1) + '.', 10, 1
+    SELECT 'The following availability groups do not exist: ' + @ErrorMessage + '.', 10, 1
   END
 
-  SET @ErrorMessage = ''
-  SELECT @ErrorMessage = @ErrorMessage + QUOTENAME(DatabaseName) + ', '
+  SELECT @ErrorMessage = STRING_AGG(QUOTENAME(DatabaseName), ', ')
   FROM @SelectedIndexes
   WHERE DatabaseName NOT LIKE '%[%]%'
   AND DatabaseName IN (SELECT DatabaseName FROM @tmpDatabases)
   AND DatabaseName NOT IN (SELECT DatabaseName FROM @tmpDatabases WHERE Selected = 1)
-  IF @@ROWCOUNT > 0
+
+  IF @ErrorMessage IS NOT NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The following databases have been selected in the @Indexes parameter, but not in the @Databases or @AvailabilityGroups parameters: ' + LEFT(@ErrorMessage,LEN(@ErrorMessage)-1) + '.', 10, 1
+    SELECT 'The following databases have been selected in the @Indexes parameter, but not in the @Databases or @AvailabilityGroups parameters: ' + @ErrorMessage + '.', 10, 1
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -8426,33 +8428,33 @@ BEGIN
       UPDATE tmpIndexesStatistics
       SET [Order] = RowNumber
 
-      SET @ErrorMessage = ''
-      SELECT @ErrorMessage = @ErrorMessage + QUOTENAME(DatabaseName) + '.' + QUOTENAME(SchemaName) + '.' + QUOTENAME(ObjectName) + ', '
+      SELECT @ErrorMessage = STRING_AGG(QUOTENAME(DatabaseName) + '.' + QUOTENAME(SchemaName) + '.' + QUOTENAME(ObjectName), ', ')
       FROM @SelectedIndexes SelectedIndexes
       WHERE DatabaseName = @CurrentDatabaseName
       AND SchemaName NOT LIKE '%[%]%'
       AND ObjectName NOT LIKE '%[%]%'
       AND IndexName LIKE '%[%]%'
       AND NOT EXISTS (SELECT * FROM @tmpIndexesStatistics WHERE SchemaName = SelectedIndexes.SchemaName AND ObjectName = SelectedIndexes.ObjectName)
-      IF @@ROWCOUNT > 0
+
+      IF @ErrorMessage IS NOT NULL
       BEGIN
-        SET @ErrorMessage = 'The following objects in the @Indexes parameter do not exist: ' + LEFT(@ErrorMessage,LEN(@ErrorMessage)-1) + '.'
+        SET @ErrorMessage = 'The following objects in the @Indexes parameter do not exist: ' + @ErrorMessage + '.'
         RAISERROR('%s',10,1,@ErrorMessage) WITH NOWAIT
         SET @Error = @@ERROR
         RAISERROR(@EmptyLine,10,1) WITH NOWAIT
       END
 
-      SET @ErrorMessage = ''
-      SELECT @ErrorMessage = @ErrorMessage + QUOTENAME(DatabaseName) + QUOTENAME(SchemaName) + '.' + QUOTENAME(ObjectName) + '.' + QUOTENAME(IndexName) + ', '
+      SELECT @ErrorMessage = STRING_AGG(QUOTENAME(DatabaseName) + '.' + QUOTENAME(SchemaName) + '.' + QUOTENAME(ObjectName) + '.' + QUOTENAME(IndexName), ', ')
       FROM @SelectedIndexes SelectedIndexes
       WHERE DatabaseName = @CurrentDatabaseName
       AND SchemaName NOT LIKE '%[%]%'
       AND ObjectName NOT LIKE '%[%]%'
       AND IndexName NOT LIKE '%[%]%'
       AND NOT EXISTS (SELECT * FROM @tmpIndexesStatistics WHERE SchemaName = SelectedIndexes.SchemaName AND ObjectName = SelectedIndexes.ObjectName AND IndexName = SelectedIndexes.IndexName)
-      IF @@ROWCOUNT > 0
+
+      IF @ErrorMessage IS NOT NULL
       BEGIN
-        SET @ErrorMessage = 'The following indexes in the @Indexes parameter do not exist: ' + LEFT(@ErrorMessage,LEN(@ErrorMessage)-1) + '.'
+        SET @ErrorMessage = 'The following indexes in the @Indexes parameter do not exist: ' + @ErrorMessage + '.'
         RAISERROR('%s',10,1,@ErrorMessage) WITH NOWAIT
         SET @Error = @@ERROR
         RAISERROR(@EmptyLine,10,1) WITH NOWAIT
@@ -8872,36 +8874,9 @@ BEGIN
 
           IF EXISTS (SELECT * FROM @CurrentAlterIndexWithClauseArguments)
           BEGIN
-            SET @CurrentAlterIndexWithClause = ' WITH ('
-
-            WHILE (1 = 1)
-            BEGIN
-              SELECT TOP 1 @CurrentAlterIndexArgumentID = ID,
-                           @CurrentAlterIndexArgument = Argument
-              FROM @CurrentAlterIndexWithClauseArguments
-              WHERE Added = 0
-              ORDER BY ID ASC
-
-              IF @@ROWCOUNT = 0
-              BEGIN
-                BREAK
-              END
-
-              SET @CurrentAlterIndexWithClause += @CurrentAlterIndexArgument + ', '
-
-              UPDATE @CurrentAlterIndexWithClauseArguments
-              SET Added = 1
-              WHERE [ID] = @CurrentAlterIndexArgumentID
-            END
-
-            SET @CurrentAlterIndexWithClause = RTRIM(@CurrentAlterIndexWithClause)
-
-            SET @CurrentAlterIndexWithClause = LEFT(@CurrentAlterIndexWithClause,LEN(@CurrentAlterIndexWithClause) - 1)
-
-            SET @CurrentAlterIndexWithClause = @CurrentAlterIndexWithClause + ')'
+            SELECT @CurrentCommand += ' WITH (' + STRING_AGG(Argument, ', ') WITHIN GROUP (ORDER BY ID ASC) + ')'
+            FROM @CurrentAlterIndexWithClauseArguments
           END
-
-          IF @CurrentAlterIndexWithClause IS NOT NULL SET @CurrentCommand += @CurrentAlterIndexWithClause
 
           EXECUTE @CurrentCommandOutput = dbo.CommandExecute @DatabaseContext = @CurrentDatabaseName, @Command = @CurrentCommand, @CommandType = @CurrentCommandType, @Mode = 2, @Comment = @CurrentComment, @DatabaseName = @CurrentDatabaseName, @SchemaName = @CurrentSchemaName, @ObjectName = @CurrentObjectName, @ObjectType = @CurrentObjectType, @IndexName = @CurrentIndexName, @IndexType = @CurrentIndexType, @PartitionNumber = @CurrentPartitionNumber, @ExtendedInfo = @CurrentExtendedInfo, @LockMessageSeverity = @LockMessageSeverity, @ExecuteAsUser = @ExecuteAsUser, @LogToTable = @LogToTable, @Execute = @Execute
           SET @Error = @@ERROR
@@ -8978,32 +8953,9 @@ BEGIN
 
           IF EXISTS (SELECT * FROM @CurrentUpdateStatisticsWithClauseArguments)
           BEGIN
-            SET @CurrentUpdateStatisticsWithClause = ' WITH'
-
-            WHILE (1 = 1)
-            BEGIN
-              SELECT TOP 1 @CurrentUpdateStatisticsArgumentID = ID,
-                           @CurrentUpdateStatisticsArgument = Argument
-              FROM @CurrentUpdateStatisticsWithClauseArguments
-              WHERE Added = 0
-              ORDER BY ID ASC
-
-              IF @@ROWCOUNT = 0
-              BEGIN
-                BREAK
-              END
-
-              SET @CurrentUpdateStatisticsWithClause = @CurrentUpdateStatisticsWithClause + ' ' + @CurrentUpdateStatisticsArgument + ','
-
-              UPDATE @CurrentUpdateStatisticsWithClauseArguments
-              SET Added = 1
-              WHERE [ID] = @CurrentUpdateStatisticsArgumentID
-            END
-
-            SET @CurrentUpdateStatisticsWithClause = LEFT(@CurrentUpdateStatisticsWithClause,LEN(@CurrentUpdateStatisticsWithClause) - 1)
+            SELECT @CurrentCommand += ' WITH ' + STRING_AGG(Argument, ', ') WITHIN GROUP (ORDER BY ID ASC)
+            FROM @CurrentUpdateStatisticsWithClauseArguments
           END
-
-          IF @CurrentUpdateStatisticsWithClause IS NOT NULL SET @CurrentCommand += @CurrentUpdateStatisticsWithClause
 
           IF @PartitionLevelStatistics = 1 AND @CurrentIsIncremental = 1 AND @CurrentPartitionNumber IS NOT NULL SET @CurrentCommand += ' ON PARTITIONS(' + CAST(@CurrentPartitionNumber AS nvarchar(max)) + ')'
 
@@ -9075,12 +9027,6 @@ BEGIN
         SET @CurrentUpdateStatistics = NULL
         SET @CurrentStatisticsSample = NULL
         SET @CurrentStatisticsResample = NULL
-        SET @CurrentAlterIndexArgumentID = NULL
-        SET @CurrentAlterIndexArgument = NULL
-        SET @CurrentAlterIndexWithClause = NULL
-        SET @CurrentUpdateStatisticsArgumentID = NULL
-        SET @CurrentUpdateStatisticsArgument = NULL
-        SET @CurrentUpdateStatisticsWithClause = NULL
 
         DELETE FROM @CurrentActionsAllowed
         DELETE FROM @CurrentAlterIndexWithClauseArguments
