@@ -1,6 +1,6 @@
 ﻿/*
 
-SQL Server Maintenance Solution - SQL Server 2008, SQL Server 2008 R2, SQL Server 2012, SQL Server 2014, SQL Server 2016, SQL Server 2017, SQL Server 2019, SQL Server 2022, and SQL Server 2025
+SQL Server Maintenance Solution - SQL Server 2017, SQL Server 2019, SQL Server 2022, and SQL Server 2025
 
 Backup: https://ola.hallengren.com/sql-server-backup.html
 Integrity Check: https://ola.hallengren.com/sql-server-integrity-check.html
@@ -10,7 +10,7 @@ License: https://ola.hallengren.com/license.html
 
 GitHub: https://github.com/olahallengren/sql-server-maintenance-solution
 
-Version: 2026-05-10 18:54:20
+Version: 2026-05-13 20:06:11
 
 You can contact me by e-mail at ola@hallengren.com.
 
@@ -137,7 +137,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-05-10 18:54:20                                                               //--
+  --// Version: 2026-05-13 20:06:11                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -484,7 +484,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-05-10 18:54:20                                                               //--
+  --// Version: 2026-05-13 20:06:11                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -4826,7 +4826,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-05-10 18:54:20                                                               //--
+  --// Version: 2026-05-13 20:06:11                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -6725,7 +6725,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-05-10 18:54:20                                                               //--
+  --// Version: 2026-05-13 20:06:11                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -6916,8 +6916,7 @@ BEGIN
   DECLARE @CurrentActionsAllowed TABLE ([Action] nvarchar(max))
 
   DECLARE @CurrentAlterIndexWithClauseArguments TABLE (ID int IDENTITY,
-                                                       Argument nvarchar(max),
-                                                       Added bit DEFAULT 0)
+                                                       Argument nvarchar(max))
 
   DECLARE @CurrentUpdateStatisticsWithClauseArguments TABLE (ID int IDENTITY,
                                                              Argument nvarchar(max))
