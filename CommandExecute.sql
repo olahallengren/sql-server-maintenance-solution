@@ -36,7 +36,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-05-13 20:06:11                                                               //--
+  --// Version: 2026-05-15 17:32:50                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -239,10 +239,10 @@ BEGIN
       SET @ErrorMessageOriginal = ERROR_MESSAGE()
 
       SET @ErrorMessage = 'Msg ' + CAST(ERROR_NUMBER() AS nvarchar) + ', ' + ISNULL(ERROR_MESSAGE(),'')
-      SET @Severity = CASE WHEN ERROR_NUMBER() IN(1205,1222) THEN @LockMessageSeverity ELSE 16 END
+      SET @Severity = CASE WHEN ERROR_NUMBER() IN(1205, 1222, 5245) THEN @LockMessageSeverity ELSE ERROR_SEVERITY() END
       RAISERROR('%s',@Severity,1,@ErrorMessage) WITH NOWAIT
 
-      IF NOT (ERROR_NUMBER() IN(1205,1222) AND @LockMessageSeverity = 10)
+      IF NOT (ERROR_NUMBER() IN(1205, 1222, 5245) AND @LockMessageSeverity = 10)
       BEGIN
         SET @ReturnCode = ERROR_NUMBER()
       END

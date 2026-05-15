@@ -10,7 +10,7 @@ License: https://ola.hallengren.com/license.html
 
 GitHub: https://github.com/olahallengren/sql-server-maintenance-solution
 
-Version: 2026-05-13 20:06:11
+Version: 2026-05-15 17:32:50
 
 You can contact me by e-mail at ola@hallengren.com.
 
@@ -137,7 +137,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-05-13 20:06:11                                                               //--
+  --// Version: 2026-05-15 17:32:50                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -340,10 +340,10 @@ BEGIN
       SET @ErrorMessageOriginal = ERROR_MESSAGE()
 
       SET @ErrorMessage = 'Msg ' + CAST(ERROR_NUMBER() AS nvarchar) + ', ' + ISNULL(ERROR_MESSAGE(),'')
-      SET @Severity = CASE WHEN ERROR_NUMBER() IN(1205,1222) THEN @LockMessageSeverity ELSE 16 END
+      SET @Severity = CASE WHEN ERROR_NUMBER() IN(1205, 1222, 5245) THEN @LockMessageSeverity ELSE ERROR_SEVERITY() END
       RAISERROR('%s',@Severity,1,@ErrorMessage) WITH NOWAIT
 
-      IF NOT (ERROR_NUMBER() IN(1205,1222) AND @LockMessageSeverity = 10)
+      IF NOT (ERROR_NUMBER() IN(1205, 1222, 5245) AND @LockMessageSeverity = 10)
       BEGIN
         SET @ReturnCode = ERROR_NUMBER()
       END
@@ -484,7 +484,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-05-13 20:06:11                                                               //--
+  --// Version: 2026-05-15 17:32:50                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -1294,19 +1294,11 @@ BEGIN
         BREAK
       END
 
-      IF @Version >= 14
-      BEGIN
-        INSERT INTO @DirectoryInfo (FileExists, FileIsADirectory, ParentDirectoryExists)
-        SELECT file_exists,
-               file_is_a_directory,
-               parent_directory_exists
-        FROM sys.dm_os_file_exists (@CurrentRootDirectoryPath)
-      END
-      ELSE
-      BEGIN
-        INSERT INTO @DirectoryInfo (FileExists, FileIsADirectory, ParentDirectoryExists)
-        EXECUTE [master].dbo.xp_fileexist @CurrentRootDirectoryPath
-      END
+      INSERT INTO @DirectoryInfo (FileExists, FileIsADirectory, ParentDirectoryExists)
+      SELECT file_exists,
+              file_is_a_directory,
+              parent_directory_exists
+      FROM sys.dm_os_file_exists (@CurrentRootDirectoryPath)
 
       IF NOT EXISTS (SELECT * FROM @DirectoryInfo WHERE FileExists = 0 AND FileIsADirectory = 1 AND ParentDirectoryExists = 1)
       BEGIN
@@ -3993,19 +3985,11 @@ BEGIN
 
           IF @DirectoryCheck = 'Y'
           BEGIN
-            IF @Version >= 14
-            BEGIN
-              INSERT INTO @DirectoryInfo (FileExists, FileIsADirectory, ParentDirectoryExists)
-              SELECT file_exists,
-                     file_is_a_directory,
-                     parent_directory_exists
-              FROM sys.dm_os_file_exists (@CurrentDirectoryPath)
-            END
-            ELSE
-            BEGIN
-              INSERT INTO @DirectoryInfo (FileExists, FileIsADirectory, ParentDirectoryExists)
-              EXECUTE [master].dbo.xp_fileexist @CurrentDirectoryPath
-            END
+            INSERT INTO @DirectoryInfo (FileExists, FileIsADirectory, ParentDirectoryExists)
+            SELECT file_exists,
+                    file_is_a_directory,
+                    parent_directory_exists
+            FROM sys.dm_os_file_exists (@CurrentDirectoryPath)
           END
 
           IF NOT EXISTS (SELECT * FROM @DirectoryInfo WHERE FileExists = 0 AND FileIsADirectory = 1 AND ParentDirectoryExists = 1)
@@ -4826,7 +4810,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-05-13 20:06:11                                                               //--
+  --// Version: 2026-05-15 17:32:50                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -6725,7 +6709,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-05-13 20:06:11                                                               //--
+  --// Version: 2026-05-15 17:32:50                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -8234,7 +8218,7 @@ BEGIN
 
                                                     + ', CASE WHEN EXISTS(SELECT * FROM sys.indexes indexes WHERE indexes.[object_id] = objects.object_id AND [type] = 6) THEN 1 ELSE 0 END AS HasNonClusteredColumnstore'
 
-                                                    + ', CASE WHEN EXISTS(SELECT * FROM sys.index_columns index_columns INNER JOIN sys.columns columns ON index_columns.object_id = columns.object_id AND index_columns.column_id = columns.column_id WHERE (index_columns.key_ordinal > 0 OR index_columns.partition_ordinal > 0) AND columns.is_computed = 1 AND index_columns.object_id = indexes.object_id AND index_columns.index_id = indexes.index_id) THEN 1 ELSE 0 END AS IsComputed'
+                                                    + ', CASE WHEN EXISTS(SELECT * FROM sys.index_columns index_columns INNER JOIN sys.columns columns ON index_columns.object_id = columns.object_id AND index_columns.column_id = columns.column_id WHERE (index_columns.key_ordinal > 0 OR index_columns.partition_ordinal > 0 OR index_columns.is_included_column = 1) AND columns.is_computed = 1 AND index_columns.object_id = indexes.object_id AND index_columns.index_id = indexes.index_id) THEN 1 ELSE 0 END AS IsComputed'
 
                                                     + ', CASE WHEN EXISTS(SELECT * FROM sys.index_columns index_columns INNER JOIN sys.columns columns ON index_columns.object_id = columns.object_id AND index_columns.column_id = columns.column_id INNER JOIN sys.indexes indexes2 ON index_columns.object_id = indexes2.object_id AND index_columns.index_id = indexes2.index_id WHERE (index_columns.key_ordinal > 0 OR index_columns.partition_ordinal > 0) AND columns.is_computed = 1 AND indexes2.[type] = 1 AND index_columns.object_id = indexes.object_id) THEN 1 ELSE 0 END AS IsClusteredIndexComputed'
 
