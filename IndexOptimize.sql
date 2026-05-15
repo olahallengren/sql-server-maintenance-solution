@@ -44,7 +44,9 @@ ALTER PROCEDURE [dbo].[IndexOptimize]
 @DatabasesInParallel nvarchar(max) = 'N',
 @ExecuteAsUser nvarchar(max) = NULL,
 @LogToTable nvarchar(max) = 'N',
-@Execute nvarchar(max) = 'Y'
+@Execute nvarchar(max) = 'Y',
+@PartitionLimitedMode NVARCHAR(max) = 'N',  
+@PartitionDataCount INT = 0  
 
 AS
 
@@ -308,6 +310,8 @@ BEGIN
   SET @Parameters += ', @ExecuteAsUser = ' + ISNULL('''' + REPLACE(@ExecuteAsUser,'''','''''') + '''','NULL')
   SET @Parameters += ', @LogToTable = ' + ISNULL('''' + REPLACE(@LogToTable,'''','''''') + '''','NULL')
   SET @Parameters += ', @Execute = ' + ISNULL('''' + REPLACE(@Execute,'''','''''') + '''','NULL')
+  SET @Parameters += ', @PartitionLimitedMode = ' + ISNULL('''' + REPLACE(@PartitionLimitedMode,'''','''''') + '''','NULL')
+  SET @Parameters += ', @PartitionDataCount = ' + ISNULL('''' + REPLACE(@PartitionDataCount,'''','''''') + '''','NULL')
 
   SET @StartMessage = 'Date and time: ' + CONVERT(nvarchar,@StartTime,120)
   RAISERROR('%s',10,1,@StartMessage) WITH NOWAIT
@@ -1115,6 +1119,19 @@ BEGIN
   END
 
   ----------------------------------------------------------------------------------------------------
+    IF @PartitionLimitedMode NOT IN('Y','N') OR @PartitionLimitedMode IS NULL
+  BEGIN
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'The value for the parameter @PartitionLimitedMode is not supported.', 16, 1
+  END
+
+  ----------------------------------------------------------------------------------------------------
+    IF @PartitionDataCount < 0 OR @PartitionDataCount  > 15000
+  BEGIN
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'The value for the parameter @PartitionDataCount is not supported.', 16, 1
+  END
+  ----------------------------------------------------------------------------------------------------
 
   IF EXISTS(SELECT * FROM @Errors)
   BEGIN
@@ -1590,12 +1607,17 @@ BEGIN
                                                     + ' INNER JOIN sys.schemas schemas ON objects.[schema_id] = schemas.[schema_id]'
                                                     + ' LEFT OUTER JOIN sys.tables tables ON objects.[object_id] = tables.[object_id]'
                                                     + ' LEFT OUTER JOIN sys.stats stats ON indexes.[object_id] = stats.[object_id] AND indexes.[index_id] = stats.[stats_id]'
-          IF @PartitionLevel = 'Y'
+          IF @PartitionLevel = 'Y' AND @PartitionLimitedMode = 'N'
           BEGIN
             SET @CurrentCommand = @CurrentCommand + ' LEFT OUTER JOIN sys.partitions partitions ON indexes.[object_id] = partitions.[object_id] AND indexes.index_id = partitions.index_id'
                                                       + ' LEFT OUTER JOIN (SELECT partitions.[object_id], partitions.index_id, COUNT(DISTINCT partitions.partition_number) AS partition_count FROM sys.partitions partitions GROUP BY partitions.[object_id], partitions.index_id) IndexPartitions ON partitions.[object_id] = IndexPartitions.[object_id] AND partitions.[index_id] = IndexPartitions.[index_id]'
           END
-
+          IF @PartitionLevel = 'Y' AND @PartitionLimitedMode = 'Y'
+		   BEGIN
+			 SET @CurrentCommand = @CurrentCommand + ' LEFT OUTER JOIN (SELECT partitions.[object_id], partitions.index_id, partitions.partition_number,partitions.partition_id FROM ( SELECT partition.[object_id], partition.index_id, partition.partition_number,partition.partition_id, ROW_NUMBER() OVER(PARTITION BY partition.[object_id], partition.index_id ORDER BY partition.partition_number DESC) AS rn FROM sys.partitions partition INNER JOIN sys.dm_db_partition_stats dm_db_partition_stats ON partition.partition_id = dm_db_partition_stats.partition_id WHERE dm_db_partition_stats.row_count > 0) partitions WHERE rn <=' + CAST(@PartitionDataCount AS NVARCHAR(10)) + ' ) partitions ON indexes.[object_id] = partitions.[object_id] AND indexes.index_id = partitions.index_id'
+               											+ ' LEFT OUTER JOIN (SELECT partitions.[object_id], partitions.index_id, COUNT(DISTINCT partitions.partition_number) AS partition_count,MAX(CASE WHEN dm_db_partition_stats.row_count > 0 THEN partitions.partition_number END) AS max_data_partition FROM sys.partitions partitions  INNER JOIN sys.dm_db_partition_stats dm_db_partition_stats  ON partitions.partition_id = dm_db_partition_stats.partition_id GROUP BY partitions.[object_id], partitions.index_id) IndexPartitions ON partitions.[object_id] = IndexPartitions.[object_id] AND partitions.[index_id] = IndexPartitions.[index_id]'
+           END
+          
           SET @CurrentCommand = @CurrentCommand + ' WHERE objects.[type] IN(''U'',''V'')'
                                                     + CASE WHEN @MSShippedObjects = 'N' THEN ' AND objects.is_ms_shipped = 0' ELSE '' END
                                                     + ' AND indexes.[type] IN(1,2,3,4,5,6,7)'
@@ -2435,4 +2457,6 @@ BEGIN
 END
 
 GO
+
+
 
