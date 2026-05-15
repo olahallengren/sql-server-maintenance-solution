@@ -40,7 +40,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-05-13 20:06:11                                                               //--
+  --// Version: 2026-05-15 17:32:50                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
