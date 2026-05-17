@@ -54,7 +54,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-05-17 15:38:00                                                               //--
+  --// Version: 2026-05-17 20:58:00                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -1545,7 +1545,7 @@ BEGIN
                                                     + ', objects.[object_id] AS ObjectID'
                                                     + ', objects.[name] AS ObjectName'
                                                     + ', RTRIM(objects.[type]) AS ObjectType'
-                                                    + ', ' + CASE WHEN @Version >= 12 THEN 'tables.is_memory_optimized' ELSE '0' END + ' AS IsMemoryOptimized'
+                                                    + ', ' + CASE WHEN @Version >= 12 THEN 'ISNULL(tables.is_memory_optimized, 0)' ELSE '0' END + ' AS IsMemoryOptimized'
                                                     + ', indexes.index_id AS IndexID'
                                                     + ', indexes.[name] AS IndexName'
                                                     + ', indexes.[type] AS IndexType'
@@ -1614,7 +1614,7 @@ BEGIN
                                                     + ', objects.[object_id] AS ObjectID'
                                                     + ', objects.[name] AS ObjectName'
                                                     + ', RTRIM(objects.[type]) AS ObjectType'
-                                                    + ', ' + CASE WHEN @Version >= 12 THEN 'tables.is_memory_optimized' ELSE '0' END + ' AS IsMemoryOptimized'
+                                                    + ', ' + CASE WHEN @Version >= 12 THEN 'ISNULL(tables.is_memory_optimized, 0)' ELSE '0' END + ' AS IsMemoryOptimized'
                                                     + ', NULL AS IndexID, NULL AS IndexName'
                                                     + ', NULL AS IndexType'
                                                     + ', NULL AS AllowPageLocks'
