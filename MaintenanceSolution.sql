@@ -10,7 +10,7 @@ License: https://ola.hallengren.com/license.html
 
 GitHub: https://github.com/olahallengren/sql-server-maintenance-solution
 
-Version: 2026-05-15 19:08:07
+Version: 2026-05-18 20:15:56
 
 You can contact me by e-mail at ola@hallengren.com.
 
@@ -137,7 +137,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-05-15 19:08:07                                                               //--
+  --// Version: 2026-05-18 20:15:56                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -484,7 +484,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-05-15 19:08:07                                                               //--
+  --// Version: 2026-05-18 20:15:56                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -1236,6 +1236,12 @@ BEGIN
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
     SELECT 'Mirrored backup is not supported when backing up to NUL', 16, 6
+  END
+
+  IF EXISTS (SELECT * FROM @Directories WHERE Mirror = 0 AND DirectoryPath = 'NUL') AND @BackupSoftware IS NOT NULL
+  BEGIN
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'Backup to NUL is only supported with SQL Server native backups.', 16, 7
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -4810,7 +4816,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-05-15 19:08:07                                                               //--
+  --// Version: 2026-05-18 20:15:56                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -6519,7 +6525,7 @@ BEGIN
 
             SET @CurrentCommand = ''
             IF @LockTimeout IS NOT NULL SET @CurrentCommand = 'SET LOCK_TIMEOUT ' + CAST(@LockTimeout * 1000 AS nvarchar) + '; '
-            SET @CurrentCommand += 'DBCC CHECKTABLE (' + QUOTENAME(QUOTENAME(@CurrentSchemaName) + '.' + QUOTENAME(@CurrentObjectName),'''')
+            SET @CurrentCommand += 'DBCC CHECKTABLE (N' + QUOTENAME(QUOTENAME(@CurrentSchemaName) + '.' + QUOTENAME(@CurrentObjectName),'''')
             IF @NoIndex = 'Y' SET @CurrentCommand += ', NOINDEX'
             SET @CurrentCommand += ') WITH ALL_ERRORMSGS'
             IF @DataPurity = 'Y' SET @CurrentCommand += ', DATA_PURITY'
@@ -6557,7 +6563,7 @@ BEGIN
       END
 
       -- Check catalog
-      IF EXISTS(SELECT * FROM @SelectedCheckCommands WHERE CheckCommand = 'CHECKCATALOG') AND (SYSDATETIME() < DATEADD(SECOND,@TimeLimit,@StartTime) OR @TimeLimit IS NULL)
+      IF EXISTS(SELECT * FROM @SelectedCheckCommands WHERE CheckCommand = 'CHECKCATALOG') AND @CurrentAvailabilityGroupRole = 'PRIMARY' AND (SYSDATETIME() < DATEADD(SECOND,@TimeLimit,@StartTime) OR @TimeLimit IS NULL)
       BEGIN
         SET @CurrentDatabaseContext = CASE WHEN SERVERPROPERTY('EngineEdition') = 5 THEN @CurrentDatabaseName ELSE 'master' END
 
@@ -6709,7 +6715,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-05-15 19:08:07                                                               //--
+  --// Version: 2026-05-18 20:15:56                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -8200,7 +8206,7 @@ BEGIN
                                                     + ', objects.[object_id] AS ObjectID'
                                                     + ', objects.[name] AS ObjectName'
                                                     + ', RTRIM(objects.[type]) AS ObjectType'
-                                                    + ', ' + CASE WHEN @Version >= 12 THEN 'tables.is_memory_optimized' ELSE '0' END + ' AS IsMemoryOptimized'
+                                                    + ', ' + CASE WHEN @Version >= 12 THEN 'ISNULL(tables.is_memory_optimized, 0)' ELSE '0' END + ' AS IsMemoryOptimized'
                                                     + ', indexes.index_id AS IndexID'
                                                     + ', indexes.[name] AS IndexName'
                                                     + ', indexes.[type] AS IndexType'
@@ -8269,7 +8275,7 @@ BEGIN
                                                     + ', objects.[object_id] AS ObjectID'
                                                     + ', objects.[name] AS ObjectName'
                                                     + ', RTRIM(objects.[type]) AS ObjectType'
-                                                    + ', ' + CASE WHEN @Version >= 12 THEN 'tables.is_memory_optimized' ELSE '0' END + ' AS IsMemoryOptimized'
+                                                    + ', ' + CASE WHEN @Version >= 12 THEN 'ISNULL(tables.is_memory_optimized, 0)' ELSE '0' END + ' AS IsMemoryOptimized'
                                                     + ', NULL AS IndexID, NULL AS IndexName'
                                                     + ', NULL AS IndexType'
                                                     + ', NULL AS AllowPageLocks'

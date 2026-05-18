@@ -91,7 +91,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-05-15 19:08:07                                                               //--
+  --// Version: 2026-05-18 20:15:56                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -843,6 +843,12 @@ BEGIN
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
     SELECT 'Mirrored backup is not supported when backing up to NUL', 16, 6
+  END
+
+  IF EXISTS (SELECT * FROM @Directories WHERE Mirror = 0 AND DirectoryPath = 'NUL') AND @BackupSoftware IS NOT NULL
+  BEGIN
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'Backup to NUL is only supported with SQL Server native backups.', 16, 7
   END
 
   ----------------------------------------------------------------------------------------------------

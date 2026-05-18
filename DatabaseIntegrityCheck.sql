@@ -40,7 +40,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-05-15 19:08:07                                                               //--
+  --// Version: 2026-05-18 20:15:56                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -1749,7 +1749,7 @@ BEGIN
 
             SET @CurrentCommand = ''
             IF @LockTimeout IS NOT NULL SET @CurrentCommand = 'SET LOCK_TIMEOUT ' + CAST(@LockTimeout * 1000 AS nvarchar) + '; '
-            SET @CurrentCommand += 'DBCC CHECKTABLE (' + QUOTENAME(QUOTENAME(@CurrentSchemaName) + '.' + QUOTENAME(@CurrentObjectName),'''')
+            SET @CurrentCommand += 'DBCC CHECKTABLE (N' + QUOTENAME(QUOTENAME(@CurrentSchemaName) + '.' + QUOTENAME(@CurrentObjectName),'''')
             IF @NoIndex = 'Y' SET @CurrentCommand += ', NOINDEX'
             SET @CurrentCommand += ') WITH ALL_ERRORMSGS'
             IF @DataPurity = 'Y' SET @CurrentCommand += ', DATA_PURITY'
@@ -1787,7 +1787,7 @@ BEGIN
       END
 
       -- Check catalog
-      IF EXISTS(SELECT * FROM @SelectedCheckCommands WHERE CheckCommand = 'CHECKCATALOG') AND (SYSDATETIME() < DATEADD(SECOND,@TimeLimit,@StartTime) OR @TimeLimit IS NULL)
+      IF EXISTS(SELECT * FROM @SelectedCheckCommands WHERE CheckCommand = 'CHECKCATALOG') AND @CurrentAvailabilityGroupRole = 'PRIMARY' AND (SYSDATETIME() < DATEADD(SECOND,@TimeLimit,@StartTime) OR @TimeLimit IS NULL)
       BEGIN
         SET @CurrentDatabaseContext = CASE WHEN SERVERPROPERTY('EngineEdition') = 5 THEN @CurrentDatabaseName ELSE 'master' END
 
