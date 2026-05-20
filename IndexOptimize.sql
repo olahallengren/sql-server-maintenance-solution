@@ -9,7 +9,6 @@ END
 GO
 
 ALTER PROCEDURE [dbo].[IndexOptimize]
-
 @Databases nvarchar(max) = NULL,
 @FragmentationLow nvarchar(max) = NULL,
 @FragmentationMedium nvarchar(max) = 'INDEX_REORGANIZE,INDEX_REBUILD_ONLINE,INDEX_REBUILD_OFFLINE',
@@ -44,6 +43,7 @@ ALTER PROCEDURE [dbo].[IndexOptimize]
 @DatabasesInParallel nvarchar(max) = 'N',
 @ExecuteAsUser nvarchar(max) = NULL,
 @LogToTable nvarchar(max) = 'N',
+@MinIndexUsageDays int = NULL,
 @Execute nvarchar(max) = 'Y'
 
 AS
@@ -255,6 +255,12 @@ BEGIN
 
   DECLARE @EmptyLine nvarchar(max) = CHAR(9)
 
+  
+  DECLARE @CurrentStatsResetEstimate datetime2
+  DECLARE @CurrentHoursSinceReset    int
+  DECLARE @CurrentStatsTrusted       bit
+  DECLARE @RequiredTrustHours        int = @MinIndexUsageDays * 24
+
   DECLARE @Version numeric(18,10) = CAST(LEFT(CAST(SERVERPROPERTY('ProductVersion') AS nvarchar(max)),CHARINDEX('.',CAST(SERVERPROPERTY('ProductVersion') AS nvarchar(max))) - 1) + '.' + REPLACE(RIGHT(CAST(SERVERPROPERTY('ProductVersion') AS nvarchar(max)), LEN(CAST(SERVERPROPERTY('ProductVersion') AS nvarchar(max))) - CHARINDEX('.',CAST(SERVERPROPERTY('ProductVersion') AS nvarchar(max)))),'.','') AS numeric(18,10))
 
   IF @Version >= 14
@@ -307,6 +313,7 @@ BEGIN
   SET @Parameters += ', @DatabasesInParallel = ' + ISNULL('''' + REPLACE(@DatabasesInParallel,'''','''''') + '''','NULL')
   SET @Parameters += ', @ExecuteAsUser = ' + ISNULL('''' + REPLACE(@ExecuteAsUser,'''','''''') + '''','NULL')
   SET @Parameters += ', @LogToTable = ' + ISNULL('''' + REPLACE(@LogToTable,'''','''''') + '''','NULL')
+  SET @Parameters += ', @MinIndexUsageDays = ' + ISNULL(CAST(@MinIndexUsageDays AS nvarchar),'NULL')
   SET @Parameters += ', @Execute = ' + ISNULL('''' + REPLACE(@Execute,'''','''''') + '''','NULL')
 
   SET @StartMessage = 'Date and time: ' + CONVERT(nvarchar,@StartTime,120)
@@ -976,6 +983,13 @@ BEGIN
 
   ----------------------------------------------------------------------------------------------------
 
+  IF @MinIndexUsageDays < 0
+  BEGIN
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'The value for the parameter @MinIndexUsageDays is not supported.', 16, 1
+  END
+  ----------------------------------------------------------------------------------------------------
+
   IF @Delay < 0
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
@@ -1456,7 +1470,44 @@ BEGIN
       RAISERROR('%s',10,1,@DatabaseMessage) WITH NOWAIT
 
       SET @DatabaseMessage = 'Recovery model: ' + @CurrentRecoveryModel
+      RAISERROR('%s',10,1,@DatabaseMessage) WITH NOWAIT      
+    END
+        -- Reset internal trust state for this database.
+    SET @CurrentStatsResetEstimate = NULL
+    SET @CurrentHoursSinceReset    = NULL
+    SET @CurrentStatsTrusted       = NULL
+
+    -- Only compute the estimate when the user actually opted in.
+    -- take the LATEST of
+    --   1) instance start time            -- a restart wipes the DMV
+    --   2) database create_date           -- catches attach / restore-with-new-id
+    --   3) earliest activity in the DMV   -- a lower bound; usage must be at least this old
+    IF @MinIndexUsageDays IS NOT NULL
+       AND @CurrentDatabaseState = 'ONLINE'
+       AND NOT (@CurrentAvailabilityGroup IS NOT NULL AND (@CurrentAvailabilityGroupRole <> 'PRIMARY' OR @CurrentAvailabilityGroupRole IS NULL))
+       AND NOT (@AmazonRDS = 1 AND @CurrentDatabaseName = 'rdsadmin')
+    BEGIN
+      SELECT @CurrentStatsResetEstimate =
+        (SELECT MAX(t) FROM (VALUES
+           ((SELECT sqlserver_start_time FROM sys.dm_os_sys_info)),
+           ((SELECT create_date FROM sys.databases WHERE [name] = @CurrentDatabaseName)),
+           ((SELECT MIN(x) FROM (VALUES
+                ((SELECT MIN(last_user_seek)   FROM sys.dm_db_index_usage_stats WHERE database_id = DB_ID(@CurrentDatabaseName))),
+                ((SELECT MIN(last_user_scan)   FROM sys.dm_db_index_usage_stats WHERE database_id = DB_ID(@CurrentDatabaseName))),
+                ((SELECT MIN(last_user_lookup) FROM sys.dm_db_index_usage_stats WHERE database_id = DB_ID(@CurrentDatabaseName))),
+                ((SELECT MIN(last_user_update) FROM sys.dm_db_index_usage_stats WHERE database_id = DB_ID(@CurrentDatabaseName)))
+             ) AS u(x)))
+        ) AS r(t))
+
+      SET @CurrentHoursSinceReset = DATEDIFF(HOUR, @CurrentStatsResetEstimate, SYSDATETIME())
+      SET @CurrentStatsTrusted    = CASE WHEN @CurrentHoursSinceReset >= @RequiredTrustHours
+                                         THEN 1 ELSE 0 END
+
+      SET @DatabaseMessage = 'Usage stats reset estimate: ' + ISNULL(CONVERT(nvarchar(30), @CurrentStatsResetEstimate, 121),'N/A')
+                           + ' (hours since: ' + ISNULL(CAST(@CurrentHoursSinceReset AS nvarchar), 'N/A') + ')'
+                           + ' - Trusted: ' + CASE WHEN @CurrentStatsTrusted = 1 THEN 'Yes' ELSE 'NO - Insufficient history in sys.dm_db_index_usage_stats (likely restart, failover, detach/attach, or recent index DDL). Skipping the unused-index filter for this database to avoid false positives; fragmentation-based maintenance will still run.' END
       RAISERROR('%s',10,1,@DatabaseMessage) WITH NOWAIT
+      RAISERROR(@EmptyLine,10,1) WITH NOWAIT
     END
 
     IF @Version >= 11 AND SERVERPROPERTY('IsHadrEnabled') = 1
@@ -1748,6 +1799,30 @@ BEGIN
         AND (tmpIndexesStatistics.IndexName = SelectedIndexes2.IndexName OR tmpIndexesStatistics.IndexName IS NULL)
         AND (tmpIndexesStatistics.StatisticsName = SelectedIndexes2.StatisticsName OR tmpIndexesStatistics.StatisticsName IS NULL)
       END;
+
+
+      -- Skip indexes that look unused, but ONLY when the DMV is old enough to trust.
+      -- If the DMV is too young (@CurrentStatsTrusted = 0), do nothing here:
+      -- we fall back to the existing fragmentation-based behavior rather than
+      -- making decisions on data we cannot trust.
+      IF @MinIndexUsageDays IS NOT NULL AND @CurrentStatsTrusted = 1
+      BEGIN
+        UPDATE tis
+        SET tis.Selected = 0
+        FROM @tmpIndexesStatistics tis
+        WHERE tis.IndexID IS NOT NULL
+          AND tis.IndexID > 1   -- never deselect the clustered index / heap entry
+          AND NOT EXISTS (
+                SELECT 1
+                FROM sys.dm_db_index_usage_stats us
+                WHERE us.database_id = DB_ID(@CurrentDatabaseName)
+                  AND us.object_id   = tis.ObjectID
+                  AND us.index_id    = tis.IndexID
+                  AND (us.user_seeks + us.user_scans + us.user_lookups) > 0
+              )
+      END;
+
+
 
       WITH tmpIndexesStatistics AS (
       SELECT SchemaName, ObjectName, [Order], ROW_NUMBER() OVER (ORDER BY ISNULL(ResumableIndexOperation,0) DESC, StartPosition ASC, SchemaName ASC, ObjectName ASC, CASE WHEN IndexType IS NULL THEN 1 ELSE 0 END ASC, IndexType ASC, IndexName ASC, StatisticsName ASC, PartitionNumber ASC) AS RowNumber
@@ -2391,6 +2466,10 @@ BEGIN
     END
 
     -- Clear variables
+    SET @CurrentStatsResetEstimate = NULL
+    SET @CurrentHoursSinceReset    = NULL
+    SET @CurrentStatsTrusted       = NULL
+
     SET @CurrentDBID = NULL
     SET @CurrentDatabaseName = NULL
 
@@ -2417,7 +2496,7 @@ BEGIN
 
   ----------------------------------------------------------------------------------------------------
   --// Log completing information                                                                 //--
-  ----------------------------------------------------------------------------------------------------
+  ---------------------------------------------C:\Users\yportest\source\repos\sql-server-maintenance-solution\IndexOptimize.sql-------------------------------------------------------
 
   Logging:
   SET @EndMessage = 'Date and time: ' + CONVERT(nvarchar,SYSDATETIME(),120)
