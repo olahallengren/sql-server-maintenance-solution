@@ -1477,11 +1477,20 @@ BEGIN
     SET @CurrentHoursSinceReset    = NULL
     SET @CurrentStatsTrusted       = NULL
 
-    -- Only compute the estimate when the user actually opted in.
-    -- take the LATEST of
+    -- Reset internal trust state for this database.
+    SET @CurrentStatsResetEstimate = NULL
+    SET @CurrentHoursSinceReset    = NULL
+    SET @CurrentStatsTrusted       = NULL
+
+    -- Estimate when sys.dm_db_index_usage_stats was last reset for this DB.
+    -- Take the LATEST of:
     --   1) instance start time            -- a restart wipes the DMV
-    --   2) database create_date           -- catches attach / restore-with-new-id
+    --   2) database create_date           -- catches attach / restore / new DBs
     --   3) earliest activity in the DMV   -- a lower bound; usage must be at least this old
+    -- Skip the computation entirely on contexts where the DMV would be misleading or unavailable:
+    --   - DB not ONLINE
+    --   - AG secondary (or DB whose AG role cannot be determined)
+    --   - Amazon RDS rdsadmin
     IF @MinIndexUsageDays IS NOT NULL
        AND @CurrentDatabaseState = 'ONLINE'
        AND NOT (@CurrentAvailabilityGroup IS NOT NULL AND (@CurrentAvailabilityGroupRole <> 'PRIMARY' OR @CurrentAvailabilityGroupRole IS NULL))
@@ -1503,57 +1512,18 @@ BEGIN
       SET @CurrentStatsTrusted    = CASE WHEN @CurrentHoursSinceReset >= @RequiredTrustHours
                                          THEN 1 ELSE 0 END
 
-      SET @DatabaseMessage = 'Usage stats reset estimate: ' + ISNULL(CONVERT(nvarchar(30), @CurrentStatsResetEstimate, 121),'N/A')
-                           + ' (hours since: ' + ISNULL(CAST(@CurrentHoursSinceReset AS nvarchar), 'N/A') + ')'
-                           + ' - Trusted: ' + CASE WHEN @CurrentStatsTrusted = 1 THEN 'Yes' ELSE 'NO - Insufficient history in sys.dm_db_index_usage_stats (likely restart, failover, detach/attach, or recent index DDL). Skipping the unused-index filter for this database to avoid false positives; fragmentation-based maintenance will still run.' END
+      SET @DatabaseMessage = 'Usage stats reset estimate: '
+                           + ISNULL(CONVERT(nvarchar(30), @CurrentStatsResetEstimate, 121),'N/A')
+                           + ' (DMV age: ' + ISNULL(CAST(@CurrentHoursSinceReset AS nvarchar), 'N/A') + ' h'
+                           + ', required: ' + CAST(@RequiredTrustHours AS nvarchar) + ' h / '
+                           + CAST(@MinIndexUsageDays AS nvarchar) + ' d) - Trusted: '
+                           + CASE WHEN @CurrentStatsTrusted = 1
+                                  THEN 'Yes'
+                                  ELSE 'NO - Insufficient history in sys.dm_db_index_usage_stats (likely restart, failover, detach/attach, or recent index DDL). Unused-index skip disabled for this database; fragmentation-based maintenance will still run.'
+                             END
       RAISERROR('%s',10,1,@DatabaseMessage) WITH NOWAIT
       RAISERROR(@EmptyLine,10,1) WITH NOWAIT
     END
-
-    IF @Version >= 11 AND SERVERPROPERTY('IsHadrEnabled') = 1
-    BEGIN
-      SELECT @CurrentReplicaID = databases.replica_id
-      FROM sys.databases databases
-      INNER JOIN sys.availability_replicas availability_replicas ON databases.replica_id = availability_replicas.replica_id
-      WHERE databases.[name] = @CurrentDatabaseName
-
-      SELECT @CurrentAvailabilityGroupID = group_id
-      FROM sys.availability_replicas
-      WHERE replica_id = @CurrentReplicaID
-
-      SELECT @CurrentAvailabilityGroupRole = role_desc
-      FROM sys.dm_hadr_availability_replica_states
-      WHERE replica_id = @CurrentReplicaID
-
-      SELECT @CurrentAvailabilityGroup = [name]
-      FROM sys.availability_groups
-      WHERE group_id = @CurrentAvailabilityGroupID
-    END
-
-    IF SERVERPROPERTY('EngineEdition') <> 5
-    BEGIN
-      SELECT @CurrentDatabaseMirroringRole = UPPER(mirroring_role_desc)
-      FROM sys.database_mirroring database_mirroring
-      INNER JOIN sys.databases databases ON database_mirroring.database_id = databases.database_id
-      WHERE databases.[name] = @CurrentDatabaseName
-    END
-
-    IF @CurrentAvailabilityGroup IS NOT NULL
-    BEGIN
-      SET @DatabaseMessage = 'Availability group: ' + ISNULL(@CurrentAvailabilityGroup,'N/A')
-      RAISERROR('%s',10,1,@DatabaseMessage) WITH NOWAIT
-
-      SET @DatabaseMessage = 'Availability group role: ' + ISNULL(@CurrentAvailabilityGroupRole,'N/A')
-      RAISERROR('%s',10,1,@DatabaseMessage) WITH NOWAIT
-    END
-
-    IF @CurrentDatabaseMirroringRole IS NOT NULL
-    BEGIN
-      SET @DatabaseMessage = 'Database mirroring role: ' + @CurrentDatabaseMirroringRole
-      RAISERROR('%s',10,1,@DatabaseMessage) WITH NOWAIT
-    END
-
-    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
 
     IF @ExecuteAsUser IS NOT NULL
     AND @CurrentDatabaseState = 'ONLINE'
@@ -2496,7 +2466,7 @@ BEGIN
 
   ----------------------------------------------------------------------------------------------------
   --// Log completing information                                                                 //--
-  ---------------------------------------------C:\Users\yportest\source\repos\sql-server-maintenance-solution\IndexOptimize.sql-------------------------------------------------------
+  ----------------------------------------------------------------------------------------------------
 
   Logging:
   SET @EndMessage = 'Date and time: ' + CONVERT(nvarchar,SYSDATETIME(),120)
