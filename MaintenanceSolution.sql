@@ -10,7 +10,7 @@ License: https://ola.hallengren.com/license.html
 
 GitHub: https://github.com/olahallengren/sql-server-maintenance-solution
 
-Version: 2026-05-18 20:15:56
+Version: 2026-05-20 18:56:46
 
 You can contact me by e-mail at ola@hallengren.com.
 
@@ -137,7 +137,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-05-18 20:15:56                                                               //--
+  --// Version: 2026-05-20 18:56:46                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -484,7 +484,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-05-18 20:15:56                                                               //--
+  --// Version: 2026-05-20 18:56:46                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -653,7 +653,8 @@ BEGIN
                                FilePath nvarchar(max),
                                Mirror bit)
 
-  DECLARE @CurrentCleanupDates TABLE (CleanupDate datetime2,
+  DECLARE @CurrentCleanupDates TABLE ([Type] nvarchar(max),
+                                      CleanupDate datetime2,
                                       Mirror bit)
 
   DECLARE @Error int = 0
@@ -3460,13 +3461,13 @@ BEGIN
       SET @CurrentDate = SYSDATETIME()
       SET @CurrentDateUTC = SYSUTCDATETIME()
 
-      INSERT INTO @CurrentCleanupDates (CleanupDate)
-      SELECT @CurrentDate
+      INSERT INTO @CurrentCleanupDates ([Type], CleanupDate)
+      SELECT 'CurrentTime', @CurrentDate
 
       IF @CurrentBackupType = 'LOG'
       BEGIN
-        INSERT INTO @CurrentCleanupDates (CleanupDate)
-        SELECT @CurrentLatestBackup
+        INSERT INTO @CurrentCleanupDates ([Type], CleanupDate)
+        SELECT 'LatestBackupTime', @CurrentLatestBackup
       END
 
       SELECT @CurrentDirectoryStructure = CASE
@@ -4038,8 +4039,8 @@ BEGIN
 
       IF @CleanupMode = 'BEFORE_BACKUP'
       BEGIN
-        INSERT INTO @CurrentCleanupDates (CleanupDate, Mirror)
-        SELECT DATEADD(hh,-(@CleanupTime),SYSDATETIME()), 0
+        INSERT INTO @CurrentCleanupDates ([Type], CleanupDate, Mirror)
+        SELECT 'CleanupTime', DATEADD(hh,-(@CleanupTime),SYSDATETIME()), 0
 
         IF NOT EXISTS(SELECT * FROM @CurrentCleanupDates WHERE (Mirror = 0 OR Mirror IS NULL) AND CleanupDate IS NULL)
         BEGIN
@@ -4054,8 +4055,8 @@ BEGIN
 
       IF @MirrorCleanupMode = 'BEFORE_BACKUP'
       BEGIN
-        INSERT INTO @CurrentCleanupDates (CleanupDate, Mirror)
-        SELECT DATEADD(hh,-(@MirrorCleanupTime),SYSDATETIME()), 1
+        INSERT INTO @CurrentCleanupDates ([Type], CleanupDate, Mirror)
+        SELECT 'MirrorCleanupTime', DATEADD(hh,-(@MirrorCleanupTime),SYSDATETIME()), 1
 
         IF NOT EXISTS(SELECT * FROM @CurrentCleanupDates WHERE (Mirror = 1 OR Mirror IS NULL) AND CleanupDate IS NULL)
         BEGIN
@@ -4559,8 +4560,8 @@ BEGIN
 
       IF @CleanupMode = 'AFTER_BACKUP'
       BEGIN
-        INSERT INTO @CurrentCleanupDates (CleanupDate, Mirror)
-        SELECT DATEADD(hh,-(@CleanupTime),SYSDATETIME()), 0
+        INSERT INTO @CurrentCleanupDates ([Type], CleanupDate, Mirror)
+        SELECT 'CleanupTime', DATEADD(hh,-(@CleanupTime),SYSDATETIME()), 0
 
         IF NOT EXISTS(SELECT * FROM @CurrentCleanupDates WHERE (Mirror = 0 OR Mirror IS NULL) AND CleanupDate IS NULL)
         BEGIN
@@ -4575,8 +4576,8 @@ BEGIN
 
       IF @MirrorCleanupMode = 'AFTER_BACKUP'
       BEGIN
-        INSERT INTO @CurrentCleanupDates (CleanupDate, Mirror)
-        SELECT DATEADD(hh,-(@MirrorCleanupTime),SYSDATETIME()), 1
+        INSERT INTO @CurrentCleanupDates ([Type], CleanupDate, Mirror)
+        SELECT 'MirrorCleanupTime', DATEADD(hh,-(@MirrorCleanupTime),SYSDATETIME()), 1
 
         IF NOT EXISTS(SELECT * FROM @CurrentCleanupDates WHERE (Mirror = 1 OR Mirror IS NULL) AND CleanupDate IS NULL)
         BEGIN
@@ -4816,7 +4817,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-05-18 20:15:56                                                               //--
+  --// Version: 2026-05-20 18:56:46                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -6715,7 +6716,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-05-18 20:15:56                                                               //--
+  --// Version: 2026-05-20 18:56:46                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
