@@ -9,7 +9,6 @@ END
 GO
 
 ALTER PROCEDURE [dbo].[IndexOptimize]
-
 @Databases nvarchar(max) = NULL,
 @FragmentationLow nvarchar(max) = NULL,
 @FragmentationMedium nvarchar(max) = 'INDEX_REORGANIZE,INDEX_REBUILD_ONLINE,INDEX_REBUILD_OFFLINE',
@@ -44,6 +43,7 @@ ALTER PROCEDURE [dbo].[IndexOptimize]
 @DatabasesInParallel nvarchar(max) = 'N',
 @ExecuteAsUser nvarchar(max) = NULL,
 @LogToTable nvarchar(max) = 'N',
+@MinIndexUsageDays int = NULL,
 @Execute nvarchar(max) = 'Y'
 
 AS
@@ -255,6 +255,12 @@ BEGIN
 
   DECLARE @EmptyLine nvarchar(max) = CHAR(9)
 
+  
+  DECLARE @CurrentStatsResetEstimate datetime2
+  DECLARE @CurrentHoursSinceReset    int
+  DECLARE @CurrentStatsTrusted       bit
+  DECLARE @RequiredTrustHours        int = @MinIndexUsageDays * 24
+
   DECLARE @Version numeric(18,10) = CAST(LEFT(CAST(SERVERPROPERTY('ProductVersion') AS nvarchar(max)),CHARINDEX('.',CAST(SERVERPROPERTY('ProductVersion') AS nvarchar(max))) - 1) + '.' + REPLACE(RIGHT(CAST(SERVERPROPERTY('ProductVersion') AS nvarchar(max)), LEN(CAST(SERVERPROPERTY('ProductVersion') AS nvarchar(max))) - CHARINDEX('.',CAST(SERVERPROPERTY('ProductVersion') AS nvarchar(max)))),'.','') AS numeric(18,10))
 
   IF @Version >= 14
@@ -307,6 +313,7 @@ BEGIN
   SET @Parameters += ', @DatabasesInParallel = ' + ISNULL('''' + REPLACE(@DatabasesInParallel,'''','''''') + '''','NULL')
   SET @Parameters += ', @ExecuteAsUser = ' + ISNULL('''' + REPLACE(@ExecuteAsUser,'''','''''') + '''','NULL')
   SET @Parameters += ', @LogToTable = ' + ISNULL('''' + REPLACE(@LogToTable,'''','''''') + '''','NULL')
+  SET @Parameters += ', @MinIndexUsageDays = ' + ISNULL(CAST(@MinIndexUsageDays AS nvarchar),'NULL')
   SET @Parameters += ', @Execute = ' + ISNULL('''' + REPLACE(@Execute,'''','''''') + '''','NULL')
 
   SET @StartMessage = 'Date and time: ' + CONVERT(nvarchar,@StartTime,120)
@@ -976,6 +983,13 @@ BEGIN
 
   ----------------------------------------------------------------------------------------------------
 
+  IF @MinIndexUsageDays < 0
+  BEGIN
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'The value for the parameter @MinIndexUsageDays is not supported.', 16, 1
+  END
+  ----------------------------------------------------------------------------------------------------
+
   IF @Delay < 0
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
@@ -1456,53 +1470,60 @@ BEGIN
       RAISERROR('%s',10,1,@DatabaseMessage) WITH NOWAIT
 
       SET @DatabaseMessage = 'Recovery model: ' + @CurrentRecoveryModel
-      RAISERROR('%s',10,1,@DatabaseMessage) WITH NOWAIT
+      RAISERROR('%s',10,1,@DatabaseMessage) WITH NOWAIT      
     END
+        -- Reset internal trust state for this database.
+    SET @CurrentStatsResetEstimate = NULL
+    SET @CurrentHoursSinceReset    = NULL
+    SET @CurrentStatsTrusted       = NULL
 
-    IF @Version >= 11 AND SERVERPROPERTY('IsHadrEnabled') = 1
+    -- Reset internal trust state for this database.
+    SET @CurrentStatsResetEstimate = NULL
+    SET @CurrentHoursSinceReset    = NULL
+    SET @CurrentStatsTrusted       = NULL
+
+    -- Estimate when sys.dm_db_index_usage_stats was last reset for this DB.
+    -- Take the LATEST of:
+    --   1) instance start time            -- a restart wipes the DMV
+    --   2) database create_date           -- catches attach / restore / new DBs
+    --   3) earliest activity in the DMV   -- a lower bound; usage must be at least this old
+    -- Skip the computation entirely on contexts where the DMV would be misleading or unavailable:
+    --   - DB not ONLINE
+    --   - AG secondary (or DB whose AG role cannot be determined)
+    --   - Amazon RDS rdsadmin
+    IF @MinIndexUsageDays IS NOT NULL
+       AND @CurrentDatabaseState = 'ONLINE'
+       AND NOT (@CurrentAvailabilityGroup IS NOT NULL AND (@CurrentAvailabilityGroupRole <> 'PRIMARY' OR @CurrentAvailabilityGroupRole IS NULL))
+       AND NOT (@AmazonRDS = 1 AND @CurrentDatabaseName = 'rdsadmin')
     BEGIN
-      SELECT @CurrentReplicaID = databases.replica_id
-      FROM sys.databases databases
-      INNER JOIN sys.availability_replicas availability_replicas ON databases.replica_id = availability_replicas.replica_id
-      WHERE databases.[name] = @CurrentDatabaseName
+      SELECT @CurrentStatsResetEstimate =
+        (SELECT MAX(t) FROM (VALUES
+           ((SELECT sqlserver_start_time FROM sys.dm_os_sys_info)),
+           ((SELECT create_date FROM sys.databases WHERE [name] = @CurrentDatabaseName)),
+           ((SELECT MIN(x) FROM (VALUES
+                ((SELECT MIN(last_user_seek)   FROM sys.dm_db_index_usage_stats WHERE database_id = DB_ID(@CurrentDatabaseName))),
+                ((SELECT MIN(last_user_scan)   FROM sys.dm_db_index_usage_stats WHERE database_id = DB_ID(@CurrentDatabaseName))),
+                ((SELECT MIN(last_user_lookup) FROM sys.dm_db_index_usage_stats WHERE database_id = DB_ID(@CurrentDatabaseName))),
+                ((SELECT MIN(last_user_update) FROM sys.dm_db_index_usage_stats WHERE database_id = DB_ID(@CurrentDatabaseName)))
+             ) AS u(x)))
+        ) AS r(t))
 
-      SELECT @CurrentAvailabilityGroupID = group_id
-      FROM sys.availability_replicas
-      WHERE replica_id = @CurrentReplicaID
+      SET @CurrentHoursSinceReset = DATEDIFF(HOUR, @CurrentStatsResetEstimate, SYSDATETIME())
+      SET @CurrentStatsTrusted    = CASE WHEN @CurrentHoursSinceReset >= @RequiredTrustHours
+                                         THEN 1 ELSE 0 END
 
-      SELECT @CurrentAvailabilityGroupRole = role_desc
-      FROM sys.dm_hadr_availability_replica_states
-      WHERE replica_id = @CurrentReplicaID
-
-      SELECT @CurrentAvailabilityGroup = [name]
-      FROM sys.availability_groups
-      WHERE group_id = @CurrentAvailabilityGroupID
-    END
-
-    IF SERVERPROPERTY('EngineEdition') <> 5
-    BEGIN
-      SELECT @CurrentDatabaseMirroringRole = UPPER(mirroring_role_desc)
-      FROM sys.database_mirroring database_mirroring
-      INNER JOIN sys.databases databases ON database_mirroring.database_id = databases.database_id
-      WHERE databases.[name] = @CurrentDatabaseName
-    END
-
-    IF @CurrentAvailabilityGroup IS NOT NULL
-    BEGIN
-      SET @DatabaseMessage = 'Availability group: ' + ISNULL(@CurrentAvailabilityGroup,'N/A')
+      SET @DatabaseMessage = 'Usage stats reset estimate: '
+                           + ISNULL(CONVERT(nvarchar(30), @CurrentStatsResetEstimate, 121),'N/A')
+                           + ' (DMV age: ' + ISNULL(CAST(@CurrentHoursSinceReset AS nvarchar), 'N/A') + ' h'
+                           + ', required: ' + CAST(@RequiredTrustHours AS nvarchar) + ' h / '
+                           + CAST(@MinIndexUsageDays AS nvarchar) + ' d) - Trusted: '
+                           + CASE WHEN @CurrentStatsTrusted = 1
+                                  THEN 'Yes'
+                                  ELSE 'NO - Insufficient history in sys.dm_db_index_usage_stats (likely restart, failover, detach/attach, or recent index DDL). Unused-index skip disabled for this database; fragmentation-based maintenance will still run.'
+                             END
       RAISERROR('%s',10,1,@DatabaseMessage) WITH NOWAIT
-
-      SET @DatabaseMessage = 'Availability group role: ' + ISNULL(@CurrentAvailabilityGroupRole,'N/A')
-      RAISERROR('%s',10,1,@DatabaseMessage) WITH NOWAIT
+      RAISERROR(@EmptyLine,10,1) WITH NOWAIT
     END
-
-    IF @CurrentDatabaseMirroringRole IS NOT NULL
-    BEGIN
-      SET @DatabaseMessage = 'Database mirroring role: ' + @CurrentDatabaseMirroringRole
-      RAISERROR('%s',10,1,@DatabaseMessage) WITH NOWAIT
-    END
-
-    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
 
     IF @ExecuteAsUser IS NOT NULL
     AND @CurrentDatabaseState = 'ONLINE'
@@ -1748,6 +1769,30 @@ BEGIN
         AND (tmpIndexesStatistics.IndexName = SelectedIndexes2.IndexName OR tmpIndexesStatistics.IndexName IS NULL)
         AND (tmpIndexesStatistics.StatisticsName = SelectedIndexes2.StatisticsName OR tmpIndexesStatistics.StatisticsName IS NULL)
       END;
+
+
+      -- Skip indexes that look unused, but ONLY when the DMV is old enough to trust.
+      -- If the DMV is too young (@CurrentStatsTrusted = 0), do nothing here:
+      -- we fall back to the existing fragmentation-based behavior rather than
+      -- making decisions on data we cannot trust.
+      IF @MinIndexUsageDays IS NOT NULL AND @CurrentStatsTrusted = 1
+      BEGIN
+        UPDATE tis
+        SET tis.Selected = 0
+        FROM @tmpIndexesStatistics tis
+        WHERE tis.IndexID IS NOT NULL
+          AND tis.IndexID > 1   -- never deselect the clustered index / heap entry
+          AND NOT EXISTS (
+                SELECT 1
+                FROM sys.dm_db_index_usage_stats us
+                WHERE us.database_id = DB_ID(@CurrentDatabaseName)
+                  AND us.object_id   = tis.ObjectID
+                  AND us.index_id    = tis.IndexID
+                  AND (us.user_seeks + us.user_scans + us.user_lookups) > 0
+              )
+      END;
+
+
 
       WITH tmpIndexesStatistics AS (
       SELECT SchemaName, ObjectName, [Order], ROW_NUMBER() OVER (ORDER BY ISNULL(ResumableIndexOperation,0) DESC, StartPosition ASC, SchemaName ASC, ObjectName ASC, CASE WHEN IndexType IS NULL THEN 1 ELSE 0 END ASC, IndexType ASC, IndexName ASC, StatisticsName ASC, PartitionNumber ASC) AS RowNumber
@@ -2391,6 +2436,10 @@ BEGIN
     END
 
     -- Clear variables
+    SET @CurrentStatsResetEstimate = NULL
+    SET @CurrentHoursSinceReset    = NULL
+    SET @CurrentStatsTrusted       = NULL
+
     SET @CurrentDBID = NULL
     SET @CurrentDatabaseName = NULL
 
