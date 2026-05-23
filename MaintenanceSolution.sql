@@ -10,7 +10,7 @@ License: https://ola.hallengren.com/license.html
 
 GitHub: https://github.com/olahallengren/sql-server-maintenance-solution
 
-Version: 2026-05-22 18:49:29
+Version: 2026-05-23 17:06:30
 
 You can contact me by e-mail at ola@hallengren.com.
 
@@ -137,7 +137,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-05-22 18:49:29                                                               //--
+  --// Version: 2026-05-23 17:06:30                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -484,7 +484,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-05-22 18:49:29                                                               //--
+  --// Version: 2026-05-23 17:06:30                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -4817,7 +4817,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-05-22 18:49:29                                                               //--
+  --// Version: 2026-05-23 17:06:30                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -6716,7 +6716,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-05-22 18:49:29                                                               //--
+  --// Version: 2026-05-23 17:06:30                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -8707,15 +8707,12 @@ BEGIN
           SET @CurrentAction = 'INDEX_REBUILD_ONLINE'
         END
 
-        -- Workaround for limitation in SQL Server, http://support.microsoft.com/kb/2292737
-        IF @CurrentIndexID IS NOT NULL
-        BEGIN
-          SET @CurrentMaxDOP = @MaxDOP
+        SET @CurrentMaxDOP = @MaxDOP
 
-          IF @CurrentAction = 'INDEX_REBUILD_ONLINE' AND @CurrentAllowPageLocks = 0
-          BEGIN
-            SET @CurrentMaxDOP = 1
-          END
+        -- Workaround for limitation in SQL Server, http://support.microsoft.com/kb/2292737
+        IF @CurrentAction = 'INDEX_REBUILD_ONLINE' AND @CurrentIndexType IN (1, 2) AND @CurrentAllowPageLocks = 0
+        BEGIN
+          SET @CurrentMaxDOP = 1
         END
 
         -- Update statistics?
