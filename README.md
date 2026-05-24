@@ -4,6 +4,7 @@
 [![forks badge]][forks]
 [![issues badge]][issues]
 [![bug report badge]][bug report]
+[![SQL Server bug badge]][SQL Server bug]
 [![feature request badge]][feature request]
 
 ## Getting Started
@@ -36,6 +37,7 @@ Supported versions: SQL Server 2008, SQL Server 2008 R2, SQL Server 2012, SQL Se
 [forks badge]:https://img.shields.io/github/forks/olahallengren/sql-server-maintenance-solution.svg
 [issues badge]:https://img.shields.io/github/issues/olahallengren/sql-server-maintenance-solution.svg
 [bug report badge]:https://img.shields.io/github/issues/olahallengren/sql-server-maintenance-solution/Bug%20Report.svg
+[SQL Server bug badge]:https://img.shields.io/github/issues/olahallengren/sql-server-maintenance-solution/SQL%20Server%20Bug.svg
 [feature request badge]:https://img.shields.io/github/issues/olahallengren/sql-server-maintenance-solution/Feature%20Request.svg
 
 [licence]:https://github.com/olahallengren/sql-server-maintenance-solution/blob/master/LICENSE
@@ -43,4 +45,5 @@ Supported versions: SQL Server 2008, SQL Server 2008 R2, SQL Server 2012, SQL Se
 [forks]:https://github.com/olahallengren/sql-server-maintenance-solution/network
 [issues]:https://github.com/olahallengren/sql-server-maintenance-solution/issues
 [bug report]:https://github.com/olahallengren/sql-server-maintenance-solution/issues?q=is%3Aopen+is%3Aissue+label%3A%22Bug+Report%22
+[SQL Server bug]:https://github.com/olahallengren/sql-server-maintenance-solution/issues?q=is%3Aopen+is%3Aissue+label%3A%22SQL+Server+Bug%22
 [feature request]:https://github.com/olahallengren/sql-server-maintenance-solution/issues?q=is%3Aopen+is%3Aissue+label%3A%22Feature+Request%22
