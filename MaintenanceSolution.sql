@@ -10,7 +10,7 @@ License: https://ola.hallengren.com/license.html
 
 GitHub: https://github.com/olahallengren/sql-server-maintenance-solution
 
-Version: 2026-05-23 23:42:56
+Version: 2026-05-24 08:38:27
 
 You can contact me by e-mail at ola@hallengren.com.
 
@@ -137,7 +137,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-05-23 23:42:56                                                               //--
+  --// Version: 2026-05-24 08:38:27                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -484,7 +484,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-05-23 23:42:56                                                               //--
+  --// Version: 2026-05-24 08:38:27                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -4770,7 +4770,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-05-23 23:42:56                                                               //--
+  --// Version: 2026-05-24 08:38:27                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -6672,7 +6672,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-05-23 23:42:56                                                               //--
+  --// Version: 2026-05-24 08:38:27                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -9048,7 +9048,6 @@ GO
 IF (SELECT [Value] FROM #Config WHERE Name = 'CreateJobs') = 'Y'
     AND SERVERPROPERTY('EngineEdition') NOT IN(4, 5)
     AND (IS_SRVROLEMEMBER('sysadmin') = 1 OR (EXISTS (SELECT * FROM sys.databases WHERE [name] = 'rdsadmin') AND SUSER_SNAME(0x01) = 'rdsa'))
-    AND (SELECT [compatibility_level] FROM sys.databases WHERE [name] = DB_NAME()) >= 90
     AND NOT (EXISTS (SELECT * FROM #Config WHERE Name = 'BackupDirectory' AND [Value] IS NOT NULL) AND EXISTS (SELECT * FROM #Config WHERE Name = 'BackupURL' AND [Value] IS NOT NULL))
     AND NOT (EXISTS (SELECT * FROM #Config WHERE Name = 'BackupURL' AND [Value] IS NOT NULL) AND EXISTS (SELECT * FROM #Config WHERE Name = 'CleanupTime' AND [Value] IS NOT NULL))
 BEGIN
@@ -9104,15 +9103,8 @@ BEGIN
 
   DECLARE @AmazonRDS bit = CASE WHEN SERVERPROPERTY('EngineEdition') IN (5, 8) THEN 0 WHEN EXISTS (SELECT * FROM sys.databases WHERE [name] = 'rdsadmin') AND SUSER_SNAME(0x01) = 'rdsa' THEN 1 ELSE 0 END
 
-  IF @Version >= 14
-  BEGIN
-    SELECT @HostPlatform = host_platform
-    FROM sys.dm_os_host_info
-  END
-  ELSE
-  BEGIN
-    SET @HostPlatform = 'Windows'
-  END
+  SELECT @HostPlatform = host_platform
+  FROM sys.dm_os_host_info
 
   SELECT @DirectorySeparator = CASE
   WHEN @HostPlatform = 'Windows' THEN '\'
@@ -9124,14 +9116,10 @@ BEGIN
   SET @TokenStepID = '$' + '(ESCAPE_SQUOTE(STEPID))'
   SET @TokenDate = '$' + '(ESCAPE_SQUOTE(DATE))'
   SET @TokenTime = '$' + '(ESCAPE_SQUOTE(TIME))'
+  SET @TokenJobName = '$' + '(ESCAPE_SQUOTE(JOBNAME))'
+  SET @TokenStepName = '$' + '(ESCAPE_SQUOTE(STEPNAME))'
 
-  IF @Version >= 13
-  BEGIN
-    SET @TokenJobName = '$' + '(ESCAPE_SQUOTE(JOBNAME))'
-    SET @TokenStepName = '$' + '(ESCAPE_SQUOTE(STEPNAME))'
-  END
-
-  IF @Version >= 12 AND @HostPlatform = 'Windows'
+  IF @HostPlatform = 'Windows'
   BEGIN
     SET @TokenLogDirectory = '$' + '(ESCAPE_SQUOTE(SQLLOGDIR))'
   END
@@ -9160,15 +9148,8 @@ BEGIN
   FROM #Config
   WHERE [Name] = 'DatabaseName'
 
-  IF @Version >= 11
-  BEGIN
-    SELECT @LogDirectory = [path]
-    FROM sys.dm_os_server_diagnostics_log_configurations
-  END
-  ELSE
-  BEGIN
-    SELECT @LogDirectory = LEFT(CAST(SERVERPROPERTY('ErrorLogFileName') AS nvarchar(max)),LEN(CAST(SERVERPROPERTY('ErrorLogFileName') AS nvarchar(max))) - CHARINDEX('\',REVERSE(CAST(SERVERPROPERTY('ErrorLogFileName') AS nvarchar(max)))))
-  END
+  SELECT @LogDirectory = [path]
+  FROM sys.dm_os_server_diagnostics_log_configurations
 
   IF @OutputFileDirectory IS NOT NULL AND RIGHT(@OutputFileDirectory,1) = @DirectorySeparator
   BEGIN
@@ -9218,13 +9199,13 @@ BEGIN
 
   INSERT INTO @Jobs ([Name], CommandTSQL, DatabaseName, OutputFileNamePart01)
   SELECT 'DatabaseIntegrityCheck - SYSTEM_DATABASES',
-         'EXECUTE [dbo].[DatabaseIntegrityCheck]' + CHAR(13) + CHAR(10) + '@Databases = ''SYSTEM_DATABASES'',' + CHAR(13) + CHAR(10) + '@LogToTable = ''' + @LogToTable + '''',
+         'EXECUTE [dbo].[DatabaseIntegrityCheck]' + CHAR(13) + CHAR(10) + '@Databases = ''SYSTEM_DATABASES'',' + CHAR(13) + CHAR(10) + '@NoInformationalMessages = ''Y'',' + CHAR(13) + CHAR(10) + '@LogToTable = ''' + @LogToTable + '''',
          @DatabaseName,
          'DatabaseIntegrityCheck'
 
   INSERT INTO @Jobs ([Name], CommandTSQL, DatabaseName, OutputFileNamePart01)
   SELECT 'DatabaseIntegrityCheck - USER_DATABASES',
-         'EXECUTE [dbo].[DatabaseIntegrityCheck]' + CHAR(13) + CHAR(10) + '@Databases = ''USER_DATABASES'',' + CHAR(13) + CHAR(10) + '@LogToTable = ''' + @LogToTable + '''',
+         'EXECUTE [dbo].[DatabaseIntegrityCheck]' + CHAR(13) + CHAR(10) + '@Databases = ''USER_DATABASES'',' + CHAR(13) + CHAR(10) + '@NoInformationalMessages = ''Y'',' + CHAR(13) + CHAR(10) + '@LogToTable = ''' + @LogToTable + '''',
          @DatabaseName,
          'DatabaseIntegrityCheck'
 
@@ -9313,17 +9294,11 @@ BEGIN
       SET @CurrentJobStepCommand = @CurrentCommandTSQL
       SET @CurrentJobStepDatabaseName = @CurrentDatabaseName
     END
-    ELSE IF @CurrentCommandTSQL IS NOT NULL AND @HostPlatform = 'Windows' AND @Version >= 11
+    ELSE IF @CurrentCommandTSQL IS NOT NULL AND @HostPlatform = 'Windows'
     BEGIN
       SET @CurrentJobStepSubSystem = 'TSQL'
       SET @CurrentJobStepCommand = @CurrentCommandTSQL
       SET @CurrentJobStepDatabaseName = @CurrentDatabaseName
-    END
-    ELSE IF @CurrentCommandTSQL IS NOT NULL AND @HostPlatform = 'Windows' AND @Version < 11
-    BEGIN
-      SET @CurrentJobStepSubSystem = 'CMDEXEC'
-      SET @CurrentJobStepCommand = 'sqlcmd -E -S ' + @TokenServer + ' -d ' + @CurrentDatabaseName + ' -Q "' + REPLACE(@CurrentCommandTSQL,(CHAR(13) + CHAR(10)),' ') + '" -b'
-      SET @CurrentJobStepDatabaseName = NULL
     END
     ELSE IF @CurrentCommandCmdExec IS NOT NULL AND @HostPlatform = 'Windows'
     BEGIN
