@@ -10,7 +10,7 @@ License: https://ola.hallengren.com/license.html
 
 GitHub: https://github.com/olahallengren/sql-server-maintenance-solution
 
-Version: 2026-05-24 08:38:27
+Version: 2026-05-24 08:51:53
 
 You can contact me by e-mail at ola@hallengren.com.
 
@@ -137,7 +137,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-05-24 08:38:27                                                               //--
+  --// Version: 2026-05-24 08:51:53                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -484,7 +484,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-05-24 08:38:27                                                               //--
+  --// Version: 2026-05-24 08:51:53                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -4770,7 +4770,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-05-24 08:38:27                                                               //--
+  --// Version: 2026-05-24 08:51:53                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -6672,7 +6672,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-05-24 08:38:27                                                               //--
+  --// Version: 2026-05-24 08:51:53                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -9276,25 +9276,7 @@ BEGIN
     AND Selected = 1
     ORDER BY JobID ASC
 
-    IF @CurrentCommandTSQL IS NOT NULL AND @AmazonRDS = 1
-    BEGIN
-      SET @CurrentJobStepSubSystem = 'TSQL'
-      SET @CurrentJobStepCommand = @CurrentCommandTSQL
-      SET @CurrentJobStepDatabaseName = @CurrentDatabaseName
-    END
-    ELSE IF @CurrentCommandTSQL IS NOT NULL AND SERVERPROPERTY('EngineEdition') = 8
-    BEGIN
-      SET @CurrentJobStepSubSystem = 'TSQL'
-      SET @CurrentJobStepCommand = @CurrentCommandTSQL
-      SET @CurrentJobStepDatabaseName = @CurrentDatabaseName
-    END
-    ELSE IF @CurrentCommandTSQL IS NOT NULL AND @HostPlatform = 'Linux'
-    BEGIN
-      SET @CurrentJobStepSubSystem = 'TSQL'
-      SET @CurrentJobStepCommand = @CurrentCommandTSQL
-      SET @CurrentJobStepDatabaseName = @CurrentDatabaseName
-    END
-    ELSE IF @CurrentCommandTSQL IS NOT NULL AND @HostPlatform = 'Windows'
+    IF @CurrentCommandTSQL IS NOT NULL
     BEGIN
       SET @CurrentJobStepSubSystem = 'TSQL'
       SET @CurrentJobStepCommand = @CurrentCommandTSQL
