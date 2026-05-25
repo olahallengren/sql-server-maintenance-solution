@@ -10,7 +10,7 @@ License: https://ola.hallengren.com/license.html
 
 GitHub: https://github.com/olahallengren/sql-server-maintenance-solution
 
-Version: 2026-05-24 08:51:53
+Version: 2026-05-25 19:42:41
 
 You can contact me by e-mail at ola@hallengren.com.
 
@@ -137,7 +137,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-05-24 08:51:53                                                               //--
+  --// Version: 2026-05-25 19:42:41                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -484,7 +484,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-05-24 08:51:53                                                               //--
+  --// Version: 2026-05-25 19:42:41                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -909,7 +909,7 @@ BEGIN
   FROM Databases4
   OPTION (MAXRECURSION 0)
 
-  IF @Version >= 11 AND SERVERPROPERTY('IsHadrEnabled') = 1
+  IF SERVERPROPERTY('IsHadrEnabled') = 1
   BEGIN
     INSERT INTO @tmpAvailabilityGroups (AvailabilityGroupName, Selected)
     SELECT name AS AvailabilityGroupName,
@@ -982,7 +982,7 @@ BEGIN
   --// Select availability groups                                                                 //--
   ----------------------------------------------------------------------------------------------------
 
-  IF @AvailabilityGroups IS NOT NULL AND @Version >= 11 AND SERVERPROPERTY('IsHadrEnabled') = 1
+  IF @AvailabilityGroups IS NOT NULL AND SERVERPROPERTY('IsHadrEnabled') = 1
   BEGIN
 
     SET @AvailabilityGroups = REPLACE(@AvailabilityGroups, CHAR(10), '')
@@ -1067,7 +1067,7 @@ BEGIN
 
   END
 
-  IF @AvailabilityGroups IS NOT NULL AND (NOT EXISTS(SELECT * FROM @SelectedAvailabilityGroups) OR EXISTS(SELECT * FROM @SelectedAvailabilityGroups WHERE AvailabilityGroupName IS NULL OR AvailabilityGroupName = '') OR @Version < 11 OR SERVERPROPERTY('IsHadrEnabled') = 0)
+  IF @AvailabilityGroups IS NOT NULL AND (NOT EXISTS(SELECT * FROM @SelectedAvailabilityGroups) OR EXISTS(SELECT * FROM @SelectedAvailabilityGroups WHERE AvailabilityGroupName IS NULL OR AvailabilityGroupName = '') OR SERVERPROPERTY('IsHadrEnabled') = 0)
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
     SELECT 'The value for the parameter @AvailabilityGroups is not supported.', 16, 1
@@ -2864,7 +2864,7 @@ BEGIN
   --// Check Availability Group cluster name                                                      //--
   ----------------------------------------------------------------------------------------------------
 
-  IF @Version >= 11 AND SERVERPROPERTY('IsHadrEnabled') = 1
+  IF SERVERPROPERTY('IsHadrEnabled') = 1
   BEGIN
     SELECT @Cluster = NULLIF(cluster_name,'')
     FROM sys.dm_hadr_cluster
@@ -3165,7 +3165,7 @@ BEGIN
     WHEN @MaxTransferSize IS NULL AND @Compress = 'Y' AND @CurrentIsEncrypted = 1 AND @BackupSoftware IS NULL AND (@Version >= 13 AND @Version < 15.0404316) AND @Credential IS NULL THEN 65537
     END
 
-    IF @Version >= 11 AND SERVERPROPERTY('IsHadrEnabled') = 1
+    IF SERVERPROPERTY('IsHadrEnabled') = 1
     BEGIN
       SELECT @CurrentReplicaID = databases.replica_id
       FROM sys.databases databases
@@ -3192,7 +3192,7 @@ BEGIN
       WHERE group_id = @CurrentAvailabilityGroupID
     END
 
-    IF @Version >= 11 AND SERVERPROPERTY('IsHadrEnabled') = 1 AND @CurrentAvailabilityGroup IS NOT NULL
+    IF SERVERPROPERTY('IsHadrEnabled') = 1 AND @CurrentAvailabilityGroup IS NOT NULL
     BEGIN
       SELECT @CurrentIsPreferredBackupReplica = sys.fn_hadr_backup_is_preferred_replica(@CurrentDatabaseName)
     END
@@ -3304,6 +3304,7 @@ BEGIN
       OR (@CurrentBackupType = 'DIFF' AND @CopyOnly = 'N' AND @Version >= 17)
       OR (@CurrentBackupType = 'FULL' AND @CopyOnly = 'Y')
       OR (@CurrentBackupType = 'LOG' AND @CopyOnly = 'N'))
+      AND SERVERPROPERTY('EngineEdition') IN (3)
       BEGIN
         SET @CurrentBackupOperationSupportedOnSecondaryReplicas = 1
       END
@@ -4770,7 +4771,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-05-24 08:51:53                                                               //--
+  --// Version: 2026-05-25 19:42:41                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -5100,7 +5101,7 @@ BEGIN
   FROM Databases4
   OPTION (MAXRECURSION 0)
 
-  IF @Version >= 11 AND SERVERPROPERTY('IsHadrEnabled') = 1
+  IF SERVERPROPERTY('IsHadrEnabled') = 1
   BEGIN
     INSERT INTO @tmpAvailabilityGroups (AvailabilityGroupName, Selected)
     SELECT name AS AvailabilityGroupName,
@@ -5173,7 +5174,7 @@ BEGIN
   --// Select availability groups                                                                 //--
   ----------------------------------------------------------------------------------------------------
 
-  IF @AvailabilityGroups IS NOT NULL AND @Version >= 11 AND SERVERPROPERTY('IsHadrEnabled') = 1
+  IF @AvailabilityGroups IS NOT NULL AND SERVERPROPERTY('IsHadrEnabled') = 1
   BEGIN
 
     SET @AvailabilityGroups = REPLACE(@AvailabilityGroups, CHAR(10), '')
@@ -6099,7 +6100,7 @@ BEGIN
       RAISERROR('%s',10,1,@DatabaseMessage) WITH NOWAIT
     END
 
-    IF @Version >= 11 AND SERVERPROPERTY('IsHadrEnabled') = 1
+    IF SERVERPROPERTY('IsHadrEnabled') = 1
     BEGIN
       SELECT @CurrentReplicaID = databases.replica_id
       FROM sys.databases databases
@@ -6121,7 +6122,7 @@ BEGIN
       WHERE group_id = @CurrentAvailabilityGroupID
     END
 
-    IF @Version >= 11 AND SERVERPROPERTY('IsHadrEnabled') = 1 AND @CurrentAvailabilityGroup IS NOT NULL AND @AvailabilityGroupReplicas = 'PREFERRED_BACKUP_REPLICA'
+    IF SERVERPROPERTY('IsHadrEnabled') = 1 AND @CurrentAvailabilityGroup IS NOT NULL AND @AvailabilityGroupReplicas = 'PREFERRED_BACKUP_REPLICA'
     BEGIN
       SELECT @CurrentIsPreferredBackupReplica = sys.fn_hadr_backup_is_preferred_replica(@CurrentDatabaseName)
     END
@@ -6672,7 +6673,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-05-24 08:51:53                                                               //--
+  --// Version: 2026-05-25 19:42:41                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -7076,7 +7077,7 @@ BEGIN
   FROM Databases4
   OPTION (MAXRECURSION 0)
 
-  IF @Version >= 11 AND SERVERPROPERTY('IsHadrEnabled') = 1
+  IF SERVERPROPERTY('IsHadrEnabled') = 1
   BEGIN
     INSERT INTO @tmpAvailabilityGroups (AvailabilityGroupName, Selected)
     SELECT name AS AvailabilityGroupName,
@@ -7148,7 +7149,7 @@ BEGIN
   --// Select availability groups                                                                 //--
   ----------------------------------------------------------------------------------------------------
 
-  IF @AvailabilityGroups IS NOT NULL AND @Version >= 11 AND SERVERPROPERTY('IsHadrEnabled') = 1
+  IF @AvailabilityGroups IS NOT NULL AND SERVERPROPERTY('IsHadrEnabled') = 1
   BEGIN
 
     SET @AvailabilityGroups = REPLACE(@AvailabilityGroups, CHAR(10), '')
@@ -8080,7 +8081,7 @@ BEGIN
       RAISERROR('%s',10,1,@DatabaseMessage) WITH NOWAIT
     END
 
-    IF @Version >= 11 AND SERVERPROPERTY('IsHadrEnabled') = 1
+    IF SERVERPROPERTY('IsHadrEnabled') = 1
     BEGIN
       SELECT @CurrentReplicaID = databases.replica_id
       FROM sys.databases databases
