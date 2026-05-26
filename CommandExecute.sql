@@ -36,7 +36,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-05-25 19:57:22                                                               //--
+  --// Version: 2026-05-26 20:38:34                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -73,12 +73,6 @@ BEGIN
   ----------------------------------------------------------------------------------------------------
   --// Check core requirements                                                                    //--
   ----------------------------------------------------------------------------------------------------
-
-  IF NOT (SELECT [compatibility_level] FROM sys.databases WHERE [name] = DB_NAME()) >= 90
-  BEGIN
-    INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The database ' + QUOTENAME(DB_NAME()) + ' has to be in compatibility level 90 or higher.', 16, 1
-  END
 
   IF NOT (SELECT uses_ansi_nulls FROM sys.sql_modules WHERE [object_id] = @@PROCID) = 1
   BEGIN
@@ -238,7 +232,7 @@ BEGIN
       SET @Error = ERROR_NUMBER()
       SET @ErrorMessageOriginal = ERROR_MESSAGE()
 
-      SET @ErrorMessage = 'Msg ' + CAST(ERROR_NUMBER() AS nvarchar) + ', ' + ISNULL(ERROR_MESSAGE(),'')
+      SET @ErrorMessage = 'Msg ' + CAST(ERROR_NUMBER() AS nvarchar(max)) + ', ' + ISNULL(ERROR_MESSAGE(),'')
       SET @Severity = CASE WHEN ERROR_NUMBER() IN(1205, 1222, 5245) THEN @LockMessageSeverity ELSE ERROR_SEVERITY() END
       RAISERROR('%s',@Severity,1,@ErrorMessage) WITH NOWAIT
 
@@ -263,7 +257,7 @@ BEGIN
   SET @EndMessage = 'Outcome: ' + CASE WHEN @Execute = 'N' THEN 'Not Executed' WHEN @Error = 0 THEN 'Succeeded' ELSE 'Failed' END
   RAISERROR('%s',10,1,@EndMessage) WITH NOWAIT
 
-  SET @EndMessage = 'Duration: ' + CASE WHEN (DATEDIFF(SECOND,@StartTime,@EndTime) / (24 * 3600)) > 0 THEN CAST((DATEDIFF(SECOND,@StartTime,@EndTime) / (24 * 3600)) AS nvarchar) + '.' ELSE '' END + CONVERT(nvarchar,DATEADD(SECOND,DATEDIFF(SECOND,@StartTime,@EndTime),'1900-01-01'),108)
+  SET @EndMessage = 'Duration: ' + CASE WHEN (DATEDIFF(SECOND,@StartTime,@EndTime) / (24 * 3600)) > 0 THEN CAST((DATEDIFF(SECOND,@StartTime,@EndTime) / (24 * 3600)) AS nvarchar(max)) + '.' ELSE '' END + CONVERT(nvarchar,DATEADD(SECOND,DATEDIFF(SECOND,@StartTime,@EndTime),'1900-01-01'),108)
   RAISERROR('%s',10,1,@EndMessage) WITH NOWAIT
 
   SET @EndMessage = 'Date and time: ' + CONVERT(nvarchar,@EndTime,120)
