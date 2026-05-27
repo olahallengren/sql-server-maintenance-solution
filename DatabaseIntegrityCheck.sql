@@ -40,7 +40,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-05-25 19:57:22                                                               //--
+  --// Version: 2026-05-28 01:22:34                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -74,13 +74,17 @@ BEGIN
   DECLARE @CurrentInStandby bit
   DECLARE @CurrentRecoveryModel nvarchar(max)
 
-  DECLARE @CurrentReplicaID uniqueidentifier
+  DECLARE @CurrentAvailabilityGroupReplicaID uniqueidentifier
   DECLARE @CurrentAvailabilityGroupID uniqueidentifier
   DECLARE @CurrentAvailabilityGroup nvarchar(max)
   DECLARE @CurrentAvailabilityGroupRole nvarchar(max)
   DECLARE @CurrentAvailabilityGroupBackupPreference nvarchar(max)
   DECLARE @CurrentSecondaryRoleAllowConnections nvarchar(max)
   DECLARE @CurrentIsPreferredBackupReplica bit
+  DECLARE @CurrentDistributedAvailabilityGroupID uniqueidentifier
+  DECLARE @CurrentDistributedAvailabilityGroup nvarchar(max)
+  DECLARE @CurrentDistributedAvailabilityGroupReplicaID uniqueidentifier
+  DECLARE @CurrentDistributedAvailabilityGroupRole nvarchar(max)
   DECLARE @CurrentDatabaseMirroringRole nvarchar(max)
 
   DECLARE @CurrentFGID int
@@ -208,20 +212,20 @@ BEGIN
   SET @Parameters += ', @TabLock = ' + ISNULL('''' + REPLACE(@TabLock,'''','''''') + '''','NULL')
   SET @Parameters += ', @FileGroups = ' + ISNULL('''' + REPLACE(@FileGroups,'''','''''') + '''','NULL')
   SET @Parameters += ', @Objects = ' + ISNULL('''' + REPLACE(@Objects,'''','''''') + '''','NULL')
-  SET @Parameters += ', @MaxDOP = ' + ISNULL(CAST(@MaxDOP AS nvarchar),'NULL')
+  SET @Parameters += ', @MaxDOP = ' + ISNULL(CAST(@MaxDOP AS nvarchar(max)),'NULL')
   SET @Parameters += ', @AvailabilityGroups = ' + ISNULL('''' + REPLACE(@AvailabilityGroups,'''','''''') + '''','NULL')
   SET @Parameters += ', @AvailabilityGroupReplicas = ' + ISNULL('''' + REPLACE(@AvailabilityGroupReplicas,'''','''''') + '''','NULL')
   SET @Parameters += ', @Updateability = ' + ISNULL('''' + REPLACE(@Updateability,'''','''''') + '''','NULL')
-  SET @Parameters += ', @TimeLimit = ' + ISNULL(CAST(@TimeLimit AS nvarchar),'NULL')
-  SET @Parameters += ', @LockTimeout = ' + ISNULL(CAST(@LockTimeout AS nvarchar),'NULL')
-  SET @Parameters += ', @LockMessageSeverity = ' + ISNULL(CAST(@LockMessageSeverity AS nvarchar),'NULL')
+  SET @Parameters += ', @TimeLimit = ' + ISNULL(CAST(@TimeLimit AS nvarchar(max)),'NULL')
+  SET @Parameters += ', @LockTimeout = ' + ISNULL(CAST(@LockTimeout AS nvarchar(max)),'NULL')
+  SET @Parameters += ', @LockMessageSeverity = ' + ISNULL(CAST(@LockMessageSeverity AS nvarchar(max)),'NULL')
   SET @Parameters += ', @StringDelimiter = ' + ISNULL('''' + REPLACE(@StringDelimiter,'''','''''') + '''','NULL')
   SET @Parameters += ', @DatabaseOrder = ' + ISNULL('''' + REPLACE(@DatabaseOrder,'''','''''') + '''','NULL')
   SET @Parameters += ', @DatabasesInParallel = ' + ISNULL('''' + REPLACE(@DatabasesInParallel,'''','''''') + '''','NULL')
   SET @Parameters += ', @LogToTable = ' + ISNULL('''' + REPLACE(@LogToTable,'''','''''') + '''','NULL')
   SET @Parameters += ', @Execute = ' + ISNULL('''' + REPLACE(@Execute,'''','''''') + '''','NULL')
 
-  SET @StartMessage = 'Date and time: ' + CONVERT(nvarchar,@StartTime,120)
+  SET @StartMessage = 'Date and time: ' + CONVERT(nvarchar(max),@StartTime,120)
   RAISERROR('%s',10,1,@StartMessage) WITH NOWAIT
 
   SET @StartMessage = 'Server: ' + CAST(SERVERPROPERTY('ServerName') AS nvarchar(max))
@@ -256,12 +260,6 @@ BEGIN
   ----------------------------------------------------------------------------------------------------
   --// Check core requirements                                                                    //--
   ----------------------------------------------------------------------------------------------------
-
-  IF NOT (SELECT [compatibility_level] FROM sys.databases WHERE [name] = DB_NAME()) >= 90
-  BEGIN
-    INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT  'The database ' + QUOTENAME(DB_NAME()) + ' has to be in compatibility level 90 or higher.', 16, 1
-  END
 
   IF NOT (SELECT uses_ansi_nulls FROM sys.sql_modules WHERE [object_id] = @@PROCID) = 1
   BEGIN
@@ -1270,7 +1268,7 @@ BEGIN
       BEGIN
         ROLLBACK TRANSACTION
       END
-      SET @ErrorMessage = 'Msg ' + CAST(ERROR_NUMBER() AS nvarchar) + ', ' + ISNULL(ERROR_MESSAGE(),'')
+      SET @ErrorMessage = 'Msg ' + CAST(ERROR_NUMBER() AS nvarchar(max)) + ', ' + ISNULL(ERROR_MESSAGE(),'')
       RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
       RAISERROR(@EmptyLine,10,1) WITH NOWAIT
       SET @ReturnCode = ERROR_NUMBER()
@@ -1337,7 +1335,7 @@ BEGIN
     SET @CurrentDatabase_sp_executesql = QUOTENAME(@CurrentDatabaseName) + '.sys.sp_executesql'
 
     BEGIN
-      SET @DatabaseMessage = 'Date and time: ' + CONVERT(nvarchar,SYSDATETIME(),120)
+      SET @DatabaseMessage = 'Date and time: ' + CONVERT(nvarchar(max),SYSDATETIME(),120)
       RAISERROR('%s',10,1,@DatabaseMessage) WITH NOWAIT
 
       SET @DatabaseMessage = 'Database: ' + QUOTENAME(@CurrentDatabaseName)
@@ -1371,7 +1369,7 @@ BEGIN
 
     IF SERVERPROPERTY('IsHadrEnabled') = 1
     BEGIN
-      SELECT @CurrentReplicaID = databases.replica_id
+      SELECT @CurrentAvailabilityGroupReplicaID = databases.replica_id
       FROM sys.databases databases
       INNER JOIN sys.availability_replicas availability_replicas ON databases.replica_id = availability_replicas.replica_id
       WHERE databases.[name] = @CurrentDatabaseName
@@ -1379,11 +1377,11 @@ BEGIN
       SELECT @CurrentAvailabilityGroupID = group_id,
              @CurrentSecondaryRoleAllowConnections = secondary_role_allow_connections_desc
       FROM sys.availability_replicas
-      WHERE replica_id = @CurrentReplicaID
+      WHERE replica_id = @CurrentAvailabilityGroupReplicaID
 
       SELECT @CurrentAvailabilityGroupRole = role_desc
       FROM sys.dm_hadr_availability_replica_states
-      WHERE replica_id = @CurrentReplicaID
+      WHERE replica_id = @CurrentAvailabilityGroupReplicaID
 
       SELECT @CurrentAvailabilityGroup = [name],
              @CurrentAvailabilityGroupBackupPreference = UPPER(automated_backup_preference_desc)
@@ -1394,6 +1392,22 @@ BEGIN
     IF SERVERPROPERTY('IsHadrEnabled') = 1 AND @CurrentAvailabilityGroup IS NOT NULL AND @AvailabilityGroupReplicas = 'PREFERRED_BACKUP_REPLICA'
     BEGIN
       SELECT @CurrentIsPreferredBackupReplica = sys.fn_hadr_backup_is_preferred_replica(@CurrentDatabaseName)
+    END
+
+    IF SERVERPROPERTY('IsHadrEnabled') = 1 AND @CurrentAvailabilityGroup IS NOT NULL
+    BEGIN
+      SELECT @CurrentDistributedAvailabilityGroupID = availability_groups.group_id,
+             @CurrentDistributedAvailabilityGroup = availability_groups.[name],
+             @CurrentDistributedAvailabilityGroupReplicaID = availability_replicas.replica_id
+      FROM sys.availability_groups availability_groups
+      INNER JOIN sys.availability_replicas availability_replicas ON availability_groups.group_id = availability_replicas.group_id
+      INNER JOIN sys.availability_groups availability_groups_local ON availability_replicas.replica_server_name = availability_groups_local.[name]
+      WHERE availability_groups.is_distributed = 1
+      AND availability_groups_local.group_id = @CurrentAvailabilityGroupID
+
+      SELECT @CurrentDistributedAvailabilityGroupRole = dm_hadr_availability_replica_states.role_desc
+      FROM sys.dm_hadr_availability_replica_states dm_hadr_availability_replica_states
+      WHERE dm_hadr_availability_replica_states.replica_id = @CurrentDistributedAvailabilityGroupReplicaID
     END
 
     IF SERVERPROPERTY('EngineEdition') <> 5
@@ -1428,6 +1442,21 @@ BEGIN
       END
     END
 
+    IF @CurrentDistributedAvailabilityGroup IS NOT NULL
+    BEGIN
+      SET @DatabaseMessage = 'Distributed availability group: ' + ISNULL(@CurrentDistributedAvailabilityGroup,'N/A')
+      RAISERROR('%s',10,1,@DatabaseMessage) WITH NOWAIT
+
+      SET @DatabaseMessage = 'Distributed availability group role: ' + ISNULL(@CurrentDistributedAvailabilityGroupRole,'N/A')
+      RAISERROR('%s',10,1,@DatabaseMessage) WITH NOWAIT
+
+      SET @DatabaseMessage = 'Replica role in distributed availability group: ' + CASE WHEN @CurrentDistributedAvailabilityGroupRole = 'PRIMARY' AND @CurrentAvailabilityGroupRole = 'PRIMARY' THEN 'Global primary'
+                                                                                       WHEN @CurrentDistributedAvailabilityGroupRole = 'SECONDARY' AND @CurrentAvailabilityGroupRole = 'PRIMARY' THEN 'Forwarder'
+                                                                                       WHEN @CurrentDistributedAvailabilityGroupRole = 'SECONDARY' AND @CurrentAvailabilityGroupRole = 'SECONDARY' THEN 'Secondary replica in secondary availability group'
+                                                                                       WHEN @CurrentDistributedAvailabilityGroupRole = 'PRIMARY' AND @CurrentAvailabilityGroupRole = 'SECONDARY' THEN 'Secondary replica in primary availability group' ELSE 'N/A' END
+      RAISERROR('%s',10,1,@DatabaseMessage) WITH NOWAIT
+    END
+
     IF @CurrentDatabaseMirroringRole IS NOT NULL
     BEGIN
       SET @DatabaseMessage = 'Database mirroring role: ' + @CurrentDatabaseMirroringRole
@@ -1453,7 +1482,7 @@ BEGIN
         SET @CurrentCommandType = 'DBCC_CHECKDB'
 
         SET @CurrentCommand = ''
-        IF @LockTimeout IS NOT NULL SET @CurrentCommand = 'SET LOCK_TIMEOUT ' + CAST(@LockTimeout * 1000 AS nvarchar) + '; '
+        IF @LockTimeout IS NOT NULL SET @CurrentCommand = 'SET LOCK_TIMEOUT ' + CAST(@LockTimeout * 1000 AS nvarchar(max)) + '; '
         SET @CurrentCommand += 'DBCC CHECKDB (' + QUOTENAME(@CurrentDatabaseName)
         IF @NoIndex = 'Y' SET @CurrentCommand += ', NOINDEX'
         SET @CurrentCommand += ') WITH ALL_ERRORMSGS'
@@ -1462,7 +1491,7 @@ BEGIN
         IF @ExtendedLogicalChecks = 'Y' SET @CurrentCommand += ', EXTENDED_LOGICAL_CHECKS'
         IF @NoInformationalMessages = 'Y' SET @CurrentCommand += ', NO_INFOMSGS'
         IF @TabLock = 'Y' SET @CurrentCommand += ', TABLOCK'
-        IF @MaxDOP IS NOT NULL SET @CurrentCommand += ', MAXDOP = ' + CAST(@MaxDOP AS nvarchar)
+        IF @MaxDOP IS NOT NULL SET @CurrentCommand += ', MAXDOP = ' + CAST(@MaxDOP AS nvarchar(max))
 
         EXECUTE @CurrentCommandOutput = dbo.CommandExecute @DatabaseContext = @CurrentDatabaseContext, @Command = @CurrentCommand, @CommandType = @CurrentCommandType, @Mode = 1, @DatabaseName = @CurrentDatabaseName, @LogToTable = @LogToTable, @Execute = @Execute
         SET @Error = @@ERROR
@@ -1555,7 +1584,7 @@ BEGIN
 
           -- Does the filegroup exist?
           SET @CurrentCommand = ''
-          IF @LockTimeout IS NOT NULL SET @CurrentCommand = 'SET LOCK_TIMEOUT ' + CAST(@LockTimeout * 1000 AS nvarchar) + '; '
+          IF @LockTimeout IS NOT NULL SET @CurrentCommand = 'SET LOCK_TIMEOUT ' + CAST(@LockTimeout * 1000 AS nvarchar(max)) + '; '
           SET @CurrentCommand += 'IF EXISTS(SELECT * FROM sys.filegroups filegroups WHERE [type] <> ''FX'' AND filegroups.data_space_id = @ParamFileGroupID AND filegroups.[name] = @ParamFileGroupName) BEGIN SET @ParamFileGroupExists = 1 END'
 
           BEGIN TRY
@@ -1564,7 +1593,7 @@ BEGIN
             IF @CurrentFileGroupExists IS NULL SET @CurrentFileGroupExists = 0
           END TRY
           BEGIN CATCH
-            SET @ErrorMessage = 'Msg ' + CAST(ERROR_NUMBER() AS nvarchar) + ', ' + ISNULL(ERROR_MESSAGE(),'') + CASE WHEN ERROR_NUMBER() = 1222 THEN ', ' + ' The file group ' + QUOTENAME(@CurrentFileGroupName) + ' in the database ' + QUOTENAME(@CurrentDatabaseName) + ' is locked. It could not be checked if the filegroup exists.' ELSE '' END
+            SET @ErrorMessage = 'Msg ' + CAST(ERROR_NUMBER() AS nvarchar(max)) + ', ' + ISNULL(ERROR_MESSAGE(),'') + CASE WHEN ERROR_NUMBER() = 1222 THEN ', ' + ' The file group ' + QUOTENAME(@CurrentFileGroupName) + ' in the database ' + QUOTENAME(@CurrentDatabaseName) + ' is locked. It could not be checked if the filegroup exists.' ELSE '' END
             SET @Severity = CASE WHEN ERROR_NUMBER() IN(1205,1222) THEN @LockMessageSeverity ELSE 16 END
             RAISERROR('%s',@Severity,1,@ErrorMessage) WITH NOWAIT
             RAISERROR(@EmptyLine,10,1) WITH NOWAIT
@@ -1582,14 +1611,14 @@ BEGIN
             SET @CurrentCommandType = 'DBCC_CHECKFILEGROUP'
 
             SET @CurrentCommand = ''
-            IF @LockTimeout IS NOT NULL SET @CurrentCommand = 'SET LOCK_TIMEOUT ' + CAST(@LockTimeout * 1000 AS nvarchar) + '; '
+            IF @LockTimeout IS NOT NULL SET @CurrentCommand = 'SET LOCK_TIMEOUT ' + CAST(@LockTimeout * 1000 AS nvarchar(max)) + '; '
             SET @CurrentCommand += 'DBCC CHECKFILEGROUP (' + QUOTENAME(@CurrentFileGroupName)
             IF @NoIndex = 'Y' SET @CurrentCommand += ', NOINDEX'
             SET @CurrentCommand += ') WITH ALL_ERRORMSGS'
             IF @PhysicalOnly = 'Y' SET @CurrentCommand += ', PHYSICAL_ONLY'
             IF @NoInformationalMessages = 'Y' SET @CurrentCommand += ', NO_INFOMSGS'
             IF @TabLock = 'Y' SET @CurrentCommand += ', TABLOCK'
-            IF @MaxDOP IS NOT NULL SET @CurrentCommand += ', MAXDOP = ' + CAST(@MaxDOP AS nvarchar)
+            IF @MaxDOP IS NOT NULL SET @CurrentCommand += ', MAXDOP = ' + CAST(@MaxDOP AS nvarchar(max))
 
             EXECUTE @CurrentCommandOutput = dbo.CommandExecute @DatabaseContext = @CurrentDatabaseContext, @Command = @CurrentCommand, @CommandType = @CurrentCommandType, @Mode = 1, @DatabaseName = @CurrentDatabaseName, @LogToTable = @LogToTable, @Execute = @Execute
             SET @Error = @@ERROR
@@ -1623,7 +1652,7 @@ BEGIN
         SET @CurrentCommandType = 'DBCC_CHECKALLOC'
 
         SET @CurrentCommand = ''
-        IF @LockTimeout IS NOT NULL SET @CurrentCommand = 'SET LOCK_TIMEOUT ' + CAST(@LockTimeout * 1000 AS nvarchar) + '; '
+        IF @LockTimeout IS NOT NULL SET @CurrentCommand = 'SET LOCK_TIMEOUT ' + CAST(@LockTimeout * 1000 AS nvarchar(max)) + '; '
         SET @CurrentCommand += 'DBCC CHECKALLOC (' + QUOTENAME(@CurrentDatabaseName)
         SET @CurrentCommand += ') WITH ALL_ERRORMSGS'
         IF @NoInformationalMessages = 'Y' SET @CurrentCommand += ', NO_INFOMSGS'
@@ -1724,7 +1753,7 @@ BEGIN
 
           -- Does the object exist?
           SET @CurrentCommand = ''
-          IF @LockTimeout IS NOT NULL SET @CurrentCommand = 'SET LOCK_TIMEOUT ' + CAST(@LockTimeout * 1000 AS nvarchar) + '; '
+          IF @LockTimeout IS NOT NULL SET @CurrentCommand = 'SET LOCK_TIMEOUT ' + CAST(@LockTimeout * 1000 AS nvarchar(max)) + '; '
           SET @CurrentCommand += 'IF EXISTS(SELECT * FROM sys.objects objects INNER JOIN sys.schemas schemas ON objects.schema_id = schemas.schema_id LEFT OUTER JOIN sys.tables tables ON objects.object_id = tables.object_id WHERE objects.[type] IN(''U'',''V'') AND EXISTS(SELECT * FROM sys.indexes indexes WHERE indexes.object_id = objects.object_id)' + CASE WHEN @Version >= 12 THEN ' AND (tables.is_memory_optimized = 0 OR is_memory_optimized IS NULL)' ELSE '' END + ' AND schemas.[schema_id] = @ParamSchemaID AND schemas.[name] = @ParamSchemaName AND objects.[object_id] = @ParamObjectID AND objects.[name] = @ParamObjectName AND objects.[type] = @ParamObjectType) BEGIN SET @ParamObjectExists = 1 END'
 
           BEGIN TRY
@@ -1733,7 +1762,7 @@ BEGIN
             IF @CurrentObjectExists IS NULL SET @CurrentObjectExists = 0
           END TRY
           BEGIN CATCH
-            SET @ErrorMessage = 'Msg ' + CAST(ERROR_NUMBER() AS nvarchar) + ', ' + ISNULL(ERROR_MESSAGE(),'') + CASE WHEN ERROR_NUMBER() = 1222 THEN ', ' + 'The object ' + QUOTENAME(@CurrentDatabaseName) + '.' + QUOTENAME(@CurrentSchemaName) + '.' + QUOTENAME(@CurrentObjectName) + ' is locked. It could not be checked if the object exists.' ELSE '' END
+            SET @ErrorMessage = 'Msg ' + CAST(ERROR_NUMBER() AS nvarchar(max)) + ', ' + ISNULL(ERROR_MESSAGE(),'') + CASE WHEN ERROR_NUMBER() = 1222 THEN ', ' + 'The object ' + QUOTENAME(@CurrentDatabaseName) + '.' + QUOTENAME(@CurrentSchemaName) + '.' + QUOTENAME(@CurrentObjectName) + ' is locked. It could not be checked if the object exists.' ELSE '' END
             SET @Severity = CASE WHEN ERROR_NUMBER() IN(1205,1222) THEN @LockMessageSeverity ELSE 16 END
             RAISERROR('%s',@Severity,1,@ErrorMessage) WITH NOWAIT
             RAISERROR(@EmptyLine,10,1) WITH NOWAIT
@@ -1751,7 +1780,7 @@ BEGIN
             SET @CurrentCommandType = 'DBCC_CHECKTABLE'
 
             SET @CurrentCommand = ''
-            IF @LockTimeout IS NOT NULL SET @CurrentCommand = 'SET LOCK_TIMEOUT ' + CAST(@LockTimeout * 1000 AS nvarchar) + '; '
+            IF @LockTimeout IS NOT NULL SET @CurrentCommand = 'SET LOCK_TIMEOUT ' + CAST(@LockTimeout * 1000 AS nvarchar(max)) + '; '
             SET @CurrentCommand += 'DBCC CHECKTABLE (N' + QUOTENAME(QUOTENAME(@CurrentSchemaName) + '.' + QUOTENAME(@CurrentObjectName),'''')
             IF @NoIndex = 'Y' SET @CurrentCommand += ', NOINDEX'
             SET @CurrentCommand += ') WITH ALL_ERRORMSGS'
@@ -1760,7 +1789,7 @@ BEGIN
             IF @ExtendedLogicalChecks = 'Y' SET @CurrentCommand += ', EXTENDED_LOGICAL_CHECKS'
             IF @NoInformationalMessages = 'Y' SET @CurrentCommand += ', NO_INFOMSGS'
             IF @TabLock = 'Y' SET @CurrentCommand += ', TABLOCK'
-            IF @MaxDOP IS NOT NULL SET @CurrentCommand += ', MAXDOP = ' + CAST(@MaxDOP AS nvarchar)
+            IF @MaxDOP IS NOT NULL SET @CurrentCommand += ', MAXDOP = ' + CAST(@MaxDOP AS nvarchar(max))
 
             EXECUTE @CurrentCommandOutput = dbo.CommandExecute @DatabaseContext = @CurrentDatabaseContext, @Command = @CurrentCommand, @CommandType = @CurrentCommandType, @Mode = 1, @DatabaseName = @CurrentDatabaseName, @SchemaName = @CurrentSchemaName, @ObjectName = @CurrentObjectName, @ObjectType = @CurrentObjectType, @LogToTable = @LogToTable, @Execute = @Execute
             SET @Error = @@ERROR
@@ -1790,14 +1819,14 @@ BEGIN
       END
 
       -- Check catalog
-      IF EXISTS(SELECT * FROM @SelectedCheckCommands WHERE CheckCommand = 'CHECKCATALOG') AND @CurrentAvailabilityGroupRole = 'PRIMARY' AND (SYSDATETIME() < DATEADD(SECOND,@TimeLimit,@StartTime) OR @TimeLimit IS NULL)
+      IF EXISTS(SELECT * FROM @SelectedCheckCommands WHERE CheckCommand = 'CHECKCATALOG') AND (@CurrentAvailabilityGroupRole = 'PRIMARY' OR @CurrentAvailabilityGroupRole IS NULL) AND (@CurrentDistributedAvailabilityGroupRole = 'PRIMARY' OR @CurrentDistributedAvailabilityGroupRole IS NULL) AND (SYSDATETIME() < DATEADD(SECOND,@TimeLimit,@StartTime) OR @TimeLimit IS NULL)
       BEGIN
         SET @CurrentDatabaseContext = CASE WHEN SERVERPROPERTY('EngineEdition') = 5 THEN @CurrentDatabaseName ELSE 'master' END
 
         SET @CurrentCommandType = 'DBCC_CHECKCATALOG'
 
         SET @CurrentCommand = ''
-        IF @LockTimeout IS NOT NULL SET @CurrentCommand = 'SET LOCK_TIMEOUT ' + CAST(@LockTimeout * 1000 AS nvarchar) + '; '
+        IF @LockTimeout IS NOT NULL SET @CurrentCommand = 'SET LOCK_TIMEOUT ' + CAST(@LockTimeout * 1000 AS nvarchar(max)) + '; '
         SET @CurrentCommand += 'DBCC CHECKCATALOG (' + QUOTENAME(@CurrentDatabaseName)
         SET @CurrentCommand += ')'
         IF @NoInformationalMessages = 'Y' SET @CurrentCommand += ' WITH NO_INFOMSGS'
@@ -1847,13 +1876,17 @@ BEGIN
     SET @CurrentInStandby = NULL
     SET @CurrentRecoveryModel = NULL
 
-    SET @CurrentReplicaID = NULL
+    SET @CurrentAvailabilityGroupReplicaID = NULL
     SET @CurrentAvailabilityGroupID = NULL
     SET @CurrentAvailabilityGroup = NULL
     SET @CurrentAvailabilityGroupRole = NULL
     SET @CurrentAvailabilityGroupBackupPreference = NULL
     SET @CurrentSecondaryRoleAllowConnections = NULL
     SET @CurrentIsPreferredBackupReplica = NULL
+    SET @CurrentDistributedAvailabilityGroupID = NULL
+    SET @CurrentDistributedAvailabilityGroup = NULL
+    SET @CurrentDistributedAvailabilityGroupReplicaID = NULL
+    SET @CurrentDistributedAvailabilityGroupRole = NULL
     SET @CurrentDatabaseMirroringRole = NULL
 
     SET @CurrentDatabaseContext = NULL
@@ -1871,7 +1904,7 @@ BEGIN
   ----------------------------------------------------------------------------------------------------
 
   Logging:
-  SET @EndMessage = 'Date and time: ' + CONVERT(nvarchar,SYSDATETIME(),120)
+  SET @EndMessage = 'Date and time: ' + CONVERT(nvarchar(max),SYSDATETIME(),120)
   RAISERROR('%s',10,1,@EndMessage) WITH NOWAIT
 
   RAISERROR(@EmptyLine,10,1) WITH NOWAIT
