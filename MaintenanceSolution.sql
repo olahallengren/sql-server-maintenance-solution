@@ -10,7 +10,7 @@ License: https://ola.hallengren.com/license.html
 
 GitHub: https://github.com/olahallengren/sql-server-maintenance-solution
 
-Version: 2026-05-30 10:34:53
+Version: 2026-05-30 11:07:55
 
 You can contact me by e-mail at ola@hallengren.com.
 
@@ -137,7 +137,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-05-30 10:34:53                                                               //--
+  --// Version: 2026-05-30 11:07:55                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -479,7 +479,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-05-30 10:34:53                                                               //--
+  --// Version: 2026-05-30 11:07:55                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -4820,7 +4820,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-05-30 10:34:53                                                               //--
+  --// Version: 2026-05-30 11:07:55                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -6772,7 +6772,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-05-30 10:34:53                                                               //--
+  --// Version: 2026-05-30 11:07:55                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -9457,7 +9457,7 @@ DECLARE @AmazonRDS bit = CASE WHEN SERVERPROPERTY('EngineEdition') IN (5, 8) THE
 IF @AmazonRDS = 0
 BEGIN
 
-  DECLARE JobCursor CURSOR FAST_FORWARD FOR SELECT job_id, step_id, command FROM msdb.dbo.sysjobsteps WHERE command LIKE '%DatabaseBackup%@CheckSum%' COLLATE SQL_Latin1_General_CP1_CS_AS
+  DECLARE JobCursor CURSOR LOCAL FAST_FORWARD FOR SELECT job_id, step_id, command FROM msdb.dbo.sysjobsteps WHERE command LIKE '%DatabaseBackup%@CheckSum%' COLLATE SQL_Latin1_General_CP1_CS_AS OR command LIKE '%DatabaseBackup%@ModificationLevel%' OR command LIKE '%DatabaseBackup%@LogSizeSinceLastLogBackup%' OR command LIKE '%DatabaseBackup%@TimeSinceLastLogBackup%'
 
   OPEN JobCursor
 
@@ -9466,6 +9466,9 @@ BEGIN
   WHILE @@FETCH_STATUS = 0
   BEGIN
     SET @command = REPLACE(@command, '@CheckSum', '@Checksum')
+    SET @command = REPLACE(@command, '@ModificationLevel', '@MinModificationLevel')
+    SET @command = REPLACE(@command, '@LogSizeSinceLastLogBackup', '@MinLogSizeSinceLastLogBackup')
+    SET @command = REPLACE(@command, '@TimeSinceLastLogBackup', '@MinTimeSinceLastLogBackup')
 
     EXECUTE msdb.dbo.sp_update_jobstep @job_id = @job_id, @step_id = @step_id, @command = @command
 
