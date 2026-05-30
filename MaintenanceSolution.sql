@@ -10,7 +10,7 @@ License: https://ola.hallengren.com/license.html
 
 GitHub: https://github.com/olahallengren/sql-server-maintenance-solution
 
-Version: 2026-05-30 19:58:39
+Version: 2026-05-30 20:03:41
 
 You can contact me by e-mail at ola@hallengren.com.
 
@@ -137,7 +137,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-05-30 19:58:39                                                               //--
+  --// Version: 2026-05-30 20:03:41                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -479,7 +479,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-05-30 19:58:39                                                               //--
+  --// Version: 2026-05-30 20:03:41                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -4820,7 +4820,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-05-30 19:58:39                                                               //--
+  --// Version: 2026-05-30 20:03:41                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -6772,7 +6772,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-05-30 19:58:39                                                               //--
+  --// Version: 2026-05-30 20:03:41                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -8321,7 +8321,7 @@ BEGIN
 
                                                     + ', CASE WHEN EXISTS(SELECT * FROM sys.indexes indexes WHERE indexes.[object_id] = objects.object_id AND [type] = 6) THEN 1 ELSE 0 END AS HasNonClusteredColumnstore'
 
-                                                    + ', ' + CASE WHEN (@Version >= 16 OR SERVERPROPERTY('EngineEdition') = 5 OR (SERVERPROPERTY('EngineEdition') = 8 AND SERVERPROPERTY('ProductUpdateType') = 'Continuous')) THEN 'CASE WHEN EXISTS(SELECT * FROM sys.index_columns index_columns INNER JOIN sys.indexes indexes2 ON index_columns.[object_id] = indexes2.[object_id] AND index_columns.index_id = indexes2.index_id WHERE indexes2.[object_id] = indexes.[object_id] AND indexes2.index_id = indexes.index_id AND index_columns.column_store_order_ordinal = 1) THEN 1 ELSE 0 END' ELSE '0' END + ' AS IsColumnstoreOrdered'
+                                                    + ', ' + CASE WHEN (@Version >= 16 OR SERVERPROPERTY('EngineEdition') = 5 OR (SERVERPROPERTY('EngineEdition') = 8 AND SERVERPROPERTY('ProductUpdateType') = 'Continuous')) THEN 'CASE WHEN EXISTS(SELECT * FROM sys.index_columns index_columns WHERE index_columns.[object_id] = indexes.[object_id] AND index_columns.index_id = indexes.index_id AND index_columns.column_store_order_ordinal = 1) THEN 1 ELSE 0 END' ELSE '0' END + ' AS IsColumnstoreOrdered'
 
                                                     + ', CASE WHEN EXISTS(SELECT * FROM sys.index_columns index_columns INNER JOIN sys.columns columns ON index_columns.object_id = columns.object_id AND index_columns.column_id = columns.column_id WHERE (index_columns.key_ordinal > 0 OR index_columns.partition_ordinal > 0 OR index_columns.is_included_column = 1) AND columns.is_computed = 1 AND index_columns.object_id = indexes.object_id AND index_columns.index_id = indexes.index_id) THEN 1 ELSE 0 END AS IsComputed'
 
