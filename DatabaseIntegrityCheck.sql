@@ -40,7 +40,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-05-31 13:47:17                                                               //--
+  --// Version: 2026-05-31 16:59:43                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -81,7 +81,6 @@ BEGIN
   DECLARE @CurrentAvailabilityGroupBackupPreference nvarchar(max)
   DECLARE @CurrentSecondaryRoleAllowConnections nvarchar(max)
   DECLARE @CurrentIsPreferredBackupReplica bit
-  DECLARE @CurrentDistributedAvailabilityGroupID uniqueidentifier
   DECLARE @CurrentDistributedAvailabilityGroup nvarchar(max)
   DECLARE @CurrentDistributedAvailabilityGroupReplicaID uniqueidentifier
   DECLARE @CurrentDistributedAvailabilityGroupRole nvarchar(max)
@@ -1413,8 +1412,7 @@ BEGIN
 
     IF SERVERPROPERTY('IsHadrEnabled') = 1 AND @CurrentAvailabilityGroup IS NOT NULL
     BEGIN
-      SELECT @CurrentDistributedAvailabilityGroupID = availability_groups.group_id,
-             @CurrentDistributedAvailabilityGroup = availability_groups.[name],
+      SELECT @CurrentDistributedAvailabilityGroup = availability_groups.[name],
              @CurrentDistributedAvailabilityGroupReplicaID = availability_replicas.replica_id
       FROM sys.availability_groups availability_groups
       INNER JOIN sys.availability_replicas availability_replicas ON availability_groups.group_id = availability_replicas.group_id
@@ -1900,7 +1898,6 @@ BEGIN
     SET @CurrentAvailabilityGroupBackupPreference = NULL
     SET @CurrentSecondaryRoleAllowConnections = NULL
     SET @CurrentIsPreferredBackupReplica = NULL
-    SET @CurrentDistributedAvailabilityGroupID = NULL
     SET @CurrentDistributedAvailabilityGroup = NULL
     SET @CurrentDistributedAvailabilityGroupReplicaID = NULL
     SET @CurrentDistributedAvailabilityGroupRole = NULL
