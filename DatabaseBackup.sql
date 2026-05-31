@@ -78,6 +78,7 @@ ALTER PROCEDURE [dbo].[DatabaseBackup]
 @Stats int = NULL,
 @ExpireDate datetime = NULL,
 @RetainDays int = NULL,
+@AllowNonCopyOnlyBackupsOnForwarder nvarchar(max) = 'N',
 @StringDelimiter nvarchar(max) = ',',
 @DatabaseOrder nvarchar(max) = NULL,
 @DatabasesInParallel nvarchar(max) = 'N',
@@ -92,7 +93,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-05-30 20:03:41                                                               //--
+  --// Version: 2026-05-31 13:47:17                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -150,7 +151,7 @@ BEGIN
   DECLARE @CurrentDatabaseNameFS nvarchar(max)
   DECLARE @CurrentDirectoryStructure nvarchar(max)
   DECLARE @CurrentDatabaseFileName nvarchar(max)
-  DECLARE @CurrentMaxFilePathLength nvarchar(max)
+  DECLARE @CurrentMaxFilePathLength int
   DECLARE @CurrentFileName nvarchar(max)
   DECLARE @CurrentDirectoryID int
   DECLARE @CurrentDirectoryPath nvarchar(4000)
@@ -372,6 +373,7 @@ BEGIN
   SET @Parameters += ', @Stats = ' + ISNULL(CAST(@Stats AS nvarchar(max)),'NULL')
   SET @Parameters += ', @ExpireDate = ' + ISNULL('''' + CONVERT(nvarchar(max), @ExpireDate, 21) + '''','NULL')
   SET @Parameters += ', @RetainDays = ' + ISNULL(CAST(@RetainDays AS nvarchar(max)),'NULL')
+  SET @Parameters += ', @AllowNonCopyOnlyBackupsOnForwarder = ' + ISNULL('''' + REPLACE(@AllowNonCopyOnlyBackupsOnForwarder,'''','''''') + '''','NULL')
   SET @Parameters += ', @StringDelimiter = ' + ISNULL('''' + REPLACE(@StringDelimiter,'''','''''') + '''','NULL')
   SET @Parameters += ', @DatabaseOrder = ' + ISNULL('''' + REPLACE(@DatabaseOrder,'''','''''') + '''','NULL')
   SET @Parameters += ', @DatabasesInParallel = ' + ISNULL('''' + REPLACE(@DatabasesInParallel,'''','''''') + '''','NULL')
@@ -2363,6 +2365,14 @@ BEGIN
 
   ----------------------------------------------------------------------------------------------------
 
+  IF @AllowNonCopyOnlyBackupsOnForwarder NOT IN('Y','N') OR @AllowNonCopyOnlyBackupsOnForwarder IS NULL
+  BEGIN
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'The value for the parameter @AllowNonCopyOnlyBackupsOnForwarder is not supported.', 16, 1
+  END
+
+  ----------------------------------------------------------------------------------------------------
+
   IF @StringDelimiter IS NULL OR LEN(@StringDelimiter) > 1
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
@@ -3051,6 +3061,7 @@ BEGIN
     AND NOT (@CurrentAvailabilityGroup IS NOT NULL AND @CurrentBackupOperationSupportedOnSecondaryReplicas = 0 AND (@CurrentAvailabilityGroupRole <> 'PRIMARY' OR @CurrentAvailabilityGroupRole IS NULL))
     AND NOT (@CurrentAvailabilityGroup IS NOT NULL AND @CurrentBackupOperationSupportedOnSecondaryReplicas = 1 AND (@CurrentIsPreferredBackupReplica <> 1 OR @CurrentIsPreferredBackupReplica IS NULL) AND @OverrideBackupPreference = 'N')
     AND NOT (@CurrentDistributedAvailabilityGroup IS NOT NULL AND @CurrentBackupOperationSupportedOnSecondaryReplicas = 0 AND (@CurrentDistributedAvailabilityGroupRole <> 'PRIMARY' OR @CurrentDistributedAvailabilityGroupRole IS NULL))
+    AND NOT (@CurrentDistributedAvailabilityGroup IS NOT NULL AND (@CurrentDistributedAvailabilityGroupRole <> 'PRIMARY' OR @CurrentDistributedAvailabilityGroupRole IS NULL) AND @AllowNonCopyOnlyBackupsOnForwarder = 'N' AND NOT (@CurrentBackupType = 'FULL' AND @CopyOnly = 'Y'))
     AND NOT ((@CurrentLogShippingRole = 'PRIMARY' AND @CurrentLogShippingRole IS NOT NULL) AND @CurrentBackupType = 'LOG' AND @ExcludeLogShippedFromLogBackup = 'Y')
     AND NOT (@CurrentIsReadOnly = 1 AND @Updateability = 'READ_WRITE')
     AND NOT (@CurrentIsReadOnly = 0 AND @Updateability = 'READ_ONLY')
