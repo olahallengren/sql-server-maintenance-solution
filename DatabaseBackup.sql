@@ -93,7 +93,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-05-30 22:05:44                                                               //--
+  --// Version: 2026-05-31 13:47:17                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -151,7 +151,7 @@ BEGIN
   DECLARE @CurrentDatabaseNameFS nvarchar(max)
   DECLARE @CurrentDirectoryStructure nvarchar(max)
   DECLARE @CurrentDatabaseFileName nvarchar(max)
-  DECLARE @CurrentMaxFilePathLength nvarchar(max)
+  DECLARE @CurrentMaxFilePathLength int
   DECLARE @CurrentFileName nvarchar(max)
   DECLARE @CurrentDirectoryID int
   DECLARE @CurrentDirectoryPath nvarchar(4000)
