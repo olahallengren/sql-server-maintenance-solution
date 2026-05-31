@@ -10,7 +10,7 @@ License: https://ola.hallengren.com/license.html
 
 GitHub: https://github.com/olahallengren/sql-server-maintenance-solution
 
-Version: 2026-05-31 13:47:17
+Version: 2026-05-31 16:59:43
 
 You can contact me by e-mail at ola@hallengren.com.
 
@@ -137,7 +137,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-05-31 13:47:17                                                               //--
+  --// Version: 2026-05-31 16:59:43                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -480,7 +480,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-05-31 13:47:17                                                               //--
+  --// Version: 2026-05-31 16:59:43                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -553,7 +553,6 @@ BEGIN
   DECLARE @CurrentAvailabilityGroupDatabaseReplicaSynchronizationState nvarchar(max)
   DECLARE @CurrentAvailabilityGroupDatabaseReplicaSynchronizationHealth nvarchar(max)
   DECLARE @CurrentAvailabilityGroupBackupPreference nvarchar(max)
-  DECLARE @CurrentDistributedAvailabilityGroupID uniqueidentifier
   DECLARE @CurrentDistributedAvailabilityGroup nvarchar(max)
   DECLARE @CurrentDistributedAvailabilityGroupReplicaID uniqueidentifier
   DECLARE @CurrentDistributedAvailabilityGroupRole nvarchar(max)
@@ -3221,8 +3220,7 @@ BEGIN
 
     IF SERVERPROPERTY('IsHadrEnabled') = 1 AND @CurrentAvailabilityGroup IS NOT NULL
     BEGIN
-      SELECT @CurrentDistributedAvailabilityGroupID = availability_groups.group_id,
-             @CurrentDistributedAvailabilityGroup = availability_groups.[name],
+      SELECT @CurrentDistributedAvailabilityGroup = availability_groups.[name],
              @CurrentDistributedAvailabilityGroupReplicaID = availability_replicas.replica_id
       FROM sys.availability_groups availability_groups
       INNER JOIN sys.availability_replicas availability_replicas ON availability_groups.group_id = availability_replicas.group_id
@@ -3657,7 +3655,7 @@ BEGIN
         SET @CurrentDirectoryStructure = REPLACE(@CurrentDirectoryStructure,'{Month}',RIGHT('0' + CAST(DATEPART(MONTH,CASE WHEN @TokenTimezone = 'UTC' THEN @CurrentDateUTC ELSE @CurrentDate END) AS nvarchar(max)),2))
         SET @CurrentDirectoryStructure = REPLACE(@CurrentDirectoryStructure,'{Day}',RIGHT('0' + CAST(DATEPART(DAY,CASE WHEN @TokenTimezone = 'UTC' THEN @CurrentDateUTC ELSE @CurrentDate END) AS nvarchar(max)),2))
         SET @CurrentDirectoryStructure = REPLACE(@CurrentDirectoryStructure,'{Week}',RIGHT('0' + CAST(DATEPART(WEEK,CASE WHEN @TokenTimezone = 'UTC' THEN @CurrentDateUTC ELSE @CurrentDate END) AS nvarchar(max)),2))
-        SET @CurrentDirectoryStructure = REPLACE(@CurrentDirectoryStructure,'{Weekday}',DATENAME(WEEKDAY,CASE WHEN @TokenTimezone = 'UTC' THEN @CurrentDateUTC ELSE @CurrentDate END))
+        SET @CurrentDirectoryStructure = REPLACE(@CurrentDirectoryStructure,'{Weekday}',FORMAT(CASE WHEN @TokenTimezone = 'UTC' THEN @CurrentDateUTC ELSE @CurrentDate END,'dddd','en-US'))
         SET @CurrentDirectoryStructure = REPLACE(@CurrentDirectoryStructure,'{Hour}',RIGHT('0' + CAST(DATEPART(HOUR,CASE WHEN @TokenTimezone = 'UTC' THEN @CurrentDateUTC ELSE @CurrentDate END) AS nvarchar(max)),2))
         SET @CurrentDirectoryStructure = REPLACE(@CurrentDirectoryStructure,'{Minute}',RIGHT('0' + CAST(DATEPART(MINUTE,CASE WHEN @TokenTimezone = 'UTC' THEN @CurrentDateUTC ELSE @CurrentDate END) AS nvarchar(max)),2))
         SET @CurrentDirectoryStructure = REPLACE(@CurrentDirectoryStructure,'{Second}',RIGHT('0' + CAST(DATEPART(SECOND,CASE WHEN @TokenTimezone = 'UTC' THEN @CurrentDateUTC ELSE @CurrentDate END) AS nvarchar(max)),2))
@@ -3821,7 +3819,7 @@ BEGIN
       SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'{Month}',RIGHT('0' + CAST(DATEPART(MONTH,CASE WHEN @TokenTimezone = 'UTC' THEN @CurrentDateUTC ELSE @CurrentDate END) AS nvarchar(max)),2))
       SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'{Day}',RIGHT('0' + CAST(DATEPART(DAY,CASE WHEN @TokenTimezone = 'UTC' THEN @CurrentDateUTC ELSE @CurrentDate END) AS nvarchar(max)),2))
       SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'{Week}',RIGHT('0' + CAST(DATEPART(WEEK,CASE WHEN @TokenTimezone = 'UTC' THEN @CurrentDateUTC ELSE @CurrentDate END) AS nvarchar(max)),2))
-      SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'{Weekday}',DATENAME(WEEKDAY,CASE WHEN @TokenTimezone = 'UTC' THEN @CurrentDateUTC ELSE @CurrentDate END))
+      SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'{Weekday}',FORMAT(CASE WHEN @TokenTimezone = 'UTC' THEN @CurrentDateUTC ELSE @CurrentDate END,'dddd','en-US'))
       SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'{Hour}',RIGHT('0' + CAST(DATEPART(HOUR,CASE WHEN @TokenTimezone = 'UTC' THEN @CurrentDateUTC ELSE @CurrentDate END) AS nvarchar(max)),2))
       SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'{Minute}',RIGHT('0' + CAST(DATEPART(MINUTE,CASE WHEN @TokenTimezone = 'UTC' THEN @CurrentDateUTC ELSE @CurrentDate END) AS nvarchar(max)),2))
       SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'{Second}',RIGHT('0' + CAST(DATEPART(SECOND,CASE WHEN @TokenTimezone = 'UTC' THEN @CurrentDateUTC ELSE @CurrentDate END) AS nvarchar(max)),2))
@@ -4743,7 +4741,6 @@ BEGIN
     SET @CurrentAvailabilityGroupDatabaseReplicaSynchronizationHealth = NULL
     SET @CurrentAvailabilityGroupBackupPreference = NULL
     SET @CurrentIsPreferredBackupReplica = NULL
-    SET @CurrentDistributedAvailabilityGroupID = NULL
     SET @CurrentDistributedAvailabilityGroup = NULL
     SET @CurrentDistributedAvailabilityGroupReplicaID = NULL
     SET @CurrentDistributedAvailabilityGroupRole = NULL
@@ -4831,7 +4828,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-05-31 13:47:17                                                               //--
+  --// Version: 2026-05-31 16:59:43                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -4872,7 +4869,6 @@ BEGIN
   DECLARE @CurrentAvailabilityGroupBackupPreference nvarchar(max)
   DECLARE @CurrentSecondaryRoleAllowConnections nvarchar(max)
   DECLARE @CurrentIsPreferredBackupReplica bit
-  DECLARE @CurrentDistributedAvailabilityGroupID uniqueidentifier
   DECLARE @CurrentDistributedAvailabilityGroup nvarchar(max)
   DECLARE @CurrentDistributedAvailabilityGroupReplicaID uniqueidentifier
   DECLARE @CurrentDistributedAvailabilityGroupRole nvarchar(max)
@@ -6204,8 +6200,7 @@ BEGIN
 
     IF SERVERPROPERTY('IsHadrEnabled') = 1 AND @CurrentAvailabilityGroup IS NOT NULL
     BEGIN
-      SELECT @CurrentDistributedAvailabilityGroupID = availability_groups.group_id,
-             @CurrentDistributedAvailabilityGroup = availability_groups.[name],
+      SELECT @CurrentDistributedAvailabilityGroup = availability_groups.[name],
              @CurrentDistributedAvailabilityGroupReplicaID = availability_replicas.replica_id
       FROM sys.availability_groups availability_groups
       INNER JOIN sys.availability_replicas availability_replicas ON availability_groups.group_id = availability_replicas.group_id
@@ -6691,7 +6686,6 @@ BEGIN
     SET @CurrentAvailabilityGroupBackupPreference = NULL
     SET @CurrentSecondaryRoleAllowConnections = NULL
     SET @CurrentIsPreferredBackupReplica = NULL
-    SET @CurrentDistributedAvailabilityGroupID = NULL
     SET @CurrentDistributedAvailabilityGroup = NULL
     SET @CurrentDistributedAvailabilityGroupReplicaID = NULL
     SET @CurrentDistributedAvailabilityGroupRole = NULL
@@ -6783,7 +6777,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-05-31 13:47:17                                                               //--
+  --// Version: 2026-05-31 16:59:43                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -6828,7 +6822,6 @@ BEGIN
   DECLARE @CurrentAvailabilityGroupID uniqueidentifier
   DECLARE @CurrentAvailabilityGroup nvarchar(max)
   DECLARE @CurrentAvailabilityGroupRole nvarchar(max)
-  DECLARE @CurrentDistributedAvailabilityGroupID uniqueidentifier
   DECLARE @CurrentDistributedAvailabilityGroup nvarchar(max)
   DECLARE @CurrentDistributedAvailabilityGroupReplicaID uniqueidentifier
   DECLARE @CurrentDistributedAvailabilityGroupRole nvarchar(max)
@@ -8218,8 +8211,7 @@ BEGIN
 
     IF SERVERPROPERTY('IsHadrEnabled') = 1 AND @CurrentAvailabilityGroup IS NOT NULL
     BEGIN
-      SELECT @CurrentDistributedAvailabilityGroupID = availability_groups.group_id,
-             @CurrentDistributedAvailabilityGroup = availability_groups.[name],
+      SELECT @CurrentDistributedAvailabilityGroup = availability_groups.[name],
              @CurrentDistributedAvailabilityGroupReplicaID = availability_replicas.replica_id
       FROM sys.availability_groups availability_groups
       INNER JOIN sys.availability_replicas availability_replicas ON availability_groups.group_id = availability_replicas.group_id
@@ -8955,7 +8947,7 @@ BEGIN
             FROM @CurrentAlterIndexWithClauseArguments
           END
 
-          EXECUTE @CurrentCommandOutput = dbo.CommandExecute @DatabaseContext = @CurrentDatabaseName, @Command = @CurrentCommand, @CommandType = @CurrentCommandType, @Mode = 2, @Comment = @CurrentComment, @DatabaseName = @CurrentDatabaseName, @SchemaName = @CurrentSchemaName, @ObjectName = @CurrentObjectName, @ObjectType = @CurrentObjectType, @IndexName = @CurrentIndexName, @IndexType = @CurrentIndexType, @PartitionNumber = @CurrentPartitionNumber, @ExtendedInfo = @CurrentExtendedInfo, @LockMessageSeverity = @LockMessageSeverity, @ExecuteAsUser = @ExecuteAsUser, @LogToTable = @LogToTable, @Execute = @Execute
+          EXECUTE @CurrentCommandOutput = dbo.CommandExecute @DatabaseContext = @CurrentDatabaseContext, @Command = @CurrentCommand, @CommandType = @CurrentCommandType, @Mode = 2, @Comment = @CurrentComment, @DatabaseName = @CurrentDatabaseName, @SchemaName = @CurrentSchemaName, @ObjectName = @CurrentObjectName, @ObjectType = @CurrentObjectType, @IndexName = @CurrentIndexName, @IndexType = @CurrentIndexType, @PartitionNumber = @CurrentPartitionNumber, @ExtendedInfo = @CurrentExtendedInfo, @LockMessageSeverity = @LockMessageSeverity, @ExecuteAsUser = @ExecuteAsUser, @LogToTable = @LogToTable, @Execute = @Execute
           SET @Error = @@ERROR
           IF @Error <> 0 SET @CurrentCommandOutput = @Error
           IF @CurrentCommandOutput <> 0 SET @ReturnCode = @CurrentCommandOutput
@@ -9036,7 +9028,7 @@ BEGIN
 
           IF @PartitionLevelStatistics = 1 AND @CurrentIsIncremental = 1 AND @CurrentPartitionNumber IS NOT NULL SET @CurrentCommand += ' ON PARTITIONS(' + CAST(@CurrentPartitionNumber AS nvarchar(max)) + ')'
 
-          EXECUTE @CurrentCommandOutput = dbo.CommandExecute @DatabaseContext = @CurrentDatabaseName, @Command = @CurrentCommand, @CommandType = @CurrentCommandType, @Mode = 2, @Comment = @CurrentComment, @DatabaseName = @CurrentDatabaseName, @SchemaName = @CurrentSchemaName, @ObjectName = @CurrentObjectName, @ObjectType = @CurrentObjectType, @IndexName = @CurrentIndexName, @IndexType = @CurrentIndexType, @StatisticsName = @CurrentStatisticsName, @ExtendedInfo = @CurrentExtendedInfo, @LockMessageSeverity = @LockMessageSeverity, @ExecuteAsUser = @ExecuteAsUser, @LogToTable = @LogToTable, @Execute = @Execute
+          EXECUTE @CurrentCommandOutput = dbo.CommandExecute @DatabaseContext = @CurrentDatabaseContext, @Command = @CurrentCommand, @CommandType = @CurrentCommandType, @Mode = 2, @Comment = @CurrentComment, @DatabaseName = @CurrentDatabaseName, @SchemaName = @CurrentSchemaName, @ObjectName = @CurrentObjectName, @ObjectType = @CurrentObjectType, @IndexName = @CurrentIndexName, @IndexType = @CurrentIndexType, @StatisticsName = @CurrentStatisticsName, @ExtendedInfo = @CurrentExtendedInfo, @LockMessageSeverity = @LockMessageSeverity, @ExecuteAsUser = @ExecuteAsUser, @LogToTable = @LogToTable, @Execute = @Execute
           SET @Error = @@ERROR
           IF @Error <> 0 SET @CurrentCommandOutput = @Error
           IF @CurrentCommandOutput <> 0 SET @ReturnCode = @CurrentCommandOutput
@@ -9156,7 +9148,6 @@ BEGIN
     SET @CurrentAvailabilityGroupID = NULL
     SET @CurrentAvailabilityGroup = NULL
     SET @CurrentAvailabilityGroupRole = NULL
-    SET @CurrentDistributedAvailabilityGroupID = NULL
     SET @CurrentDistributedAvailabilityGroup = NULL
     SET @CurrentDistributedAvailabilityGroupReplicaID = NULL
     SET @CurrentDistributedAvailabilityGroupRole = NULL

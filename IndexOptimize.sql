@@ -54,7 +54,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-05-31 13:47:17                                                               //--
+  --// Version: 2026-05-31 16:59:43                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -99,7 +99,6 @@ BEGIN
   DECLARE @CurrentAvailabilityGroupID uniqueidentifier
   DECLARE @CurrentAvailabilityGroup nvarchar(max)
   DECLARE @CurrentAvailabilityGroupRole nvarchar(max)
-  DECLARE @CurrentDistributedAvailabilityGroupID uniqueidentifier
   DECLARE @CurrentDistributedAvailabilityGroup nvarchar(max)
   DECLARE @CurrentDistributedAvailabilityGroupReplicaID uniqueidentifier
   DECLARE @CurrentDistributedAvailabilityGroupRole nvarchar(max)
@@ -1489,8 +1488,7 @@ BEGIN
 
     IF SERVERPROPERTY('IsHadrEnabled') = 1 AND @CurrentAvailabilityGroup IS NOT NULL
     BEGIN
-      SELECT @CurrentDistributedAvailabilityGroupID = availability_groups.group_id,
-             @CurrentDistributedAvailabilityGroup = availability_groups.[name],
+      SELECT @CurrentDistributedAvailabilityGroup = availability_groups.[name],
              @CurrentDistributedAvailabilityGroupReplicaID = availability_replicas.replica_id
       FROM sys.availability_groups availability_groups
       INNER JOIN sys.availability_replicas availability_replicas ON availability_groups.group_id = availability_replicas.group_id
@@ -2226,7 +2224,7 @@ BEGIN
             FROM @CurrentAlterIndexWithClauseArguments
           END
 
-          EXECUTE @CurrentCommandOutput = dbo.CommandExecute @DatabaseContext = @CurrentDatabaseName, @Command = @CurrentCommand, @CommandType = @CurrentCommandType, @Mode = 2, @Comment = @CurrentComment, @DatabaseName = @CurrentDatabaseName, @SchemaName = @CurrentSchemaName, @ObjectName = @CurrentObjectName, @ObjectType = @CurrentObjectType, @IndexName = @CurrentIndexName, @IndexType = @CurrentIndexType, @PartitionNumber = @CurrentPartitionNumber, @ExtendedInfo = @CurrentExtendedInfo, @LockMessageSeverity = @LockMessageSeverity, @ExecuteAsUser = @ExecuteAsUser, @LogToTable = @LogToTable, @Execute = @Execute
+          EXECUTE @CurrentCommandOutput = dbo.CommandExecute @DatabaseContext = @CurrentDatabaseContext, @Command = @CurrentCommand, @CommandType = @CurrentCommandType, @Mode = 2, @Comment = @CurrentComment, @DatabaseName = @CurrentDatabaseName, @SchemaName = @CurrentSchemaName, @ObjectName = @CurrentObjectName, @ObjectType = @CurrentObjectType, @IndexName = @CurrentIndexName, @IndexType = @CurrentIndexType, @PartitionNumber = @CurrentPartitionNumber, @ExtendedInfo = @CurrentExtendedInfo, @LockMessageSeverity = @LockMessageSeverity, @ExecuteAsUser = @ExecuteAsUser, @LogToTable = @LogToTable, @Execute = @Execute
           SET @Error = @@ERROR
           IF @Error <> 0 SET @CurrentCommandOutput = @Error
           IF @CurrentCommandOutput <> 0 SET @ReturnCode = @CurrentCommandOutput
@@ -2307,7 +2305,7 @@ BEGIN
 
           IF @PartitionLevelStatistics = 1 AND @CurrentIsIncremental = 1 AND @CurrentPartitionNumber IS NOT NULL SET @CurrentCommand += ' ON PARTITIONS(' + CAST(@CurrentPartitionNumber AS nvarchar(max)) + ')'
 
-          EXECUTE @CurrentCommandOutput = dbo.CommandExecute @DatabaseContext = @CurrentDatabaseName, @Command = @CurrentCommand, @CommandType = @CurrentCommandType, @Mode = 2, @Comment = @CurrentComment, @DatabaseName = @CurrentDatabaseName, @SchemaName = @CurrentSchemaName, @ObjectName = @CurrentObjectName, @ObjectType = @CurrentObjectType, @IndexName = @CurrentIndexName, @IndexType = @CurrentIndexType, @StatisticsName = @CurrentStatisticsName, @ExtendedInfo = @CurrentExtendedInfo, @LockMessageSeverity = @LockMessageSeverity, @ExecuteAsUser = @ExecuteAsUser, @LogToTable = @LogToTable, @Execute = @Execute
+          EXECUTE @CurrentCommandOutput = dbo.CommandExecute @DatabaseContext = @CurrentDatabaseContext, @Command = @CurrentCommand, @CommandType = @CurrentCommandType, @Mode = 2, @Comment = @CurrentComment, @DatabaseName = @CurrentDatabaseName, @SchemaName = @CurrentSchemaName, @ObjectName = @CurrentObjectName, @ObjectType = @CurrentObjectType, @IndexName = @CurrentIndexName, @IndexType = @CurrentIndexType, @StatisticsName = @CurrentStatisticsName, @ExtendedInfo = @CurrentExtendedInfo, @LockMessageSeverity = @LockMessageSeverity, @ExecuteAsUser = @ExecuteAsUser, @LogToTable = @LogToTable, @Execute = @Execute
           SET @Error = @@ERROR
           IF @Error <> 0 SET @CurrentCommandOutput = @Error
           IF @CurrentCommandOutput <> 0 SET @ReturnCode = @CurrentCommandOutput
@@ -2427,7 +2425,6 @@ BEGIN
     SET @CurrentAvailabilityGroupID = NULL
     SET @CurrentAvailabilityGroup = NULL
     SET @CurrentAvailabilityGroupRole = NULL
-    SET @CurrentDistributedAvailabilityGroupID = NULL
     SET @CurrentDistributedAvailabilityGroup = NULL
     SET @CurrentDistributedAvailabilityGroupReplicaID = NULL
     SET @CurrentDistributedAvailabilityGroupRole = NULL
