@@ -93,7 +93,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-06-06 10:32:46                                                               //--
+  --// Version: 2026-06-06 12:34:43                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -2800,7 +2800,7 @@ BEGIN
 
     SELECT @CurrentMaxTransferSize = CASE
     WHEN @MaxTransferSize IS NOT NULL THEN @MaxTransferSize
-    WHEN @MaxTransferSize IS NULL AND @Compress = 'Y' AND @CurrentIsEncrypted = 1 AND @BackupSoftware IS NULL AND ((@Version >= 13 AND @Version < 15.0404316) OR (SERVERPROPERTY('EngineEdition') = 8 AND SERVERPROPERTY('ProductUpdateType') = 'Continuous')) AND @Credential IS NULL THEN 65537
+    WHEN @MaxTransferSize IS NULL AND @Compress = 'Y' AND @CurrentIsEncrypted = 1 AND @BackupSoftware IS NULL AND (@Version < 15.0404316 AND NOT (SERVERPROPERTY('EngineEdition') = 8 AND SERVERPROPERTY('ProductUpdateType') = 'Continuous')) AND @Credential IS NULL THEN 65537
     END
 
     IF SERVERPROPERTY('IsHadrEnabled') = 1
