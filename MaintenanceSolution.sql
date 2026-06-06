@@ -10,7 +10,7 @@ License: https://ola.hallengren.com/license.html
 
 GitHub: https://github.com/olahallengren/sql-server-maintenance-solution
 
-Version: 2026-06-06 12:34:43
+Version: 2026-06-06 21:35:24
 
 You can contact me by e-mail at ola@hallengren.com.
 
@@ -139,7 +139,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-06-06 12:34:43                                                               //--
+  --// Version: 2026-06-06 21:35:24                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -498,7 +498,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-06-06 12:34:43                                                               //--
+  --// Version: 2026-06-06 21:35:24                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -4850,7 +4850,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-06-06 12:34:43                                                               //--
+  --// Version: 2026-06-06 21:35:24                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -6799,7 +6799,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-06-06 12:34:43                                                               //--
+  --// Version: 2026-06-06 21:35:24                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -6897,6 +6897,7 @@ BEGIN
   DECLARE @CurrentHasFilter bit
   DECLARE @CurrentNoRecompute bit
   DECLARE @CurrentIsIncremental bit
+  DECLARE @CurrentObjectRowCount bigint
   DECLARE @CurrentRowCount bigint
   DECLARE @CurrentModificationCounter bigint
   DECLARE @CurrentOnReadOnlyFileGroup bit
@@ -8382,6 +8383,7 @@ BEGIN
           END
 
           SET @CurrentCommand = @CurrentCommand + ' WHERE objects.[type] IN(''U'',''V'')'
+                                                    + ' AND (tables.is_external = 0 OR tables.is_external IS NULL)'
                                                     + CASE WHEN @MSShippedObjects = 'N' THEN ' AND objects.is_ms_shipped = 0' ELSE '' END
                                                     + ' AND indexes.[type] IN(1,2,3,4,5,6,7)'
                                                     + ' AND indexes.is_disabled = 0 AND indexes.is_hypothetical = 0'
@@ -8437,6 +8439,7 @@ BEGIN
 
           SET @CurrentCommand = @CurrentCommand + ' WHERE objects.[type] IN(''U'',''V'')'
                                                     + ' AND (tables.is_memory_optimized = 0 OR tables.is_memory_optimized IS NULL)'
+                                                    + ' AND (tables.is_external = 0 OR tables.is_external IS NULL)'
                                                     + CASE WHEN @MSShippedObjects = 'N' THEN ' AND objects.is_ms_shipped = 0' ELSE '' END
                                                     + ' AND NOT EXISTS(SELECT * FROM sys.indexes indexes WHERE indexes.[object_id] = stats.[object_id] AND indexes.index_id = stats.stats_id)'
                                                     + ' AND NOT EXISTS(SELECT * FROM sys.indexes indexes2 WHERE indexes2.[object_id] = stats.[object_id] AND indexes2.type = 1 AND indexes2.is_disabled = 1)'
@@ -8686,6 +8689,37 @@ BEGIN
           END CATCH
         END
 
+        -- What is the object row count?
+        IF @CurrentStatisticsID IS NOT NULL AND @UpdateStatistics IS NOT NULL
+        BEGIN
+          SET @CurrentCommand = ''
+          IF @LockTimeout IS NOT NULL SET @CurrentCommand = 'SET LOCK_TIMEOUT ' + CAST(@LockTimeout * 1000 AS nvarchar(max)) + '; '
+
+          IF @PartitionLevelStatistics = 1 AND @CurrentIsIncremental = 1
+          BEGIN
+            SET @CurrentCommand += 'SELECT @ParamObjectRowCount = row_count FROM sys.dm_db_partition_stats WHERE [object_id] = @ParamObjectID AND index_id = (SELECT MIN(index_id) FROM sys.indexes WHERE [object_id] = @ParamObjectID) AND partition_number = @ParamPartitionNumber'
+          END
+          ELSE
+          BEGIN
+            SET @CurrentCommand += 'SELECT @ParamObjectRowCount = SUM(row_count) FROM sys.dm_db_partition_stats WHERE [object_id] = @ParamObjectID AND index_id = (SELECT MIN(index_id) FROM sys.indexes WHERE [object_id] = @ParamObjectID)'
+          END
+
+          BEGIN TRY
+            EXECUTE @CurrentDatabase_sp_executesql @stmt = @CurrentCommand, @params = N'@ParamObjectID int, @ParamPartitionNumber int, @ParamObjectRowCount bigint OUTPUT', @ParamObjectID = @CurrentObjectID, @ParamPartitionNumber = @CurrentPartitionNumber, @ParamObjectRowCount = @CurrentObjectRowCount OUTPUT
+          END TRY
+          BEGIN CATCH
+            SET @ErrorMessage = 'Msg ' + CAST(ERROR_NUMBER() AS nvarchar(max)) + ', ' + ISNULL(ERROR_MESSAGE(),'') + CASE WHEN ERROR_NUMBER() = 1222 THEN ' The object ' + QUOTENAME(@CurrentDatabaseName) + '.' + QUOTENAME(@CurrentSchemaName) + '.' + QUOTENAME(@CurrentObjectName) + ' is locked. The row count could not be checked.' ELSE '' END
+            SET @Severity = CASE WHEN ERROR_NUMBER() IN(1205,1222) THEN @LockMessageSeverity ELSE 16 END
+            RAISERROR('%s',@Severity,1,@ErrorMessage) WITH NOWAIT
+            RAISERROR(@EmptyLine,10,1) WITH NOWAIT
+            IF NOT (ERROR_NUMBER() IN(1205,1222) AND @LockMessageSeverity = 10)
+            BEGIN
+              SET @ReturnCode = ERROR_NUMBER()
+            END
+            GOTO NoAction
+          END CATCH
+        END
+
         -- Has the data in the statistics been modified since the statistics was last updated?
         IF @CurrentStatisticsID IS NOT NULL AND @UpdateStatistics IS NOT NULL
         BEGIN
@@ -8835,7 +8869,7 @@ BEGIN
         -- Update statistics?
         IF @CurrentStatisticsID IS NOT NULL
         AND ((@UpdateStatistics = 'ALL' AND (@CurrentIndexType IN (1,2,3,4,7) OR @CurrentIndexID IS NULL)) OR (@UpdateStatistics = 'INDEX' AND @CurrentIndexID IS NOT NULL AND @CurrentIndexType IN (1,2,3,4,7)) OR (@UpdateStatistics = 'COLUMNS' AND @CurrentIndexID IS NULL))
-        AND ((@OnlyModifiedStatistics = 'N' AND @StatisticsModificationLevel IS NULL) OR (@OnlyModifiedStatistics = 'Y' AND @CurrentModificationCounter > 0) OR ((@CurrentModificationCounter * 1. / NULLIF(@CurrentRowCount,0)) * 100 >= @StatisticsModificationLevel) OR (@StatisticsModificationLevel IS NOT NULL AND @CurrentModificationCounter > 0 AND (@CurrentModificationCounter >= SQRT(@CurrentRowCount * 1000))) OR ((@CurrentIndexType IN (1,2) OR @CurrentIndexID IS NULL) AND @CurrentModificationCounter IS NULL))
+        AND ((@OnlyModifiedStatistics = 'N' AND @StatisticsModificationLevel IS NULL) OR (@OnlyModifiedStatistics = 'Y' AND @CurrentModificationCounter > 0) OR ((@CurrentModificationCounter * 1. / NULLIF(@CurrentRowCount,0)) * 100 >= @StatisticsModificationLevel) OR (@StatisticsModificationLevel IS NOT NULL AND @CurrentModificationCounter > 0 AND (@CurrentModificationCounter >= SQRT(@CurrentRowCount * 1000))) OR ((@CurrentIndexType IN (1,2) OR @CurrentIndexID IS NULL) AND @CurrentModificationCounter IS NULL AND @CurrentObjectRowCount > 0))
         AND ((@CurrentIsPartition = 0 AND (@CurrentAction NOT IN('INDEX_REBUILD_ONLINE','INDEX_REBUILD_OFFLINE') OR @CurrentAction IS NULL)) OR (@CurrentIsPartition = 1 AND (@CurrentPartitionNumber = @CurrentPartitionCount OR (@PartitionLevelStatistics = 1 AND @CurrentIsIncremental = 1))))
         BEGIN
           SET @CurrentUpdateStatistics = 'Y'
@@ -9107,6 +9141,7 @@ BEGIN
         SET @CurrentHasFilter = NULL
         SET @CurrentNoRecompute = NULL
         SET @CurrentIsIncremental = NULL
+        SET @CurrentObjectRowCount = NULL
         SET @CurrentRowCount = NULL
         SET @CurrentModificationCounter = NULL
         SET @CurrentOnReadOnlyFileGroup = NULL
