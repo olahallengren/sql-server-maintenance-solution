@@ -10,7 +10,7 @@ License: https://ola.hallengren.com/license.html
 
 GitHub: https://github.com/olahallengren/sql-server-maintenance-solution
 
-Version: 2026-06-06 21:24:44
+Version: 2026-06-06 21:35:24
 
 You can contact me by e-mail at ola@hallengren.com.
 
@@ -139,7 +139,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-06-06 21:24:44                                                               //--
+  --// Version: 2026-06-06 21:35:24                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -498,7 +498,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-06-06 21:24:44                                                               //--
+  --// Version: 2026-06-06 21:35:24                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -4850,7 +4850,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-06-06 21:24:44                                                               //--
+  --// Version: 2026-06-06 21:35:24                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -6799,7 +6799,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-06-06 21:24:44                                                               //--
+  --// Version: 2026-06-06 21:35:24                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -8697,7 +8697,7 @@ BEGIN
 
           IF @PartitionLevelStatistics = 1 AND @CurrentIsIncremental = 1
           BEGIN
-            SET @CurrentCommand += 'SELECT @ParamObjectRowCount = row_count FROM sys.dm_db_partition_stats WHERE [object_id] = @ParamObjectID AND index_id (SELECT MIN(index_id) FROM sys.indexes WHERE [object_id] = @ParamObjectID) AND partition_number = @ParamPartitionNumber'
+            SET @CurrentCommand += 'SELECT @ParamObjectRowCount = row_count FROM sys.dm_db_partition_stats WHERE [object_id] = @ParamObjectID AND index_id = (SELECT MIN(index_id) FROM sys.indexes WHERE [object_id] = @ParamObjectID) AND partition_number = @ParamPartitionNumber'
           END
           ELSE
           BEGIN
