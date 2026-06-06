@@ -22,6 +22,8 @@ ALTER PROCEDURE [dbo].[CommandExecute]
 @IndexType int = NULL,
 @StatisticsName nvarchar(max) = NULL,
 @PartitionNumber int = NULL,
+@EncryptionKey nvarchar(max) = NULL,
+@EncryptionKeyPlaceholder nvarchar(max) = NULL,
 @ExtendedInfo xml = NULL,
 @LockMessageSeverity int = 16,
 @ExecuteAsUser nvarchar(max) = NULL,
@@ -36,7 +38,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-05-31 16:59:43                                                               //--
+  --// Version: 2026-06-06 10:32:46                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -69,6 +71,8 @@ BEGIN
   DECLARE @EmptyLine nvarchar(max) = CHAR(9)
 
   DECLARE @RevertCommand nvarchar(max)
+
+  DECLARE @CommandMasked nvarchar(max)
 
   ----------------------------------------------------------------------------------------------------
   --// Check core requirements                                                                    //--
@@ -118,6 +122,12 @@ BEGIN
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
     SELECT 'The value for the parameter @Mode is not supported.', 16, 1
+  END
+
+  IF (@EncryptionKey IS NULL AND @EncryptionKeyPlaceholder IS NOT NULL) OR (@EncryptionKey IS NOT NULL AND @EncryptionKeyPlaceholder IS NULL)
+  BEGIN
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'The parameters @EncryptionKey and @EncryptionKeyPlaceholder must be specified together.', 16, 1
   END
 
   IF @LockMessageSeverity NOT IN(10,16) OR @LockMessageSeverity IS NULL
@@ -184,6 +194,14 @@ BEGIN
   END
 
   ----------------------------------------------------------------------------------------------------
+  --// Mask encryption key                                                                        //--
+  ----------------------------------------------------------------------------------------------------
+
+  SET @CommandMasked = CASE WHEN @EncryptionKeyPlaceholder IS NULL THEN @Command ELSE REPLACE(@Command,@EncryptionKeyPlaceholder,'********') END
+
+  SET @Command = CASE WHEN @EncryptionKeyPlaceholder IS NULL THEN @Command ELSE REPLACE(@Command,@EncryptionKeyPlaceholder,REPLACE(ISNULL(@EncryptionKey,''),'''','''''')) END
+
+  ----------------------------------------------------------------------------------------------------
   --// Log initial information                                                                    //--
   ----------------------------------------------------------------------------------------------------
 
@@ -195,7 +213,7 @@ BEGIN
   SET @StartMessage = 'Database context: ' + QUOTENAME(@DatabaseContext)
   RAISERROR('%s',10,1,@StartMessage) WITH NOWAIT
 
-  SET @StartMessage = 'Command: ' + @Command
+  SET @StartMessage = 'Command: ' + @CommandMasked
   RAISERROR('%s',10,1,@StartMessage) WITH NOWAIT
 
   IF @Comment IS NOT NULL
@@ -207,7 +225,7 @@ BEGIN
   IF @LogToTable = 'Y'
   BEGIN
     INSERT INTO dbo.CommandLog (DatabaseName, SchemaName, ObjectName, ObjectType, IndexName, IndexType, StatisticsName, PartitionNumber, ExtendedInfo, CommandType, Command, StartTime)
-    VALUES (@DatabaseName, @SchemaName, @ObjectName, @ObjectType, @IndexName, @IndexType, @StatisticsName, @PartitionNumber, @ExtendedInfo, @CommandType, @Command, @StartTime)
+    VALUES (@DatabaseName, @SchemaName, @ObjectName, @ObjectType, @IndexName, @IndexType, @StatisticsName, @PartitionNumber, @ExtendedInfo, @CommandType, @CommandMasked, @StartTime)
   END
 
   SET @ID = SCOPE_IDENTITY()
