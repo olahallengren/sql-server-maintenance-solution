@@ -93,7 +93,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-05-31 16:59:43                                                               //--
+  --// Version: 2026-06-06 10:32:46                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -270,6 +270,10 @@ BEGIN
                                       CleanupDate datetime2,
                                       Mirror bit)
 
+  DECLARE @EncryptionKeyMasked nvarchar(max) = CASE WHEN @EncryptionKey IS NULL THEN NULL ELSE '********' END
+
+  DECLARE @EncryptionKeyPlaceholder nvarchar(max) = CASE WHEN @EncryptionKey IS NULL THEN NULL ELSE CAST(NEWID() AS nvarchar(max)) END
+
   DECLARE @Error int = 0
   DECLARE @ReturnCode int = 0
 
@@ -331,7 +335,7 @@ BEGIN
   SET @Parameters += ', @EncryptionAlgorithm = ' + ISNULL('''' + REPLACE(@EncryptionAlgorithm,'''','''''') + '''','NULL')
   SET @Parameters += ', @ServerCertificate = ' + ISNULL('''' + REPLACE(@ServerCertificate,'''','''''') + '''','NULL')
   SET @Parameters += ', @ServerAsymmetricKey = ' + ISNULL('''' + REPLACE(@ServerAsymmetricKey,'''','''''') + '''','NULL')
-  SET @Parameters += ', @EncryptionKey = ' + ISNULL('''' + REPLACE(@EncryptionKey,'''','''''') + '''','NULL')
+  SET @Parameters += ', @EncryptionKey = ' + ISNULL('''' + @EncryptionKeyMasked + '''','NULL')
   SET @Parameters += ', @ReadWriteFileGroups = ' + ISNULL('''' + REPLACE(@ReadWriteFileGroups,'''','''''') + '''','NULL')
   SET @Parameters += ', @OverrideBackupPreference = ' + ISNULL('''' + REPLACE(@OverrideBackupPreference,'''','''''') + '''','NULL')
   SET @Parameters += ', @NoRecovery = ' + ISNULL('''' + REPLACE(@NoRecovery,'''','''''') + '''','NULL')
@@ -445,7 +449,7 @@ BEGIN
     SELECT 'The stored procedure CommandExecute is missing. Download https://ola.hallengren.com/scripts/CommandExecute.sql.', 16, 1
   END
 
-  IF EXISTS (SELECT * FROM sys.objects objects INNER JOIN sys.schemas schemas ON objects.[schema_id] = schemas.[schema_id] WHERE objects.[type] = 'P' AND schemas.[name] = 'dbo' AND objects.[name] = 'CommandExecute' AND OBJECT_DEFINITION(objects.[object_id]) NOT LIKE '%@DatabaseContext%')
+  IF EXISTS (SELECT * FROM sys.objects objects INNER JOIN sys.schemas schemas ON objects.[schema_id] = schemas.[schema_id] WHERE objects.[type] = 'P' AND schemas.[name] = 'dbo' AND objects.[name] = 'CommandExecute' AND OBJECT_DEFINITION(objects.[object_id]) NOT LIKE '%@EncryptionKeyPlaceholder%')
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
     SELECT 'The stored procedure CommandExecute needs to be updated. Download https://ola.hallengren.com/scripts/CommandExecute.sql.', 16, 1
@@ -3734,7 +3738,7 @@ BEGIN
 
             SET @CurrentCommandType = 'sqbutility'
 
-            SET @CurrentCommand = 'DECLARE @ReturnCode int EXECUTE @ReturnCode = dbo.sqbutility 1032, N''' + REPLACE(@CurrentDatabaseName,'''','''''') + ''', N''' + REPLACE(@CurrentDirectoryPath,'''','''''') + ''', ''' + CASE WHEN @CurrentBackupType = 'FULL' THEN 'D' WHEN @CurrentBackupType = 'DIFF' THEN 'I' WHEN @CurrentBackupType = 'LOG' THEN 'L' END + ''', ''' + CAST(DATEDIFF(hh,@CurrentCleanupDate,SYSDATETIME()) + 1 AS nvarchar(max)) + 'h'', ' + ISNULL('''' + REPLACE(@EncryptionKey,'''','''''') + '''','NULL') + ' IF @ReturnCode <> 0 OR @ReturnCode IS NULL RAISERROR(''Error deleting SQLBackup backup files.'', 16, 1)'
+            SET @CurrentCommand = 'DECLARE @ReturnCode int EXECUTE @ReturnCode = dbo.sqbutility 1032, N''' + REPLACE(@CurrentDatabaseName,'''','''''') + ''', N''' + REPLACE(@CurrentDirectoryPath,'''','''''') + ''', ''' + CASE WHEN @CurrentBackupType = 'FULL' THEN 'D' WHEN @CurrentBackupType = 'DIFF' THEN 'I' WHEN @CurrentBackupType = 'LOG' THEN 'L' END + ''', ''' + CAST(DATEDIFF(hh,@CurrentCleanupDate,SYSDATETIME()) + 1 AS nvarchar(max)) + 'h'', ' + ISNULL('''' + @EncryptionKeyPlaceholder + '''','NULL') + ' IF @ReturnCode <> 0 OR @ReturnCode IS NULL RAISERROR(''Error deleting SQLBackup backup files.'', 16, 1)'
           END
 
           IF @BackupSoftware = 'SQLSAFE'
@@ -3746,7 +3750,7 @@ BEGIN
             SET @CurrentCommand = 'DECLARE @ReturnCode int EXECUTE @ReturnCode = dbo.xp_ss_delete @filename = N''' + REPLACE(@CurrentDirectoryPath,'''','''''') + '\*.' + @CurrentFileExtension + ''', @age = ''' + CAST(DATEDIFF(mi,@CurrentCleanupDate,SYSDATETIME()) + 1 AS nvarchar(max)) + 'Minutes'' IF @ReturnCode <> 0 OR @ReturnCode IS NULL RAISERROR(''Error deleting SQLsafe backup files.'', 16, 1)'
           END
 
-          EXECUTE @CurrentCommandOutput = dbo.CommandExecute @DatabaseContext = @CurrentDatabaseContext, @Command = @CurrentCommand, @CommandType = @CurrentCommandType, @Mode = 1, @DatabaseName = @CurrentDatabaseName, @LogToTable = @LogToTable, @Execute = @Execute
+          EXECUTE @CurrentCommandOutput = dbo.CommandExecute @DatabaseContext = @CurrentDatabaseContext, @Command = @CurrentCommand, @CommandType = @CurrentCommandType, @Mode = 1, @DatabaseName = @CurrentDatabaseName, @EncryptionKey = @EncryptionKey, @EncryptionKeyPlaceholder = @EncryptionKeyPlaceholder, @LogToTable = @LogToTable, @Execute = @Execute
           SET @Error = @@ERROR
           IF @Error <> 0 SET @CurrentCommandOutput = @Error
           IF @CurrentCommandOutput <> 0 SET @ReturnCode = @CurrentCommandOutput
@@ -3903,7 +3907,7 @@ BEGIN
           WHEN @EncryptionAlgorithm = 'AES_256' THEN '8'
           END
 
-          IF @EncryptionKey IS NOT NULL SET @CurrentCommand += ', @encryptionkey = N''' + REPLACE(@EncryptionKey,'''','''''') + ''''
+          IF @EncryptionKey IS NOT NULL SET @CurrentCommand += ', @encryptionkey = N''' + @EncryptionKeyPlaceholder + ''''
           SET @CurrentCommand += ' IF @ReturnCode <> 0 OR @ReturnCode IS NULL RAISERROR(''Error performing LiteSpeed backup.'', 16, 1)'
         END
 
@@ -3951,7 +3955,7 @@ BEGIN
           WHEN @EncryptionAlgorithm = 'AES_256' THEN '256'
           END
 
-          IF @EncryptionKey IS NOT NULL SET @CurrentCommand += ', PASSWORD = N''' + REPLACE(@EncryptionKey,'''','''''') + ''''
+          IF @EncryptionKey IS NOT NULL SET @CurrentCommand += ', PASSWORD = N''' + @EncryptionKeyPlaceholder + ''''
           SET @CurrentCommand = 'DECLARE @ReturnCode int EXECUTE @ReturnCode = dbo.sqlbackup N''-SQL "' + REPLACE(@CurrentCommand,'''','''''') + '"''' + ' IF @ReturnCode <> 0 OR @ReturnCode IS NULL RAISERROR(''Error performing SQLBackup backup.'', 16, 1)'
         END
 
@@ -3995,7 +3999,7 @@ BEGIN
           WHEN @EncryptionAlgorithm = 'AES_256' THEN 'AES256'
           END + ''''
 
-          IF @EncryptionKey IS NOT NULL SET @CurrentCommand += ', @encryptedbackuppassword = N''' + REPLACE(@EncryptionKey,'''','''''') + ''''
+          IF @EncryptionKey IS NOT NULL SET @CurrentCommand += ', @encryptedbackuppassword = N''' + @EncryptionKeyPlaceholder + ''''
           SET @CurrentCommand += ' IF @ReturnCode <> 0 OR @ReturnCode IS NULL RAISERROR(''Error performing SQLsafe backup.'', 16, 1)'
         END
 
@@ -4051,7 +4055,7 @@ BEGIN
           SET @CurrentCommand += ' IF @ReturnCode <> 0 OR @ReturnCode IS NULL RAISERROR(''Error performing Data Domain Boost backup.'', 16, 1)'
         END
 
-        EXECUTE @CurrentCommandOutput = dbo.CommandExecute @DatabaseContext = @CurrentDatabaseContext, @Command = @CurrentCommand, @CommandType = @CurrentCommandType, @Mode = 1, @DatabaseName = @CurrentDatabaseName, @LogToTable = @LogToTable, @Execute = @Execute
+        EXECUTE @CurrentCommandOutput = dbo.CommandExecute @DatabaseContext = @CurrentDatabaseContext, @Command = @CurrentCommand, @CommandType = @CurrentCommandType, @Mode = 1, @DatabaseName = @CurrentDatabaseName, @EncryptionKey = @EncryptionKey, @EncryptionKeyPlaceholder = @EncryptionKeyPlaceholder, @LogToTable = @LogToTable, @Execute = @Execute
         SET @Error = @@ERROR
         IF @Error <> 0 SET @CurrentCommandOutput = @Error
         IF @CurrentCommandOutput <> 0 SET @ReturnCode = @CurrentCommandOutput
@@ -4112,7 +4116,7 @@ BEGIN
             IF @Checksum = 'Y' SET @CurrentCommand += 'CHECKSUM'
             IF @Checksum = 'N' SET @CurrentCommand += 'NO_CHECKSUM'
             SET @CurrentCommand += ''''
-            IF @EncryptionKey IS NOT NULL SET @CurrentCommand += ', @encryptionkey = N''' + REPLACE(@EncryptionKey,'''','''''') + ''''
+            IF @EncryptionKey IS NOT NULL SET @CurrentCommand += ', @encryptionkey = N''' + @EncryptionKeyPlaceholder + ''''
 
             SET @CurrentCommand += ' IF @ReturnCode <> 0 OR @ReturnCode IS NULL RAISERROR(''Error verifying LiteSpeed backup.'', 16, 1)'
           END
@@ -4133,7 +4137,7 @@ BEGIN
             SET @CurrentCommand += ' WITH '
             IF @Checksum = 'Y' SET @CurrentCommand += 'CHECKSUM'
             IF @Checksum = 'N' SET @CurrentCommand += 'NO_CHECKSUM'
-            IF @EncryptionKey IS NOT NULL SET @CurrentCommand += ', PASSWORD = N''' + REPLACE(@EncryptionKey,'''','''''') + ''''
+            IF @EncryptionKey IS NOT NULL SET @CurrentCommand += ', PASSWORD = N''' + @EncryptionKeyPlaceholder + ''''
 
             SET @CurrentCommand = 'DECLARE @ReturnCode int EXECUTE @ReturnCode = dbo.sqlbackup N''-SQL "' + REPLACE(@CurrentCommand,'''','''''') + '"''' + ' IF @ReturnCode <> 0 OR @ReturnCode IS NULL RAISERROR(''Error verifying SQLBackup backup.'', 16, 1)'
           END
@@ -4159,7 +4163,7 @@ BEGIN
             SET @CurrentCommand += ' IF @ReturnCode <> 0 OR @ReturnCode IS NULL RAISERROR(''Error verifying SQLsafe backup.'', 16, 1)'
           END
 
-          EXECUTE @CurrentCommandOutput = dbo.CommandExecute @DatabaseContext = @CurrentDatabaseContext, @Command = @CurrentCommand, @CommandType = @CurrentCommandType, @Mode = 1, @DatabaseName = @CurrentDatabaseName, @LogToTable = @LogToTable, @Execute = @Execute
+          EXECUTE @CurrentCommandOutput = dbo.CommandExecute @DatabaseContext = @CurrentDatabaseContext, @Command = @CurrentCommand, @CommandType = @CurrentCommandType, @Mode = 1, @DatabaseName = @CurrentDatabaseName, @EncryptionKey = @EncryptionKey, @EncryptionKeyPlaceholder = @EncryptionKeyPlaceholder, @LogToTable = @LogToTable, @Execute = @Execute
           SET @Error = @@ERROR
           IF @Error <> 0 SET @CurrentCommandOutput = @Error
           IF @CurrentCommandOutput <> 0 SET @ReturnCode = @CurrentCommandOutput
@@ -4257,7 +4261,7 @@ BEGIN
 
             SET @CurrentCommandType = 'sqbutility'
 
-            SET @CurrentCommand = 'DECLARE @ReturnCode int EXECUTE @ReturnCode = dbo.sqbutility 1032, N''' + REPLACE(@CurrentDatabaseName,'''','''''') + ''', N''' + REPLACE(@CurrentDirectoryPath,'''','''''') + ''', ''' + CASE WHEN @CurrentBackupType = 'FULL' THEN 'D' WHEN @CurrentBackupType = 'DIFF' THEN 'I' WHEN @CurrentBackupType = 'LOG' THEN 'L' END + ''', ''' + CAST(DATEDIFF(hh,@CurrentCleanupDate,SYSDATETIME()) + 1 AS nvarchar(max)) + 'h'', ' + ISNULL('''' + REPLACE(@EncryptionKey,'''','''''') + '''','NULL') + ' IF @ReturnCode <> 0 OR @ReturnCode IS NULL RAISERROR(''Error deleting SQLBackup backup files.'', 16, 1)'
+            SET @CurrentCommand = 'DECLARE @ReturnCode int EXECUTE @ReturnCode = dbo.sqbutility 1032, N''' + REPLACE(@CurrentDatabaseName,'''','''''') + ''', N''' + REPLACE(@CurrentDirectoryPath,'''','''''') + ''', ''' + CASE WHEN @CurrentBackupType = 'FULL' THEN 'D' WHEN @CurrentBackupType = 'DIFF' THEN 'I' WHEN @CurrentBackupType = 'LOG' THEN 'L' END + ''', ''' + CAST(DATEDIFF(hh,@CurrentCleanupDate,SYSDATETIME()) + 1 AS nvarchar(max)) + 'h'', ' + ISNULL('''' + @EncryptionKeyPlaceholder + '''','NULL') + ' IF @ReturnCode <> 0 OR @ReturnCode IS NULL RAISERROR(''Error deleting SQLBackup backup files.'', 16, 1)'
           END
 
           IF @BackupSoftware = 'SQLSAFE'
@@ -4269,7 +4273,7 @@ BEGIN
             SET @CurrentCommand = 'DECLARE @ReturnCode int EXECUTE @ReturnCode = dbo.xp_ss_delete @filename = N''' + REPLACE(@CurrentDirectoryPath,'''','''''') + '\*.' + @CurrentFileExtension + ''', @age = ''' + CAST(DATEDIFF(mi,@CurrentCleanupDate,SYSDATETIME()) + 1 AS nvarchar(max)) + 'Minutes'' IF @ReturnCode <> 0 OR @ReturnCode IS NULL RAISERROR(''Error deleting SQLsafe backup files.'', 16, 1)'
           END
 
-          EXECUTE @CurrentCommandOutput = dbo.CommandExecute @DatabaseContext = @CurrentDatabaseContext, @Command = @CurrentCommand, @CommandType = @CurrentCommandType, @Mode = 1, @DatabaseName = @CurrentDatabaseName, @LogToTable = @LogToTable, @Execute = @Execute
+          EXECUTE @CurrentCommandOutput = dbo.CommandExecute @DatabaseContext = @CurrentDatabaseContext, @Command = @CurrentCommand, @CommandType = @CurrentCommandType, @Mode = 1, @DatabaseName = @CurrentDatabaseName, @EncryptionKey = @EncryptionKey, @EncryptionKeyPlaceholder = @EncryptionKeyPlaceholder, @LogToTable = @LogToTable, @Execute = @Execute
           SET @Error = @@ERROR
           IF @Error <> 0 SET @CurrentCommandOutput = @Error
           IF @CurrentCommandOutput <> 0 SET @ReturnCode = @CurrentCommandOutput
