@@ -10,7 +10,7 @@ License: https://ola.hallengren.com/license.html
 
 GitHub: https://github.com/olahallengren/sql-server-maintenance-solution
 
-Version: 2026-06-07 13:39:21
+Version: 2026-06-07 13:46:05
 
 You can contact me by e-mail at ola@hallengren.com.
 
@@ -139,7 +139,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-06-07 13:39:21                                                               //--
+  --// Version: 2026-06-07 13:46:05                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -498,7 +498,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-06-07 13:39:21                                                               //--
+  --// Version: 2026-06-07 13:46:05                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -4850,7 +4850,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-06-07 13:39:21                                                               //--
+  --// Version: 2026-06-07 13:46:05                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -6800,7 +6800,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-06-07 13:39:21                                                               //--
+  --// Version: 2026-06-07 13:46:05                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -8909,8 +8909,8 @@ BEGIN
         END
 
         SET @CurrentStatisticsSample = @StatisticsSample
-        SET @CurrentStatisticsResample = @StatisticsResample
         SET @CurrentStatisticsPersistSample = @StatisticsPersistSample
+        SET @CurrentStatisticsResample = @StatisticsResample
 
         -- Incremental statistics only supports RESAMPLE
         IF @PartitionLevelStatistics = 1 AND @CurrentIsIncremental = 1
