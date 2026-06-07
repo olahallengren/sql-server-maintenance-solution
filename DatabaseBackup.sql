@@ -93,7 +93,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-06-07 19:11:50                                                               //--
+  --// Version: 2026-06-07 23:07:00                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -279,11 +279,11 @@ BEGIN
 
   DECLARE @EmptyLine nvarchar(max) = CHAR(9)
 
-  DECLARE @Version numeric(18,10) = CAST(LEFT(CAST(SERVERPROPERTY('ProductVersion') AS nvarchar(max)),CHARINDEX('.',CAST(SERVERPROPERTY('ProductVersion') AS nvarchar(max))) - 1) + '.' + REPLACE(RIGHT(CAST(SERVERPROPERTY('ProductVersion') AS nvarchar(max)), LEN(CAST(SERVERPROPERTY('ProductVersion') AS nvarchar(max))) - CHARINDEX('.',CAST(SERVERPROPERTY('ProductVersion') AS nvarchar(max)))),'.','') AS numeric(18,10))
+  DECLARE @Version numeric(18,10) = CAST(PARSENAME(CAST(SERVERPROPERTY('ProductVersion') AS nvarchar(max)),4) + '.' + PARSENAME(CAST(SERVERPROPERTY('ProductVersion') AS nvarchar(max)),3) + PARSENAME(CAST(SERVERPROPERTY('ProductVersion') AS nvarchar(max)),2) AS numeric(18,10))
 
   IF SERVERPROPERTY('EngineEdition') = 8 AND SERVERPROPERTY('ProductVersion') = '12.0.2000.8' AND SERVERPROPERTY('ProductUpdateType') = 'CU'
   BEGIN
-    SET @Version = 16.010006
+    SET @Version = 16.01000
   END
 
   IF SERVERPROPERTY('EngineEdition') <> 5
@@ -2800,7 +2800,7 @@ BEGIN
 
     SELECT @CurrentMaxTransferSize = CASE
     WHEN @MaxTransferSize IS NOT NULL THEN @MaxTransferSize
-    WHEN @MaxTransferSize IS NULL AND @Compress = 'Y' AND @CurrentIsEncrypted = 1 AND @BackupSoftware IS NULL AND (@Version < 15.0404316 AND NOT (SERVERPROPERTY('EngineEdition') = 8 AND SERVERPROPERTY('ProductUpdateType') = 'Continuous')) AND @Credential IS NULL THEN 65537
+    WHEN @MaxTransferSize IS NULL AND @Compress = 'Y' AND @CurrentIsEncrypted = 1 AND @BackupSoftware IS NULL AND (@Version < 15.04043 AND NOT (SERVERPROPERTY('EngineEdition') = 8 AND SERVERPROPERTY('ProductUpdateType') = 'Continuous')) AND @Credential IS NULL THEN 65537
     END
 
     IF SERVERPROPERTY('IsHadrEnabled') = 1
@@ -3812,7 +3812,7 @@ BEGIN
           IF @Checksum = 'Y' SET @CurrentCommand += 'CHECKSUM'
           IF @Checksum = 'N' SET @CurrentCommand += 'NO_CHECKSUM'
 
-          SET @CurrentCommand += CASE WHEN @Compress = 'Y' AND (@CurrentIsEncrypted = 0 OR (@CurrentIsEncrypted = 1 AND (@CurrentMaxTransferSize >= 65537 OR (@Version >= 15.0404316 OR (SERVERPROPERTY('EngineEdition') = 8 AND SERVERPROPERTY('ProductUpdateType') = 'Continuous'))))) THEN ', COMPRESSION' ELSE ', NO_COMPRESSION' END
+          SET @CurrentCommand += CASE WHEN @Compress = 'Y' AND (@CurrentIsEncrypted = 0 OR (@CurrentIsEncrypted = 1 AND (@CurrentMaxTransferSize >= 65537 OR (@Version >= 15.04043 OR (SERVERPROPERTY('EngineEdition') = 8 AND SERVERPROPERTY('ProductUpdateType') = 'Continuous'))))) THEN ', COMPRESSION' ELSE ', NO_COMPRESSION' END
 
           IF @Compress = 'Y' AND @CompressionAlgorithm IS NOT NULL
           BEGIN
