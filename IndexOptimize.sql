@@ -55,7 +55,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-06-07 12:21:05                                                               //--
+  --// Version: 2026-06-07 12:54:54                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -166,6 +166,7 @@ BEGIN
   DECLARE @CurrentUpdateStatistics nvarchar(max)
   DECLARE @CurrentStatisticsSample int
   DECLARE @CurrentStatisticsResample nvarchar(max)
+  DECLARE @CurrentStatisticsPersistSamplePercent nvarchar(max)
   DECLARE @CurrentDelay datetime
 
   DECLARE @tmpDatabases TABLE (ID int IDENTITY,
@@ -984,10 +985,10 @@ BEGIN
     SELECT 'The parameters @StatisticsPersistSamplePercent and @StatisticsResample cannot be used together.', 16, 3
   END
 
-  IF @StatisticsPersistSamplePercent = 'Y' AND NOT (@Version > 14.0300616 OR SERVERPROPERTY('EngineEdition') = 5 OR (SERVERPROPERTY('EngineEdition') = 8 AND SERVERPROPERTY('ProductUpdateType') = 'Continuous'))
+  IF @StatisticsPersistSamplePercent = 'Y' AND NOT (@Version >= 14.0300616 OR SERVERPROPERTY('EngineEdition') = 5 OR (SERVERPROPERTY('EngineEdition') = 8 AND SERVERPROPERTY('ProductUpdateType') = 'Continuous'))
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @StatisticsResample is not supported.', 16, 4
+    SELECT 'The value for the parameter @StatisticsPersistSamplePercent is not supported.', 16, 4
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -2164,12 +2165,14 @@ BEGIN
 
         SET @CurrentStatisticsSample = @StatisticsSample
         SET @CurrentStatisticsResample = @StatisticsResample
+        SET @CurrentStatisticsPersistSamplePercent = @StatisticsPersistSamplePercent
 
         -- Incremental statistics only supports RESAMPLE
         IF @PartitionLevelStatistics = 1 AND @CurrentIsIncremental = 1
         BEGIN
           SET @CurrentStatisticsSample = NULL
           SET @CurrentStatisticsResample = 'Y'
+          SET @CurrentStatisticsPersistSamplePercent = 'N'
         END
 
         -- Create index comment
@@ -2347,6 +2350,12 @@ BEGIN
             SELECT 'SAMPLE ' + CAST(@CurrentStatisticsSample AS nvarchar(max)) + ' PERCENT'
           END
 
+          IF @CurrentStatisticsPersistSamplePercent = 'Y'
+          BEGIN
+            INSERT INTO @CurrentUpdateStatisticsWithClauseArguments (Argument)
+            SELECT 'PERSIST_SAMPLE_PERCENT = ON'
+          END
+
           IF @CurrentNoRecompute = 1
           BEGIN
             INSERT INTO @CurrentUpdateStatisticsWithClauseArguments (Argument)
@@ -2357,12 +2366,6 @@ BEGIN
           BEGIN
             INSERT INTO @CurrentUpdateStatisticsWithClauseArguments (Argument)
             SELECT 'RESAMPLE'
-          END
-
-          IF @StatisticsPersistSamplePercent = 'Y'
-          BEGIN
-            INSERT INTO @CurrentUpdateStatisticsWithClauseArguments (Argument)
-            SELECT 'PERSIST_SAMPLE_PERCENT = ON'
           END
 
           IF EXISTS (SELECT * FROM @CurrentUpdateStatisticsWithClauseArguments)
@@ -2443,6 +2446,7 @@ BEGIN
         SET @CurrentUpdateStatistics = NULL
         SET @CurrentStatisticsSample = NULL
         SET @CurrentStatisticsResample = NULL
+        SET @CurrentStatisticsPersistSamplePercent = NULL
 
         DELETE FROM @CurrentActionsAllowed
         DELETE FROM @CurrentAlterIndexWithClauseArguments
