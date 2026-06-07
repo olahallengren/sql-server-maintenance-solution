@@ -10,7 +10,7 @@ License: https://ola.hallengren.com/license.html
 
 GitHub: https://github.com/olahallengren/sql-server-maintenance-solution
 
-Version: 2026-06-06 21:35:24
+Version: 2026-06-07 13:46:05
 
 You can contact me by e-mail at ola@hallengren.com.
 
@@ -139,7 +139,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-06-06 21:35:24                                                               //--
+  --// Version: 2026-06-07 13:46:05                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -498,7 +498,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-06-06 21:35:24                                                               //--
+  --// Version: 2026-06-07 13:46:05                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -4850,7 +4850,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-06-06 21:35:24                                                               //--
+  --// Version: 2026-06-07 13:46:05                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -6772,6 +6772,7 @@ ALTER PROCEDURE [dbo].[IndexOptimize]
 @OnlyModifiedStatistics nvarchar(max) = 'N',
 @StatisticsModificationLevel int = NULL,
 @StatisticsSample int = NULL,
+@StatisticsPersistSample nvarchar(max) = 'N',
 @StatisticsResample nvarchar(max) = 'N',
 @PartitionLevel nvarchar(max) = 'Y',
 @MSShippedObjects nvarchar(max) = 'N',
@@ -6799,7 +6800,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-06-06 21:35:24                                                               //--
+  --// Version: 2026-06-07 13:46:05                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -6909,6 +6910,7 @@ BEGIN
   DECLARE @CurrentMaxDOP int
   DECLARE @CurrentUpdateStatistics nvarchar(max)
   DECLARE @CurrentStatisticsSample int
+  DECLARE @CurrentStatisticsPersistSample nvarchar(max)
   DECLARE @CurrentStatisticsResample nvarchar(max)
   DECLARE @CurrentDelay datetime
 
@@ -7052,6 +7054,7 @@ BEGIN
   SET @Parameters += ', @OnlyModifiedStatistics = ' + ISNULL('''' + REPLACE(@OnlyModifiedStatistics,'''','''''') + '''','NULL')
   SET @Parameters += ', @StatisticsModificationLevel = ' + ISNULL(CAST(@StatisticsModificationLevel AS nvarchar(max)),'NULL')
   SET @Parameters += ', @StatisticsSample = ' + ISNULL(CAST(@StatisticsSample AS nvarchar(max)),'NULL')
+  SET @Parameters += ', @StatisticsPersistSample = ' + ISNULL('''' + REPLACE(@StatisticsPersistSample,'''','''''') + '''','NULL')
   SET @Parameters += ', @StatisticsResample = ' + ISNULL('''' + REPLACE(@StatisticsResample,'''','''''') + '''','NULL')
   SET @Parameters += ', @PartitionLevel = ' + ISNULL('''' + REPLACE(@PartitionLevel,'''','''''') + '''','NULL')
   SET @Parameters += ', @MSShippedObjects = ' + ISNULL('''' + REPLACE(@MSShippedObjects,'''','''''') + '''','NULL')
@@ -7691,6 +7694,32 @@ BEGIN
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
     SELECT 'The value for the parameter @StatisticsSample is not supported.', 16, 1
+  END
+
+  ----------------------------------------------------------------------------------------------------
+
+  IF @StatisticsPersistSample NOT IN('Y','N') OR @StatisticsPersistSample IS NULL
+  BEGIN
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'The value for the parameter @StatisticsPersistSample is not supported.', 16, 1
+  END
+
+  IF @StatisticsPersistSample = 'Y' AND @StatisticsSample IS NULL
+  BEGIN
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'The parameter @StatisticsPersistSample can only be used together with @StatisticsSample.', 16, 2
+  END
+
+  IF @StatisticsPersistSample = 'Y' AND @StatisticsResample = 'Y'
+  BEGIN
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'The parameters @StatisticsPersistSample and @StatisticsResample cannot be used together.', 16, 3
+  END
+
+  IF @StatisticsPersistSample = 'Y' AND NOT (@Version >= 14.0300616 OR SERVERPROPERTY('EngineEdition') = 5 OR (SERVERPROPERTY('EngineEdition') = 8 AND SERVERPROPERTY('ProductUpdateType') = 'Continuous'))
+  BEGIN
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'The value for the parameter @StatisticsPersistSample is not supported.', 16, 4
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -8880,12 +8909,14 @@ BEGIN
         END
 
         SET @CurrentStatisticsSample = @StatisticsSample
+        SET @CurrentStatisticsPersistSample = @StatisticsPersistSample
         SET @CurrentStatisticsResample = @StatisticsResample
 
         -- Incremental statistics only supports RESAMPLE
         IF @PartitionLevelStatistics = 1 AND @CurrentIsIncremental = 1
         BEGIN
           SET @CurrentStatisticsSample = NULL
+          SET @CurrentStatisticsPersistSample = 'N'
           SET @CurrentStatisticsResample = 'Y'
         END
 
@@ -9064,6 +9095,12 @@ BEGIN
             SELECT 'SAMPLE ' + CAST(@CurrentStatisticsSample AS nvarchar(max)) + ' PERCENT'
           END
 
+          IF @CurrentStatisticsPersistSample = 'Y'
+          BEGIN
+            INSERT INTO @CurrentUpdateStatisticsWithClauseArguments (Argument)
+            SELECT 'PERSIST_SAMPLE_PERCENT = ON'
+          END
+
           IF @CurrentNoRecompute = 1
           BEGIN
             INSERT INTO @CurrentUpdateStatisticsWithClauseArguments (Argument)
@@ -9153,6 +9190,7 @@ BEGIN
         SET @CurrentMaxDOP = NULL
         SET @CurrentUpdateStatistics = NULL
         SET @CurrentStatisticsSample = NULL
+        SET @CurrentStatisticsPersistSample = NULL
         SET @CurrentStatisticsResample = NULL
 
         DELETE FROM @CurrentActionsAllowed
