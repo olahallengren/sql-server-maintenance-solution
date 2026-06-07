@@ -27,8 +27,8 @@ ALTER PROCEDURE [dbo].[IndexOptimize]
 @OnlyModifiedStatistics nvarchar(max) = 'N',
 @StatisticsModificationLevel int = NULL,
 @StatisticsSample int = NULL,
+@StatisticsPersistSample nvarchar(max) = 'N',
 @StatisticsResample nvarchar(max) = 'N',
-@StatisticsPersistSamplePercent nvarchar(max) = 'N',
 @PartitionLevel nvarchar(max) = 'Y',
 @MSShippedObjects nvarchar(max) = 'N',
 @Indexes nvarchar(max) = NULL,
@@ -55,7 +55,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-06-07 13:00:12                                                               //--
+  --// Version: 2026-06-07 13:39:21                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -165,8 +165,8 @@ BEGIN
   DECLARE @CurrentMaxDOP int
   DECLARE @CurrentUpdateStatistics nvarchar(max)
   DECLARE @CurrentStatisticsSample int
+  DECLARE @CurrentStatisticsPersistSample nvarchar(max)
   DECLARE @CurrentStatisticsResample nvarchar(max)
-  DECLARE @CurrentStatisticsPersistSamplePercent nvarchar(max)
   DECLARE @CurrentDelay datetime
 
   DECLARE @tmpDatabases TABLE (ID int IDENTITY,
@@ -309,8 +309,8 @@ BEGIN
   SET @Parameters += ', @OnlyModifiedStatistics = ' + ISNULL('''' + REPLACE(@OnlyModifiedStatistics,'''','''''') + '''','NULL')
   SET @Parameters += ', @StatisticsModificationLevel = ' + ISNULL(CAST(@StatisticsModificationLevel AS nvarchar(max)),'NULL')
   SET @Parameters += ', @StatisticsSample = ' + ISNULL(CAST(@StatisticsSample AS nvarchar(max)),'NULL')
+  SET @Parameters += ', @StatisticsPersistSample = ' + ISNULL('''' + REPLACE(@StatisticsPersistSample,'''','''''') + '''','NULL')
   SET @Parameters += ', @StatisticsResample = ' + ISNULL('''' + REPLACE(@StatisticsResample,'''','''''') + '''','NULL')
-  SET @Parameters += ', @StatisticsPersistSamplePercent = ' + ISNULL('''' + REPLACE(@StatisticsPersistSamplePercent,'''','''''') + '''','NULL')
   SET @Parameters += ', @PartitionLevel = ' + ISNULL('''' + REPLACE(@PartitionLevel,'''','''''') + '''','NULL')
   SET @Parameters += ', @MSShippedObjects = ' + ISNULL('''' + REPLACE(@MSShippedObjects,'''','''''') + '''','NULL')
   SET @Parameters += ', @Indexes = ' + ISNULL('''' + REPLACE(@Indexes,'''','''''') + '''','NULL')
@@ -953,6 +953,32 @@ BEGIN
 
   ----------------------------------------------------------------------------------------------------
 
+  IF @StatisticsPersistSample NOT IN('Y','N') OR @StatisticsPersistSample IS NULL
+  BEGIN
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'The value for the parameter @StatisticsPersistSample is not supported.', 16, 1
+  END
+
+  IF @StatisticsPersistSample = 'Y' AND @StatisticsSample IS NULL
+  BEGIN
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'The parameter @StatisticsPersistSample can only be used together with @StatisticsSample.', 16, 2
+  END
+
+  IF @StatisticsPersistSample = 'Y' AND @StatisticsResample = 'Y'
+  BEGIN
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'The parameters @StatisticsPersistSample and @StatisticsResample cannot be used together.', 16, 3
+  END
+
+  IF @StatisticsPersistSample = 'Y' AND NOT (@Version >= 14.0300616 OR SERVERPROPERTY('EngineEdition') = 5 OR (SERVERPROPERTY('EngineEdition') = 8 AND SERVERPROPERTY('ProductUpdateType') = 'Continuous'))
+  BEGIN
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'The value for the parameter @StatisticsPersistSample is not supported.', 16, 4
+  END
+
+  ----------------------------------------------------------------------------------------------------
+
   IF @StatisticsResample NOT IN('Y','N') OR @StatisticsResample IS NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
@@ -963,32 +989,6 @@ BEGIN
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
     SELECT 'The value for the parameter @StatisticsResample is not supported.', 16, 2
-  END
-
-  ----------------------------------------------------------------------------------------------------
-
-  IF @StatisticsPersistSamplePercent NOT IN('Y','N') OR @StatisticsPersistSamplePercent IS NULL
-  BEGIN
-    INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @StatisticsPersistSamplePercent is not supported.', 16, 1
-  END
-
-  IF @StatisticsPersistSamplePercent = 'Y' AND @StatisticsSample IS NULL
-  BEGIN
-    INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The parameter @StatisticsPersistSamplePercent can only be used together with @StatisticsSample.', 16, 2
-  END
-
-  IF @StatisticsPersistSamplePercent = 'Y' AND @StatisticsResample = 'Y'
-  BEGIN
-    INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The parameters @StatisticsPersistSamplePercent and @StatisticsResample cannot be used together.', 16, 3
-  END
-
-  IF @StatisticsPersistSamplePercent = 'Y' AND NOT (@Version >= 14.0300616 OR SERVERPROPERTY('EngineEdition') = 5 OR (SERVERPROPERTY('EngineEdition') = 8 AND SERVERPROPERTY('ProductUpdateType') = 'Continuous'))
-  BEGIN
-    INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @StatisticsPersistSamplePercent is not supported.', 16, 4
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -2165,14 +2165,14 @@ BEGIN
 
         SET @CurrentStatisticsSample = @StatisticsSample
         SET @CurrentStatisticsResample = @StatisticsResample
-        SET @CurrentStatisticsPersistSamplePercent = @StatisticsPersistSamplePercent
+        SET @CurrentStatisticsPersistSample = @StatisticsPersistSample
 
         -- Incremental statistics only supports RESAMPLE
         IF @PartitionLevelStatistics = 1 AND @CurrentIsIncremental = 1
         BEGIN
           SET @CurrentStatisticsSample = NULL
+          SET @CurrentStatisticsPersistSample = 'N'
           SET @CurrentStatisticsResample = 'Y'
-          SET @CurrentStatisticsPersistSamplePercent = 'N'
         END
 
         -- Create index comment
@@ -2350,7 +2350,7 @@ BEGIN
             SELECT 'SAMPLE ' + CAST(@CurrentStatisticsSample AS nvarchar(max)) + ' PERCENT'
           END
 
-          IF @CurrentStatisticsPersistSamplePercent = 'Y'
+          IF @CurrentStatisticsPersistSample = 'Y'
           BEGIN
             INSERT INTO @CurrentUpdateStatisticsWithClauseArguments (Argument)
             SELECT 'PERSIST_SAMPLE_PERCENT = ON'
@@ -2445,8 +2445,8 @@ BEGIN
         SET @CurrentMaxDOP = NULL
         SET @CurrentUpdateStatistics = NULL
         SET @CurrentStatisticsSample = NULL
+        SET @CurrentStatisticsPersistSample = NULL
         SET @CurrentStatisticsResample = NULL
-        SET @CurrentStatisticsPersistSamplePercent = NULL
 
         DELETE FROM @CurrentActionsAllowed
         DELETE FROM @CurrentAlterIndexWithClauseArguments
