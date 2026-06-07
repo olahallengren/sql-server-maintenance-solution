@@ -27,7 +27,7 @@ ALTER PROCEDURE [dbo].[IndexOptimize]
 @OnlyModifiedStatistics nvarchar(max) = 'N',
 @StatisticsModificationLevel int = NULL,
 @StatisticsSample int = NULL,
-@StatisticsPersistSample nvarchar(max) = 'N',
+@StatisticsPersistSample nvarchar(max) = NULL,
 @StatisticsResample nvarchar(max) = 'N',
 @PartitionLevel nvarchar(max) = 'Y',
 @MSShippedObjects nvarchar(max) = 'N',
@@ -55,7 +55,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-06-07 17:31:20                                                               //--
+  --// Version: 2026-06-07 19:11:50                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -953,25 +953,25 @@ BEGIN
 
   ----------------------------------------------------------------------------------------------------
 
-  IF @StatisticsPersistSample NOT IN('Y','N') OR @StatisticsPersistSample IS NULL
+  IF @StatisticsPersistSample NOT IN('Y','N')
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
     SELECT 'The value for the parameter @StatisticsPersistSample is not supported.', 16, 1
   END
 
-  IF @StatisticsPersistSample = 'Y' AND @StatisticsSample IS NULL
+  IF @StatisticsPersistSample IS NOT NULL AND @StatisticsSample IS NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
     SELECT 'The parameter @StatisticsPersistSample can only be used together with @StatisticsSample.', 16, 2
   END
 
-  IF @StatisticsPersistSample = 'Y' AND @StatisticsResample = 'Y'
+  IF @StatisticsPersistSample IS NOT NULL AND @StatisticsResample = 'Y'
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
     SELECT 'The parameters @StatisticsPersistSample and @StatisticsResample cannot be used together.', 16, 3
   END
 
-  IF @StatisticsPersistSample = 'Y' AND NOT (@Version >= 14.0300616 OR SERVERPROPERTY('EngineEdition') = 5 OR (SERVERPROPERTY('EngineEdition') = 8 AND SERVERPROPERTY('ProductUpdateType') = 'Continuous'))
+  IF @StatisticsPersistSample IS NOT NULL AND NOT (@Version >= 14.0300616 OR SERVERPROPERTY('EngineEdition') = 5 OR (SERVERPROPERTY('EngineEdition') = 8 AND SERVERPROPERTY('ProductUpdateType') = 'Continuous'))
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
     SELECT 'The value for the parameter @StatisticsPersistSample is not supported.', 16, 4
@@ -2171,7 +2171,7 @@ BEGIN
         IF @PartitionLevelStatistics = 1 AND @CurrentIsIncremental = 1
         BEGIN
           SET @CurrentStatisticsSample = NULL
-          SET @CurrentStatisticsPersistSample = 'N'
+          SET @CurrentStatisticsPersistSample = NULL
           SET @CurrentStatisticsResample = 'Y'
         END
 
@@ -2274,7 +2274,7 @@ BEGIN
           IF @CurrentAction = 'INDEX_REBUILD_ONLINE' AND ((@Resumable = 'Y' AND @CurrentIndexType IN(1,2) AND @CurrentIsComputed = 0 AND @CurrentIsClusteredIndexComputed = 0 AND @CurrentIsTimestamp = 0 AND @CurrentHasFilter = 0) OR @CurrentResumableIndexOperation = 1) AND @TimeLimit IS NOT NULL
           BEGIN
             INSERT INTO @CurrentAlterIndexWithClauseArguments (Argument)
-            SELECT 'MAX_DURATION = ' + CAST(DATEDIFF(MINUTE,SYSDATETIME(),DATEADD(SECOND,@TimeLimit,@StartTime)) AS nvarchar(max))
+            SELECT 'MAX_DURATION = ' + CAST(CASE WHEN DATEDIFF(MINUTE,SYSDATETIME(),DATEADD(SECOND,@TimeLimit,@StartTime)) < 1 THEN 1 ELSE DATEDIFF(MINUTE,SYSDATETIME(),DATEADD(SECOND,@TimeLimit,@StartTime)) END AS nvarchar(max))
           END
 
           IF @CurrentAction IN('INDEX_REORGANIZE') AND @LOBCompaction = 'Y'
@@ -2360,6 +2360,12 @@ BEGIN
           BEGIN
             INSERT INTO @CurrentUpdateStatisticsWithClauseArguments (Argument)
             SELECT 'PERSIST_SAMPLE_PERCENT = ON'
+          END
+
+          IF @CurrentStatisticsPersistSample = 'N'
+          BEGIN
+            INSERT INTO @CurrentUpdateStatisticsWithClauseArguments (Argument)
+            SELECT 'PERSIST_SAMPLE_PERCENT = OFF'
           END
 
           IF @CurrentNoRecompute = 1
