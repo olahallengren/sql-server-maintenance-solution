@@ -10,7 +10,7 @@ License: https://ola.hallengren.com/license.html
 
 GitHub: https://github.com/olahallengren/sql-server-maintenance-solution
 
-Version: 2026-06-08 08:34:02
+Version: 2026-06-08 08:57:14
 
 You can contact me by e-mail at ola@hallengren.com.
 
@@ -139,7 +139,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-06-08 08:34:02                                                               //--
+  --// Version: 2026-06-08 08:57:14                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -498,7 +498,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-06-08 08:34:02                                                               //--
+  --// Version: 2026-06-08 08:57:14                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -4850,7 +4850,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-06-08 08:34:02                                                               //--
+  --// Version: 2026-06-08 08:57:14                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -6801,7 +6801,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-06-08 08:34:02                                                               //--
+  --// Version: 2026-06-08 08:57:14                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -9014,10 +9014,10 @@ BEGIN
             SELECT 'FILLFACTOR = ' + CAST(@FillFactor AS nvarchar(max))
           END
 
-          IF @CurrentAction IN('INDEX_REBUILD_ONLINE','INDEX_REBUILD_OFFLINE') AND @PadIndex = 'Y' AND @CurrentIsPartition = 0 AND @CurrentIndexType IN(1,2,3,4) AND @CurrentResumableIndexOperation = 0
+          IF @CurrentAction IN('INDEX_REBUILD_ONLINE','INDEX_REBUILD_OFFLINE') AND @PadIndex IS NOT NULL AND @CurrentIsPartition = 0 AND @CurrentIndexType IN(1,2,3,4) AND @CurrentResumableIndexOperation = 0
           BEGIN
             INSERT INTO @CurrentAlterIndexWithClauseArguments (Argument)
-            SELECT 'PAD_INDEX = ON'
+            SELECT 'PAD_INDEX = ' + CASE WHEN @PadIndex = 'Y' THEN 'ON' WHEN @PadIndex = 'N' THEN 'OFF' END
           END
 
           IF @CurrentAction IN('INDEX_REBUILD_ONLINE','INDEX_REBUILD_OFFLINE') AND @DataCompression IS NOT NULL AND @CurrentIndexType IN(1,2,3,4) AND @CurrentResumableIndexOperation = 0
