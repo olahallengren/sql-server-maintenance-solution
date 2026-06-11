@@ -715,6 +715,30 @@ BEGIN
   FROM Indexes4
   OPTION (MAXRECURSION 0)
 
+  DROP TABLE IF EXISTS [#SelectedIndexes];
+  CREATE TABLE [#SelectedIndexes] ([id] [int] identity (1, 1));
+  DECLARE @collation nvarchar(128) = CONVERT(nvarchar(128), SERVERPROPERTY('Collation'));
+
+  DECLARE @ddl nvarchar(max) = N'
+    ALTER TABLE [#SelectedIndexes]
+    ADD
+      [DatabaseName]  nvarchar(max) COLLATE ' + @collation + N',
+      [SchemaName]    nvarchar(max) COLLATE ' + @collation + N',
+      [ObjectName]    nvarchar(max) COLLATE ' + @collation + N',
+      [IndexName]     nvarchar(max) COLLATE ' + @collation + N',
+      [StartPosition] int,
+      [Selected]      bit;
+  ';
+
+  EXEC sp_executesql @ddl;
+
+  IF @Indexes IS NOT NULL
+  BEGIN
+      INSERT INTO [#SelectedIndexes] ([DatabaseName], [SchemaName], [ObjectName], [IndexName], [StartPosition], [Selected])
+      SELECT [DatabaseName], [SchemaName], [ObjectName], [IndexName], [StartPosition], [Selected]
+      FROM @SelectedIndexes;
+  END
+
   ----------------------------------------------------------------------------------------------------
   --// Select actions                                                                             //--
   ----------------------------------------------------------------------------------------------------
@@ -1670,6 +1694,18 @@ BEGIN
                                                     + ' INNER JOIN sys.schemas schemas ON objects.[schema_id] = schemas.[schema_id]'
                                                     + ' LEFT OUTER JOIN sys.tables tables ON objects.[object_id] = tables.[object_id]'
                                                     + ' LEFT OUTER JOIN sys.stats stats ON indexes.[object_id] = stats.[object_id] AND indexes.[index_id] = stats.[stats_id]'
+
+          IF @Indexes is not null
+          BEGIN
+            SET @CurrentCommand = @CurrentCommand
+            + ' INNER JOIN [#SelectedIndexes] [si] ON'
+            + ' CASE WHEN [si].[SchemaName] = ''%'' THEN [schemas].[name] ELSE [si].[SchemaName] END = [schemas].[name]'
+            + ' AND'
+            + ' CASE WHEN [si].[ObjectName] = ''%'' THEN [objects].[name] ELSE [si].[ObjectName] END = [objects].[name]'
+            + ' AND'
+            + ' CASE WHEN [si].[IndexName] = ''%'' THEN [indexes].[name] ELSE [si].[IndexName] END = [indexes].[name]'
+          END
+
           IF @PartitionLevel = 'Y'
           BEGIN
             SET @CurrentCommand = @CurrentCommand + ' LEFT OUTER JOIN sys.partitions partitions ON indexes.[object_id] = partitions.[object_id] AND indexes.index_id = partitions.index_id'
@@ -1696,7 +1732,8 @@ BEGIN
                                                     + ', objects.[name] AS ObjectName'
                                                     + ', RTRIM(objects.[type]) AS ObjectType'
                                                     + ', ISNULL(tables.is_memory_optimized, 0) AS IsMemoryOptimized'
-                                                    + ', NULL AS IndexID, NULL AS IndexName'
+                                                    + ', NULL AS IndexID'
+                                                    + ', NULL AS IndexName'
                                                     + ', NULL AS IndexType'
                                                     + ', NULL AS AllowPageLocks'
                                                     + ', NULL AS HasFilter'
@@ -1726,6 +1763,15 @@ BEGIN
                                                     + ' INNER JOIN sys.schemas schemas ON objects.[schema_id] = schemas.[schema_id]'
                                                     + ' LEFT OUTER JOIN sys.tables tables ON objects.[object_id] = tables.[object_id]'
 
+          IF @Indexes is not null
+          BEGIN
+            SET @CurrentCommand = @CurrentCommand
+            + ' INNER JOIN [#SelectedIndexes] [si] ON'
+            + ' CASE WHEN [si].[SchemaName] = ''%'' THEN [schemas].[name] ELSE [si].[SchemaName] END = [schemas].[name]'
+            + ' AND'
+            + ' CASE WHEN [si].[ObjectName] = ''%'' THEN [objects].[name] ELSE [si].[ObjectName] END = [objects].[name]'
+          END
+
           IF @PartitionLevelStatistics = 1
           BEGIN
             SET @CurrentCommand = @CurrentCommand + ' OUTER APPLY sys.dm_db_incremental_stats_properties(stats.object_id, stats.stats_id) dm_db_incremental_stats_properties'
@@ -1746,7 +1792,8 @@ BEGIN
                                                       + ', objects.[name] AS ObjectName'
                                                       + ', RTRIM(objects.[type]) AS ObjectType'
                                                       + ', tables.is_memory_optimized AS IsMemoryOptimized'
-                                                      + ', NULL AS IndexID, NULL AS IndexName'
+                                                      + ', NULL AS IndexID'
+                                                      + ', NULL AS IndexName'
                                                       + ', NULL AS IndexType'
                                                       + ', NULL AS AllowPageLocks'
                                                       + ', NULL AS HasFilter'
@@ -1776,6 +1823,15 @@ BEGIN
                                                       + ' INNER JOIN sys.schemas schemas ON objects.[schema_id] = schemas.[schema_id]'
                                                       + ' INNER JOIN sys.tables tables ON objects.[object_id] = tables.[object_id]'
 
+            IF @Indexes is not null
+            BEGIN
+              SET @CurrentCommand = @CurrentCommand
+              + ' INNER JOIN [#SelectedIndexes] [si] ON'
+              + ' CASE WHEN [si].[SchemaName] = ''%'' THEN [schemas].[name] ELSE [si].[SchemaName] END = [schemas].[name]'
+              + ' AND'
+              + ' CASE WHEN [si].[ObjectName] = ''%'' THEN [objects].[name] ELSE [si].[ObjectName] END = [objects].[name]'
+            END
+
             SET @CurrentCommand = @CurrentCommand + ' WHERE objects.[type] = ''U'''
                                                       + ' AND tables.is_memory_optimized = 1'
                                                       + CASE WHEN @MSShippedObjects = 'N' THEN ' AND objects.is_ms_shipped = 0' ELSE '' END
@@ -1783,6 +1839,7 @@ BEGIN
         END
 
         SET @CurrentCommand = @CurrentCommand + ') IndexesStatistics'
+select @CurrentCommand;
 
         INSERT INTO @tmpIndexesStatistics (SchemaID, SchemaName, ObjectID, ObjectName, ObjectType, IsMemoryOptimized, IndexID, IndexName, IndexType, AllowPageLocks, HasFilter, IsImageText, IsNewLOB, IsFileStream, HasClusteredColumnstore, HasNonClusteredColumnstore, IsColumnstoreOrdered, IsComputed, IsClusteredIndexComputed, IsTimestamp, OnReadOnlyFileGroup, ResumableIndexOperation, StatisticsID, StatisticsName, [NoRecompute], IsIncremental, PartitionID, PartitionNumber, PartitionCount, [Order], Selected, Completed)
         EXECUTE @CurrentDatabase_sp_executesql @stmt = @CurrentCommand
@@ -2558,4 +2615,3 @@ BEGIN
 END
 
 GO
-
