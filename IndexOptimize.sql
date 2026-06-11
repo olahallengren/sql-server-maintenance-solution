@@ -1783,7 +1783,13 @@ BEGIN
         END
 
         SET @CurrentCommand = @CurrentCommand + ') IndexesStatistics'
-
+        IF (select count(1) from @SelectedIndexes)>0
+        BEGIN
+            DROP TABLE IF EXISTS #SelectedIndexes;
+            SELECT * INTO #SelectedIndexes FROM @SelectedIndexes;
+            SET @CurrentCommand = @CurrentCommand + ' where exists (select 1 from #SelectedIndexes s where IndexesStatistics.ObjectName like s.ObjectName and IndexesStatistics.indexname like s.IndexName and s.Selected=1)'
+            + ' and not exists (select 1 from #SelectedIndexes s where IndexesStatistics.ObjectName like s.ObjectName and IndexesStatistics.indexname like s.IndexName and s.Selected=0)';
+        END
         INSERT INTO @tmpIndexesStatistics (SchemaID, SchemaName, ObjectID, ObjectName, ObjectType, IsMemoryOptimized, IndexID, IndexName, IndexType, AllowPageLocks, HasFilter, IsImageText, IsNewLOB, IsFileStream, HasClusteredColumnstore, HasNonClusteredColumnstore, IsColumnstoreOrdered, IsComputed, IsClusteredIndexComputed, IsTimestamp, OnReadOnlyFileGroup, ResumableIndexOperation, StatisticsID, StatisticsName, [NoRecompute], IsIncremental, PartitionID, PartitionNumber, PartitionCount, [Order], Selected, Completed)
         EXECUTE @CurrentDatabase_sp_executesql @stmt = @CurrentCommand
         SET @Error = @@ERROR
