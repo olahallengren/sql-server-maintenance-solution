@@ -10,7 +10,7 @@ License: https://ola.hallengren.com/license.html
 
 GitHub: https://github.com/olahallengren/sql-server-maintenance-solution
 
-Version: 2026-06-15 19:51:16
+Version: 2026-06-16 06:09:15
 
 You can contact me by e-mail at ola@hallengren.com.
 
@@ -139,7 +139,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-06-15 19:51:16                                                               //--
+  --// Version: 2026-06-16 06:09:15                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -498,7 +498,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-06-15 19:51:16                                                               //--
+  --// Version: 2026-06-16 06:09:15                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -1748,6 +1748,12 @@ BEGIN
     SELECT 'The value for the parameter @ChangeBackupType is not supported.', 16, 1
   END
 
+  IF @ChangeBackupType = 'Y' AND NOT @BackupType IN ('DIFF', 'LOG')
+  BEGIN
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'Setting @ChangeBackupType to ''Y'' is only supported with differential and log backups.', 16, 2
+  END
+
   ----------------------------------------------------------------------------------------------------
 
   IF @BackupSoftware NOT IN ('LITESPEED','SQLBACKUP','SQLSAFE','DATA_DOMAIN_BOOST')
@@ -2781,7 +2787,7 @@ BEGIN
 
   ----------------------------------------------------------------------------------------------------
 
-  IF @StringDelimiter IS NULL OR LEN(@StringDelimiter) > 1
+  IF @StringDelimiter IS NULL OR LEN(@StringDelimiter) <> 1
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
     SELECT 'The value for the parameter @StringDelimiter is not supported.', 16, 1
@@ -4852,7 +4858,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-06-15 19:51:16                                                               //--
+  --// Version: 2026-06-16 06:09:15                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -5683,7 +5689,7 @@ BEGIN
 
   ----------------------------------------------------------------------------------------------------
 
-  IF @LockMessageSeverity NOT IN(10, 16)
+  IF @LockMessageSeverity NOT IN(10, 16) OR @LockMessageSeverity IS NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
     SELECT 'The value for the parameter @LockMessageSeverity is not supported.', 16, 1
@@ -5691,7 +5697,7 @@ BEGIN
 
   ----------------------------------------------------------------------------------------------------
 
-  IF @StringDelimiter IS NULL OR LEN(@StringDelimiter) > 1
+  IF @StringDelimiter IS NULL OR LEN(@StringDelimiter) <> 1
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
     SELECT 'The value for the parameter @StringDelimiter is not supported.', 16, 1
@@ -6803,7 +6809,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-06-15 19:51:16                                                               //--
+  --// Version: 2026-06-16 06:09:15                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -7842,7 +7848,7 @@ BEGIN
 
   ----------------------------------------------------------------------------------------------------
 
-  IF @LockMessageSeverity NOT IN(10, 16)
+  IF @LockMessageSeverity NOT IN(10, 16) OR @LockMessageSeverity IS NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
     SELECT 'The value for the parameter @LockMessageSeverity is not supported.', 16, 1
@@ -7850,7 +7856,7 @@ BEGIN
 
   ----------------------------------------------------------------------------------------------------
 
-  IF @StringDelimiter IS NULL OR LEN(@StringDelimiter) > 1
+  IF @StringDelimiter IS NULL OR LEN(@StringDelimiter) <> 1
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
     SELECT 'The value for the parameter @StringDelimiter is not supported.', 16, 1
@@ -9076,7 +9082,7 @@ BEGIN
         IF @CurrentStatisticsID IS NOT NULL
         BEGIN
           SET @CurrentComment = 'ObjectType: ' + CASE WHEN @CurrentObjectType = 'U' THEN 'Table' WHEN @CurrentObjectType = 'V' THEN 'View' ELSE 'N/A' END + ', '
-          SET @CurrentComment += 'IndexType: ' + CASE WHEN @CurrentIndexID IS NOT NULL THEN 'Index' ELSE 'Column' END + ', '
+          SET @CurrentComment += 'StatisticsType: ' + CASE WHEN @CurrentIndexID IS NOT NULL THEN 'Index' ELSE 'Column' END + ', '
           IF @CurrentIndexID IS NOT NULL SET @CurrentComment += 'IndexType: ' + CASE WHEN @CurrentIndexType = 1 THEN 'Clustered' WHEN @CurrentIndexType = 2 THEN 'NonClustered' WHEN @CurrentIndexType = 3 THEN 'XML' WHEN @CurrentIndexType = 4 THEN 'Spatial' WHEN @CurrentIndexType = 5 THEN 'Clustered Columnstore' WHEN @CurrentIndexType = 6 THEN 'NonClustered Columnstore' WHEN @CurrentIndexType = 7 THEN 'NonClustered Hash' ELSE 'N/A' END + ', '
           SET @CurrentComment += 'Incremental: ' + CASE WHEN @CurrentIsIncremental = 1 THEN 'Yes' WHEN @CurrentIsIncremental = 0 THEN 'No' ELSE 'N/A' END + ', '
           SET @CurrentComment += 'RowCount: ' + ISNULL(CAST(@CurrentRowCount AS nvarchar(max)),'N/A') + ', '

@@ -93,7 +93,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-06-15 19:51:16                                                               //--
+  --// Version: 2026-06-16 06:09:15                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -1343,6 +1343,12 @@ BEGIN
     SELECT 'The value for the parameter @ChangeBackupType is not supported.', 16, 1
   END
 
+  IF @ChangeBackupType = 'Y' AND NOT @BackupType IN ('DIFF', 'LOG')
+  BEGIN
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'Setting @ChangeBackupType to ''Y'' is only supported with differential and log backups.', 16, 2
+  END
+
   ----------------------------------------------------------------------------------------------------
 
   IF @BackupSoftware NOT IN ('LITESPEED','SQLBACKUP','SQLSAFE','DATA_DOMAIN_BOOST')
@@ -2376,7 +2382,7 @@ BEGIN
 
   ----------------------------------------------------------------------------------------------------
 
-  IF @StringDelimiter IS NULL OR LEN(@StringDelimiter) > 1
+  IF @StringDelimiter IS NULL OR LEN(@StringDelimiter) <> 1
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
     SELECT 'The value for the parameter @StringDelimiter is not supported.', 16, 1
