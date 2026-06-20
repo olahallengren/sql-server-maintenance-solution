@@ -10,7 +10,7 @@ License: https://ola.hallengren.com/license.html
 
 GitHub: https://github.com/olahallengren/sql-server-maintenance-solution
 
-Version: 2026-06-16 20:02:59
+Version: 2026-06-20 15:00:38
 
 You can contact me by e-mail at ola@hallengren.com.
 
@@ -139,7 +139,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-06-16 20:02:59                                                               //--
+  --// Version: 2026-06-20 15:00:38                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -498,7 +498,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-06-16 20:02:59                                                               //--
+  --// Version: 2026-06-20 15:00:38                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -4858,7 +4858,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-06-16 20:02:59                                                               //--
+  --// Version: 2026-06-20 15:00:38                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -6487,6 +6487,7 @@ BEGIN
         SET @CurrentCommand = ''
         IF @LockTimeout IS NOT NULL SET @CurrentCommand = 'SET LOCK_TIMEOUT ' + CAST(@LockTimeout * 1000 AS nvarchar(max)) + '; '
         SET @CurrentCommand += 'DBCC CHECKALLOC (' + QUOTENAME(@CurrentDatabaseName)
+        IF @NoIndex = 'Y' SET @CurrentCommand += ', NOINDEX'
         SET @CurrentCommand += ') WITH ALL_ERRORMSGS'
         IF @NoInformationalMessages = 'Y' SET @CurrentCommand += ', NO_INFOMSGS'
         IF @TabLock = 'Y' SET @CurrentCommand += ', TABLOCK'
@@ -6809,7 +6810,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-06-16 20:02:59                                                               //--
+  --// Version: 2026-06-20 15:00:38                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
