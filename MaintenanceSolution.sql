@@ -10,7 +10,7 @@ License: https://ola.hallengren.com/license.html
 
 GitHub: https://github.com/olahallengren/sql-server-maintenance-solution
 
-Version: 2026-06-21 12:30:01
+Version: 2026-06-21 12:38:26
 
 You can contact me by e-mail at ola@hallengren.com.
 
@@ -35,12 +35,6 @@ DECLARE @ErrorMessage nvarchar(max)
 IF IS_SRVROLEMEMBER('sysadmin') = 0 AND NOT (EXISTS (SELECT * FROM sys.databases WHERE [name] = 'rdsadmin') AND SUSER_SNAME(0x01) = 'rdsa')
 BEGIN
   SET @ErrorMessage = 'You need to be a member of the SysAdmin server role to install the SQL Server Maintenance Solution.'
-  RAISERROR(@ErrorMessage,16,1) WITH NOWAIT
-END
-
-IF NOT (SELECT [compatibility_level] FROM sys.databases WHERE [name] = DB_NAME()) >= 90
-BEGIN
-  SET @ErrorMessage = 'The database ' + QUOTENAME(DB_NAME()) + ' has to be in compatibility level 90 or higher.'
   RAISERROR(@ErrorMessage,16,1) WITH NOWAIT
 END
 
@@ -139,7 +133,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-06-21 12:30:01                                                               //--
+  --// Version: 2026-06-21 12:38:26                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -498,7 +492,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-06-21 12:30:01                                                               //--
+  --// Version: 2026-06-21 12:38:26                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -4858,7 +4852,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-06-21 12:30:01                                                               //--
+  --// Version: 2026-06-21 12:38:26                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -6810,7 +6804,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-06-21 12:30:01                                                               //--
+  --// Version: 2026-06-21 12:38:26                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
