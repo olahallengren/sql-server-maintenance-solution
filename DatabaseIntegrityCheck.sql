@@ -40,7 +40,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-06-21 12:55:55                                                               //--
+  --// Version: 2026-06-25 10:21:34                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -424,7 +424,7 @@ BEGIN
   SET tmpDatabases.Selected = SelectedDatabases.Selected
   FROM @tmpDatabases tmpDatabases
   INNER JOIN @SelectedDatabases SelectedDatabases
-  ON tmpDatabases.DatabaseName LIKE REPLACE(SelectedDatabases.DatabaseName,'_','[_]')
+  ON tmpDatabases.DatabaseName LIKE REPLACE(REPLACE(SelectedDatabases.DatabaseName,'[','[[]'),'_','[_]')
   AND (tmpDatabases.DatabaseType = SelectedDatabases.DatabaseType OR SelectedDatabases.DatabaseType IS NULL)
   AND (tmpDatabases.AvailabilityGroup = SelectedDatabases.AvailabilityGroup OR SelectedDatabases.AvailabilityGroup IS NULL)
   AND NOT ((tmpDatabases.DatabaseName = 'tempdb' OR tmpDatabases.[Snapshot] = 1) AND tmpDatabases.DatabaseName <> SelectedDatabases.DatabaseName)
@@ -434,7 +434,7 @@ BEGIN
   SET tmpDatabases.Selected = SelectedDatabases.Selected
   FROM @tmpDatabases tmpDatabases
   INNER JOIN @SelectedDatabases SelectedDatabases
-  ON tmpDatabases.DatabaseName LIKE REPLACE(SelectedDatabases.DatabaseName,'_','[_]')
+  ON tmpDatabases.DatabaseName LIKE REPLACE(REPLACE(SelectedDatabases.DatabaseName,'[','[[]'),'_','[_]')
   AND (tmpDatabases.DatabaseType = SelectedDatabases.DatabaseType OR SelectedDatabases.DatabaseType IS NULL)
   AND (tmpDatabases.AvailabilityGroup = SelectedDatabases.AvailabilityGroup OR SelectedDatabases.AvailabilityGroup IS NULL)
   AND NOT ((tmpDatabases.DatabaseName = 'tempdb' OR tmpDatabases.[Snapshot] = 1) AND tmpDatabases.DatabaseName <> SelectedDatabases.DatabaseName)
@@ -446,7 +446,7 @@ BEGIN
   INNER JOIN (SELECT tmpDatabases.DatabaseName, MIN(SelectedDatabases.StartPosition) AS StartPosition
               FROM @tmpDatabases tmpDatabases
               INNER JOIN @SelectedDatabases SelectedDatabases
-              ON tmpDatabases.DatabaseName LIKE REPLACE(SelectedDatabases.DatabaseName,'_','[_]')
+              ON tmpDatabases.DatabaseName LIKE REPLACE(REPLACE(SelectedDatabases.DatabaseName,'[','[[]'),'_','[_]')
               AND (tmpDatabases.DatabaseType = SelectedDatabases.DatabaseType OR SelectedDatabases.DatabaseType IS NULL)
               AND (tmpDatabases.AvailabilityGroup = SelectedDatabases.AvailabilityGroup OR SelectedDatabases.AvailabilityGroup IS NULL)
               WHERE SelectedDatabases.Selected = 1
@@ -517,14 +517,14 @@ BEGIN
     SET tmpAvailabilityGroups.Selected = SelectedAvailabilityGroups.Selected
     FROM @tmpAvailabilityGroups tmpAvailabilityGroups
     INNER JOIN @SelectedAvailabilityGroups SelectedAvailabilityGroups
-    ON tmpAvailabilityGroups.AvailabilityGroupName LIKE REPLACE(SelectedAvailabilityGroups.AvailabilityGroupName,'_','[_]')
+    ON tmpAvailabilityGroups.AvailabilityGroupName LIKE REPLACE(REPLACE(SelectedAvailabilityGroups.AvailabilityGroupName,'[','[[]'),'_','[_]')
     WHERE SelectedAvailabilityGroups.Selected = 1
 
     UPDATE tmpAvailabilityGroups
     SET tmpAvailabilityGroups.Selected = SelectedAvailabilityGroups.Selected
     FROM @tmpAvailabilityGroups tmpAvailabilityGroups
     INNER JOIN @SelectedAvailabilityGroups SelectedAvailabilityGroups
-    ON tmpAvailabilityGroups.AvailabilityGroupName LIKE REPLACE(SelectedAvailabilityGroups.AvailabilityGroupName,'_','[_]')
+    ON tmpAvailabilityGroups.AvailabilityGroupName LIKE REPLACE(REPLACE(SelectedAvailabilityGroups.AvailabilityGroupName,'[','[[]'),'_','[_]')
     WHERE SelectedAvailabilityGroups.Selected = 0
 
     UPDATE tmpAvailabilityGroups
@@ -533,7 +533,7 @@ BEGIN
     INNER JOIN (SELECT tmpAvailabilityGroups.AvailabilityGroupName, MIN(SelectedAvailabilityGroups.StartPosition) AS StartPosition
                 FROM @tmpAvailabilityGroups tmpAvailabilityGroups
                 INNER JOIN @SelectedAvailabilityGroups SelectedAvailabilityGroups
-                ON tmpAvailabilityGroups.AvailabilityGroupName LIKE REPLACE(SelectedAvailabilityGroups.AvailabilityGroupName,'_','[_]')
+                ON tmpAvailabilityGroups.AvailabilityGroupName LIKE REPLACE(REPLACE(SelectedAvailabilityGroups.AvailabilityGroupName,'[','[[]'),'_','[_]')
                 WHERE SelectedAvailabilityGroups.Selected = 1
                 GROUP BY tmpAvailabilityGroups.AvailabilityGroupName) SelectedAvailabilityGroups2
     ON tmpAvailabilityGroups.AvailabilityGroupName = SelectedAvailabilityGroups2.AvailabilityGroupName
@@ -1538,14 +1538,14 @@ BEGIN
           SET tmpFileGroups.Selected = SelectedFileGroups.Selected
           FROM @tmpFileGroups tmpFileGroups
           INNER JOIN @SelectedFileGroups SelectedFileGroups
-          ON @CurrentDatabaseName LIKE REPLACE(SelectedFileGroups.DatabaseName,'_','[_]') AND tmpFileGroups.FileGroupName LIKE REPLACE(SelectedFileGroups.FileGroupName,'_','[_]')
+          ON @CurrentDatabaseName LIKE REPLACE(REPLACE(SelectedFileGroups.DatabaseName,'[','[[]'),'_','[_]') AND tmpFileGroups.FileGroupName LIKE REPLACE(REPLACE(SelectedFileGroups.FileGroupName,'[','[[]'),'_','[_]')
           WHERE SelectedFileGroups.Selected = 1
 
           UPDATE tmpFileGroups
           SET tmpFileGroups.Selected = SelectedFileGroups.Selected
           FROM @tmpFileGroups tmpFileGroups
           INNER JOIN @SelectedFileGroups SelectedFileGroups
-          ON @CurrentDatabaseName LIKE REPLACE(SelectedFileGroups.DatabaseName,'_','[_]') AND tmpFileGroups.FileGroupName LIKE REPLACE(SelectedFileGroups.FileGroupName,'_','[_]')
+          ON @CurrentDatabaseName LIKE REPLACE(REPLACE(SelectedFileGroups.DatabaseName,'[','[[]'),'_','[_]') AND tmpFileGroups.FileGroupName LIKE REPLACE(REPLACE(SelectedFileGroups.FileGroupName,'[','[[]'),'_','[_]')
           WHERE SelectedFileGroups.Selected = 0
 
           UPDATE tmpFileGroups
@@ -1554,7 +1554,7 @@ BEGIN
           INNER JOIN (SELECT tmpFileGroups.FileGroupName, MIN(SelectedFileGroups.StartPosition) AS StartPosition
                       FROM @tmpFileGroups tmpFileGroups
                       INNER JOIN @SelectedFileGroups SelectedFileGroups
-                      ON @CurrentDatabaseName LIKE REPLACE(SelectedFileGroups.DatabaseName,'_','[_]') AND tmpFileGroups.FileGroupName LIKE REPLACE(SelectedFileGroups.FileGroupName,'_','[_]')
+                      ON @CurrentDatabaseName LIKE REPLACE(REPLACE(SelectedFileGroups.DatabaseName,'[','[[]'),'_','[_]') AND tmpFileGroups.FileGroupName LIKE REPLACE(REPLACE(SelectedFileGroups.FileGroupName,'[','[[]'),'_','[_]')
                       WHERE SelectedFileGroups.Selected = 1
                       GROUP BY tmpFileGroups.FileGroupName) SelectedFileGroups2
           ON tmpFileGroups.FileGroupName = SelectedFileGroups2.FileGroupName
@@ -1704,14 +1704,14 @@ BEGIN
           SET tmpObjects.Selected = SelectedObjects.Selected
           FROM @tmpObjects tmpObjects
           INNER JOIN @SelectedObjects SelectedObjects
-          ON @CurrentDatabaseName LIKE REPLACE(SelectedObjects.DatabaseName,'_','[_]') AND tmpObjects.SchemaName LIKE REPLACE(SelectedObjects.SchemaName,'_','[_]') AND tmpObjects.ObjectName LIKE REPLACE(SelectedObjects.ObjectName,'_','[_]')
+          ON @CurrentDatabaseName LIKE REPLACE(REPLACE(SelectedObjects.DatabaseName,'[','[[]'),'_','[_]') AND tmpObjects.SchemaName LIKE REPLACE(REPLACE(SelectedObjects.SchemaName,'[','[[]'),'_','[_]') AND tmpObjects.ObjectName LIKE REPLACE(REPLACE(SelectedObjects.ObjectName,'[','[[]'),'_','[_]')
           WHERE SelectedObjects.Selected = 1
 
           UPDATE tmpObjects
           SET tmpObjects.Selected = SelectedObjects.Selected
           FROM @tmpObjects tmpObjects
           INNER JOIN @SelectedObjects SelectedObjects
-          ON @CurrentDatabaseName LIKE REPLACE(SelectedObjects.DatabaseName,'_','[_]') AND tmpObjects.SchemaName LIKE REPLACE(SelectedObjects.SchemaName,'_','[_]') AND tmpObjects.ObjectName LIKE REPLACE(SelectedObjects.ObjectName,'_','[_]')
+          ON @CurrentDatabaseName LIKE REPLACE(REPLACE(SelectedObjects.DatabaseName,'[','[[]'),'_','[_]') AND tmpObjects.SchemaName LIKE REPLACE(REPLACE(SelectedObjects.SchemaName,'[','[[]'),'_','[_]') AND tmpObjects.ObjectName LIKE REPLACE(REPLACE(SelectedObjects.ObjectName,'[','[[]'),'_','[_]')
           WHERE SelectedObjects.Selected = 0
 
           UPDATE tmpObjects
@@ -1720,7 +1720,7 @@ BEGIN
           INNER JOIN (SELECT tmpObjects.SchemaName, tmpObjects.ObjectName, MIN(SelectedObjects.StartPosition) AS StartPosition
                       FROM @tmpObjects tmpObjects
                       INNER JOIN @SelectedObjects SelectedObjects
-                      ON @CurrentDatabaseName LIKE REPLACE(SelectedObjects.DatabaseName,'_','[_]') AND tmpObjects.SchemaName LIKE REPLACE(SelectedObjects.SchemaName,'_','[_]') AND tmpObjects.ObjectName LIKE REPLACE(SelectedObjects.ObjectName,'_','[_]')
+                      ON @CurrentDatabaseName LIKE REPLACE(REPLACE(SelectedObjects.DatabaseName,'[','[[]'),'_','[_]') AND tmpObjects.SchemaName LIKE REPLACE(REPLACE(SelectedObjects.SchemaName,'[','[[]'),'_','[_]') AND tmpObjects.ObjectName LIKE REPLACE(REPLACE(SelectedObjects.ObjectName,'[','[[]'),'_','[_]')
                       WHERE SelectedObjects.Selected = 1
                       GROUP BY tmpObjects.SchemaName, tmpObjects.ObjectName) SelectedObjects2
           ON tmpObjects.SchemaName = SelectedObjects2.SchemaName AND tmpObjects.ObjectName = SelectedObjects2.ObjectName
