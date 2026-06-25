@@ -56,7 +56,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-06-21 12:55:55                                                               //--
+  --// Version: 2026-06-25 10:21:34                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -521,7 +521,7 @@ BEGIN
   SET tmpDatabases.Selected = SelectedDatabases.Selected
   FROM @tmpDatabases tmpDatabases
   INNER JOIN @SelectedDatabases SelectedDatabases
-  ON tmpDatabases.DatabaseName LIKE REPLACE(SelectedDatabases.DatabaseName,'_','[_]')
+  ON tmpDatabases.DatabaseName LIKE REPLACE(REPLACE(SelectedDatabases.DatabaseName,'[','[[]'),'_','[_]')
   AND (tmpDatabases.DatabaseType = SelectedDatabases.DatabaseType OR SelectedDatabases.DatabaseType IS NULL)
   AND (tmpDatabases.AvailabilityGroup = SelectedDatabases.AvailabilityGroup OR SelectedDatabases.AvailabilityGroup IS NULL)
   WHERE SelectedDatabases.Selected = 1
@@ -530,7 +530,7 @@ BEGIN
   SET tmpDatabases.Selected = SelectedDatabases.Selected
   FROM @tmpDatabases tmpDatabases
   INNER JOIN @SelectedDatabases SelectedDatabases
-  ON tmpDatabases.DatabaseName LIKE REPLACE(SelectedDatabases.DatabaseName,'_','[_]')
+  ON tmpDatabases.DatabaseName LIKE REPLACE(REPLACE(SelectedDatabases.DatabaseName,'[','[[]'),'_','[_]')
   AND (tmpDatabases.DatabaseType = SelectedDatabases.DatabaseType OR SelectedDatabases.DatabaseType IS NULL)
   AND (tmpDatabases.AvailabilityGroup = SelectedDatabases.AvailabilityGroup OR SelectedDatabases.AvailabilityGroup IS NULL)
   WHERE SelectedDatabases.Selected = 0
@@ -541,7 +541,7 @@ BEGIN
   INNER JOIN (SELECT tmpDatabases.DatabaseName, MIN(SelectedDatabases.StartPosition) AS StartPosition
               FROM @tmpDatabases tmpDatabases
               INNER JOIN @SelectedDatabases SelectedDatabases
-              ON tmpDatabases.DatabaseName LIKE REPLACE(SelectedDatabases.DatabaseName,'_','[_]')
+              ON tmpDatabases.DatabaseName LIKE REPLACE(REPLACE(SelectedDatabases.DatabaseName,'[','[[]'),'_','[_]')
               AND (tmpDatabases.DatabaseType = SelectedDatabases.DatabaseType OR SelectedDatabases.DatabaseType IS NULL)
               AND (tmpDatabases.AvailabilityGroup = SelectedDatabases.AvailabilityGroup OR SelectedDatabases.AvailabilityGroup IS NULL)
               WHERE SelectedDatabases.Selected = 1
@@ -612,14 +612,14 @@ BEGIN
     SET tmpAvailabilityGroups.Selected = SelectedAvailabilityGroups.Selected
     FROM @tmpAvailabilityGroups tmpAvailabilityGroups
     INNER JOIN @SelectedAvailabilityGroups SelectedAvailabilityGroups
-    ON tmpAvailabilityGroups.AvailabilityGroupName LIKE REPLACE(SelectedAvailabilityGroups.AvailabilityGroupName,'_','[_]')
+    ON tmpAvailabilityGroups.AvailabilityGroupName LIKE REPLACE(REPLACE(SelectedAvailabilityGroups.AvailabilityGroupName,'[','[[]'),'_','[_]')
     WHERE SelectedAvailabilityGroups.Selected = 1
 
     UPDATE tmpAvailabilityGroups
     SET tmpAvailabilityGroups.Selected = SelectedAvailabilityGroups.Selected
     FROM @tmpAvailabilityGroups tmpAvailabilityGroups
     INNER JOIN @SelectedAvailabilityGroups SelectedAvailabilityGroups
-    ON tmpAvailabilityGroups.AvailabilityGroupName LIKE REPLACE(SelectedAvailabilityGroups.AvailabilityGroupName,'_','[_]')
+    ON tmpAvailabilityGroups.AvailabilityGroupName LIKE REPLACE(REPLACE(SelectedAvailabilityGroups.AvailabilityGroupName,'[','[[]'),'_','[_]')
     WHERE SelectedAvailabilityGroups.Selected = 0
 
     UPDATE tmpAvailabilityGroups
@@ -628,7 +628,7 @@ BEGIN
     INNER JOIN (SELECT tmpAvailabilityGroups.AvailabilityGroupName, MIN(SelectedAvailabilityGroups.StartPosition) AS StartPosition
                 FROM @tmpAvailabilityGroups tmpAvailabilityGroups
                 INNER JOIN @SelectedAvailabilityGroups SelectedAvailabilityGroups
-                ON tmpAvailabilityGroups.AvailabilityGroupName LIKE REPLACE(SelectedAvailabilityGroups.AvailabilityGroupName,'_','[_]')
+                ON tmpAvailabilityGroups.AvailabilityGroupName LIKE REPLACE(REPLACE(SelectedAvailabilityGroups.AvailabilityGroupName,'[','[[]'),'_','[_]')
                 WHERE SelectedAvailabilityGroups.Selected = 1
                 GROUP BY tmpAvailabilityGroups.AvailabilityGroupName) SelectedAvailabilityGroups2
     ON tmpAvailabilityGroups.AvailabilityGroupName = SelectedAvailabilityGroups2.AvailabilityGroupName
@@ -1805,14 +1805,14 @@ BEGIN
         SET tmpIndexesStatistics.Selected = SelectedIndexes.Selected
         FROM @tmpIndexesStatistics tmpIndexesStatistics
         INNER JOIN @SelectedIndexes SelectedIndexes
-        ON @CurrentDatabaseName LIKE REPLACE(SelectedIndexes.DatabaseName,'_','[_]') AND tmpIndexesStatistics.SchemaName LIKE REPLACE(SelectedIndexes.SchemaName,'_','[_]') AND tmpIndexesStatistics.ObjectName LIKE REPLACE(SelectedIndexes.ObjectName,'_','[_]') AND COALESCE(tmpIndexesStatistics.IndexName,tmpIndexesStatistics.StatisticsName) LIKE REPLACE(SelectedIndexes.IndexName,'_','[_]')
+        ON @CurrentDatabaseName LIKE REPLACE(REPLACE(SelectedIndexes.DatabaseName,'[','[[]'),'_','[_]') AND tmpIndexesStatistics.SchemaName LIKE REPLACE(REPLACE(SelectedIndexes.SchemaName,'[','[[]'),'_','[_]') AND tmpIndexesStatistics.ObjectName LIKE REPLACE(REPLACE(SelectedIndexes.ObjectName,'[','[[]'),'_','[_]') AND COALESCE(tmpIndexesStatistics.IndexName,tmpIndexesStatistics.StatisticsName) LIKE REPLACE(REPLACE(SelectedIndexes.IndexName,'[','[[]'),'_','[_]')
         WHERE SelectedIndexes.Selected = 1
 
         UPDATE tmpIndexesStatistics
         SET tmpIndexesStatistics.Selected = SelectedIndexes.Selected
         FROM @tmpIndexesStatistics tmpIndexesStatistics
         INNER JOIN @SelectedIndexes SelectedIndexes
-        ON @CurrentDatabaseName LIKE REPLACE(SelectedIndexes.DatabaseName,'_','[_]') AND tmpIndexesStatistics.SchemaName LIKE REPLACE(SelectedIndexes.SchemaName,'_','[_]') AND tmpIndexesStatistics.ObjectName LIKE REPLACE(SelectedIndexes.ObjectName,'_','[_]') AND COALESCE(tmpIndexesStatistics.IndexName,tmpIndexesStatistics.StatisticsName) LIKE REPLACE(SelectedIndexes.IndexName,'_','[_]')
+        ON @CurrentDatabaseName LIKE REPLACE(REPLACE(SelectedIndexes.DatabaseName,'[','[[]'),'_','[_]') AND tmpIndexesStatistics.SchemaName LIKE REPLACE(REPLACE(SelectedIndexes.SchemaName,'[','[[]'),'_','[_]') AND tmpIndexesStatistics.ObjectName LIKE REPLACE(REPLACE(SelectedIndexes.ObjectName,'[','[[]'),'_','[_]') AND COALESCE(tmpIndexesStatistics.IndexName,tmpIndexesStatistics.StatisticsName) LIKE REPLACE(REPLACE(SelectedIndexes.IndexName,'[','[[]'),'_','[_]')
         WHERE SelectedIndexes.Selected = 0
 
         UPDATE tmpIndexesStatistics
@@ -1821,7 +1821,7 @@ BEGIN
         INNER JOIN (SELECT tmpIndexesStatistics.SchemaName, tmpIndexesStatistics.ObjectName, tmpIndexesStatistics.IndexName, tmpIndexesStatistics.StatisticsName, MIN(SelectedIndexes.StartPosition) AS StartPosition
                     FROM @tmpIndexesStatistics tmpIndexesStatistics
                     INNER JOIN @SelectedIndexes SelectedIndexes
-                    ON @CurrentDatabaseName LIKE REPLACE(SelectedIndexes.DatabaseName,'_','[_]') AND tmpIndexesStatistics.SchemaName LIKE REPLACE(SelectedIndexes.SchemaName,'_','[_]') AND tmpIndexesStatistics.ObjectName LIKE REPLACE(SelectedIndexes.ObjectName,'_','[_]') AND COALESCE(tmpIndexesStatistics.IndexName,tmpIndexesStatistics.StatisticsName) LIKE REPLACE(SelectedIndexes.IndexName,'_','[_]')
+                    ON @CurrentDatabaseName LIKE REPLACE(REPLACE(SelectedIndexes.DatabaseName,'[','[[]'),'_','[_]') AND tmpIndexesStatistics.SchemaName LIKE REPLACE(REPLACE(SelectedIndexes.SchemaName,'[','[[]'),'_','[_]') AND tmpIndexesStatistics.ObjectName LIKE REPLACE(REPLACE(SelectedIndexes.ObjectName,'[','[[]'),'_','[_]') AND COALESCE(tmpIndexesStatistics.IndexName,tmpIndexesStatistics.StatisticsName) LIKE REPLACE(REPLACE(SelectedIndexes.IndexName,'[','[[]'),'_','[_]')
                     WHERE SelectedIndexes.Selected = 1
                     GROUP BY tmpIndexesStatistics.SchemaName, tmpIndexesStatistics.ObjectName, tmpIndexesStatistics.IndexName, tmpIndexesStatistics.StatisticsName) SelectedIndexes2
         ON tmpIndexesStatistics.SchemaName = SelectedIndexes2.SchemaName
