@@ -1679,7 +1679,7 @@ BEGIN
           SET @CurrentCommand = @CurrentCommand + ' WHERE objects.[type] IN(''U'',''V'')'
                                                     + ' AND (tables.is_external = 0 OR tables.is_external IS NULL)'
                                                     + CASE WHEN @MSShippedObjects = 'N' THEN ' AND objects.is_ms_shipped = 0' ELSE '' END
-                                                    + ' AND indexes.[type] IN(1,2,3,4,5,6,7)'
+                                                    + ' AND indexes.[type] IN(1,2,3,4,7)'
                                                     + ' AND indexes.is_disabled = 0 AND indexes.is_hypothetical = 0'
         END
 
