@@ -93,7 +93,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-06-25 10:21:34                                                               //--
+  --// Version: 2026-06-28 10:45:05                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -216,15 +216,15 @@ BEGIN
                                StartPosition int,
                                DatabaseSize bigint,
                                LogSizeSinceLastLogBackup float,
-                               [Order] int,
-                               Selected bit,
-                               Completed bit,
-                               PRIMARY KEY(Selected, Completed, [Order], ID))
+                               [Order] int DEFAULT 0,
+                               Selected bit DEFAULT 0,
+                               Completed bit DEFAULT 0,
+                               PRIMARY KEY (Selected, Completed, [Order], ID))
 
   DECLARE @tmpAvailabilityGroups TABLE (ID int IDENTITY PRIMARY KEY,
                                         AvailabilityGroupName nvarchar(max),
                                         StartPosition int,
-                                        Selected bit)
+                                        Selected bit DEFAULT 0)
 
   DECLARE @tmpDatabasesAvailabilityGroups TABLE (DatabaseName nvarchar(max),
                                                  AvailabilityGroupName nvarchar(max))
@@ -546,9 +546,8 @@ BEGIN
 
   IF SERVERPROPERTY('IsHadrEnabled') = 1
   BEGIN
-    INSERT INTO @tmpAvailabilityGroups (AvailabilityGroupName, Selected)
-    SELECT name AS AvailabilityGroupName,
-           0 AS Selected
+    INSERT INTO @tmpAvailabilityGroups (AvailabilityGroupName)
+    SELECT name AS AvailabilityGroupName
     FROM sys.availability_groups
 
     INSERT INTO @tmpDatabasesAvailabilityGroups (DatabaseName, AvailabilityGroupName)
@@ -559,14 +558,11 @@ BEGIN
     INNER JOIN sys.availability_groups availability_groups ON availability_replicas.group_id = availability_groups.group_id
   END
 
-  INSERT INTO @tmpDatabases (DatabaseName, DatabaseNameFS, DatabaseType, AvailabilityGroup, [Order], Selected, Completed)
+  INSERT INTO @tmpDatabases (DatabaseName, DatabaseNameFS, DatabaseType, AvailabilityGroup)
   SELECT [name] AS DatabaseName,
          RTRIM(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE([name],'\',''),'/',''),':',''),'*',''),'?',''),'"',''),'<',''),'>',''),'|','')) AS DatabaseNameFS,
          CASE WHEN name IN('master','msdb','model') OR is_distributor = 1 THEN 'S' ELSE 'U' END AS DatabaseType,
-         NULL AS AvailabilityGroup,
-         0 AS [Order],
-         0 AS Selected,
-         0 AS Completed
+         NULL AS AvailabilityGroup
   FROM sys.databases
   WHERE [name] <> 'tempdb'
   AND source_database_id IS NULL

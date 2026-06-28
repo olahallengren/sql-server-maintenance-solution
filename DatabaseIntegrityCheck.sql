@@ -40,7 +40,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-06-25 10:21:34                                                               //--
+  --// Version: 2026-06-28 10:45:05                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -122,15 +122,15 @@ BEGIN
                                LastCommandTime datetime2,
                                DatabaseSize bigint,
                                LastGoodCheckDbTime datetime2,
-                               [Order] int,
-                               Selected bit,
-                               Completed bit,
-                               PRIMARY KEY(Selected, Completed, [Order], ID))
+                               [Order] int DEFAULT 0,
+                               Selected bit DEFAULT 0,
+                               Completed bit DEFAULT 0,
+                               PRIMARY KEY (Selected, Completed, [Order], ID))
 
   DECLARE @tmpAvailabilityGroups TABLE (ID int IDENTITY PRIMARY KEY,
                                         AvailabilityGroupName nvarchar(max),
                                         StartPosition int,
-                                        Selected bit)
+                                        Selected bit DEFAULT 0)
 
   DECLARE @tmpDatabasesAvailabilityGroups TABLE (DatabaseName nvarchar(max),
                                                  AvailabilityGroupName nvarchar(max))
@@ -139,10 +139,10 @@ BEGIN
                                 FileGroupID int,
                                 FileGroupName nvarchar(max),
                                 StartPosition int,
-                                [Order] int,
-                                Selected bit,
-                                Completed bit,
-                                PRIMARY KEY(Selected, Completed, [Order], ID))
+                                [Order] int DEFAULT 0,
+                                Selected bit DEFAULT 0,
+                                Completed bit DEFAULT 0,
+                                PRIMARY KEY (Selected, Completed, [Order], ID))
 
   DECLARE @tmpObjects TABLE (ID int IDENTITY,
                              SchemaID int,
@@ -151,10 +151,10 @@ BEGIN
                              ObjectName nvarchar(max),
                              ObjectType nvarchar(max),
                              StartPosition int,
-                             [Order] int,
-                             Selected bit,
-                             Completed bit,
-                             PRIMARY KEY(Selected, Completed, [Order], ID))
+                             [Order] int DEFAULT 0,
+                             Selected bit DEFAULT 0,
+                             Completed bit DEFAULT 0,
+                             PRIMARY KEY (Selected, Completed, [Order], ID))
 
   DECLARE @SelectedDatabases TABLE (DatabaseName nvarchar(max),
                                     DatabaseType nvarchar(max),
@@ -392,9 +392,8 @@ BEGIN
 
   IF SERVERPROPERTY('IsHadrEnabled') = 1
   BEGIN
-    INSERT INTO @tmpAvailabilityGroups (AvailabilityGroupName, Selected)
-    SELECT name AS AvailabilityGroupName,
-           0 AS Selected
+    INSERT INTO @tmpAvailabilityGroups (AvailabilityGroupName)
+    SELECT name AS AvailabilityGroupName
     FROM sys.availability_groups
 
     INSERT INTO @tmpDatabasesAvailabilityGroups (DatabaseName, AvailabilityGroupName)
@@ -405,14 +404,11 @@ BEGIN
     INNER JOIN sys.availability_groups availability_groups ON availability_replicas.group_id = availability_groups.group_id
   END
 
-  INSERT INTO @tmpDatabases (DatabaseName, DatabaseType, AvailabilityGroup, [Snapshot], [Order], Selected, Completed)
+  INSERT INTO @tmpDatabases (DatabaseName, DatabaseType, AvailabilityGroup, [Snapshot])
   SELECT [name] AS DatabaseName,
          CASE WHEN name IN('master','msdb','model') OR is_distributor = 1 THEN 'S' ELSE 'U' END AS DatabaseType,
          NULL AS AvailabilityGroup,
-         CASE WHEN source_database_id IS NOT NULL THEN 1 ELSE 0 END AS [Snapshot],
-         0 AS [Order],
-         0 AS Selected,
-         0 AS Completed
+         CASE WHEN source_database_id IS NOT NULL THEN 1 ELSE 0 END AS [Snapshot]
   FROM sys.databases
   ORDER BY [name] ASC
 
@@ -1519,9 +1515,9 @@ BEGIN
       AND (@CurrentAvailabilityGroupRole = 'PRIMARY' OR (@CurrentAvailabilityGroupRole = 'SECONDARY' AND @CurrentSecondaryRoleAllowConnections = 'ALL') OR @CurrentAvailabilityGroupRole IS NULL)
       AND (SYSDATETIME() < DATEADD(SECOND,@TimeLimit,@StartTime) OR @TimeLimit IS NULL)
       BEGIN
-        SET @CurrentCommand = 'SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED; SELECT data_space_id AS FileGroupID, name AS FileGroupName, 0 AS [Order], 0 AS Selected, 0 AS Completed FROM sys.filegroups filegroups WHERE [type] <> ''FX'' ORDER BY CASE WHEN filegroups.name = ''PRIMARY'' THEN 1 ELSE 0 END DESC, filegroups.name ASC'
+        SET @CurrentCommand = 'SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED; SELECT data_space_id AS FileGroupID, name AS FileGroupName FROM sys.filegroups filegroups WHERE [type] <> ''FX'' ORDER BY CASE WHEN filegroups.name = ''PRIMARY'' THEN 1 ELSE 0 END DESC, filegroups.name ASC'
 
-        INSERT INTO @tmpFileGroups (FileGroupID, FileGroupName, [Order], Selected, Completed)
+        INSERT INTO @tmpFileGroups (FileGroupID, FileGroupName)
         EXECUTE @CurrentDatabase_sp_executesql  @stmt = @CurrentCommand
         SET @Error = @@ERROR
         IF @Error <> 0 SET @ReturnCode = @Error
@@ -1685,9 +1681,9 @@ BEGIN
       AND (@CurrentAvailabilityGroupRole = 'PRIMARY' OR (@CurrentAvailabilityGroupRole = 'SECONDARY' AND @CurrentSecondaryRoleAllowConnections = 'ALL') OR @CurrentAvailabilityGroupRole IS NULL)
       AND (SYSDATETIME() < DATEADD(SECOND,@TimeLimit,@StartTime) OR @TimeLimit IS NULL)
       BEGIN
-        SET @CurrentCommand = 'SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED; SELECT schemas.[schema_id] AS SchemaID, schemas.[name] AS SchemaName, objects.[object_id] AS ObjectID, objects.[name] AS ObjectName, RTRIM(objects.[type]) AS ObjectType, 0 AS [Order], 0 AS Selected, 0 AS Completed FROM sys.objects objects INNER JOIN sys.schemas schemas ON objects.schema_id = schemas.schema_id LEFT OUTER JOIN sys.tables tables ON objects.object_id = tables.object_id WHERE objects.[type] IN(''U'',''V'') AND EXISTS(SELECT * FROM sys.indexes indexes WHERE indexes.object_id = objects.object_id) AND (tables.is_memory_optimized = 0 OR is_memory_optimized IS NULL) ORDER BY schemas.name ASC, objects.name ASC'
+        SET @CurrentCommand = 'SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED; SELECT schemas.[schema_id] AS SchemaID, schemas.[name] AS SchemaName, objects.[object_id] AS ObjectID, objects.[name] AS ObjectName, RTRIM(objects.[type]) AS ObjectType FROM sys.objects objects INNER JOIN sys.schemas schemas ON objects.schema_id = schemas.schema_id LEFT OUTER JOIN sys.tables tables ON objects.object_id = tables.object_id WHERE objects.[type] IN(''U'',''V'') AND EXISTS(SELECT * FROM sys.indexes indexes WHERE indexes.object_id = objects.object_id) AND (tables.is_memory_optimized = 0 OR is_memory_optimized IS NULL) ORDER BY schemas.name ASC, objects.name ASC'
 
-        INSERT INTO @tmpObjects (SchemaID, SchemaName, ObjectID, ObjectName, ObjectType, [Order], Selected, Completed)
+        INSERT INTO @tmpObjects (SchemaID, SchemaName, ObjectID, ObjectName, ObjectType)
         EXECUTE @CurrentDatabase_sp_executesql @stmt = @CurrentCommand
         SET @Error = @@ERROR
         IF @Error <> 0 SET @ReturnCode = @Error
