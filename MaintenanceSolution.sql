@@ -10,7 +10,7 @@ License: https://ola.hallengren.com/license.html
 
 GitHub: https://github.com/olahallengren/sql-server-maintenance-solution
 
-Version: 2026-06-25 10:21:34
+Version: 2026-06-28 10:45:05
 
 You can contact me by e-mail at ola@hallengren.com.
 
@@ -133,7 +133,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-06-25 10:21:34                                                               //--
+  --// Version: 2026-06-28 10:45:05                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -492,7 +492,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-06-25 10:21:34                                                               //--
+  --// Version: 2026-06-28 10:45:05                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -615,15 +615,15 @@ BEGIN
                                StartPosition int,
                                DatabaseSize bigint,
                                LogSizeSinceLastLogBackup float,
-                               [Order] int,
-                               Selected bit,
-                               Completed bit,
-                               PRIMARY KEY(Selected, Completed, [Order], ID))
+                               [Order] int DEFAULT 0,
+                               Selected bit DEFAULT 0,
+                               Completed bit DEFAULT 0,
+                               PRIMARY KEY (Selected, Completed, [Order], ID))
 
   DECLARE @tmpAvailabilityGroups TABLE (ID int IDENTITY PRIMARY KEY,
                                         AvailabilityGroupName nvarchar(max),
                                         StartPosition int,
-                                        Selected bit)
+                                        Selected bit DEFAULT 0)
 
   DECLARE @tmpDatabasesAvailabilityGroups TABLE (DatabaseName nvarchar(max),
                                                  AvailabilityGroupName nvarchar(max))
@@ -945,9 +945,8 @@ BEGIN
 
   IF SERVERPROPERTY('IsHadrEnabled') = 1
   BEGIN
-    INSERT INTO @tmpAvailabilityGroups (AvailabilityGroupName, Selected)
-    SELECT name AS AvailabilityGroupName,
-           0 AS Selected
+    INSERT INTO @tmpAvailabilityGroups (AvailabilityGroupName)
+    SELECT name AS AvailabilityGroupName
     FROM sys.availability_groups
 
     INSERT INTO @tmpDatabasesAvailabilityGroups (DatabaseName, AvailabilityGroupName)
@@ -958,14 +957,11 @@ BEGIN
     INNER JOIN sys.availability_groups availability_groups ON availability_replicas.group_id = availability_groups.group_id
   END
 
-  INSERT INTO @tmpDatabases (DatabaseName, DatabaseNameFS, DatabaseType, AvailabilityGroup, [Order], Selected, Completed)
+  INSERT INTO @tmpDatabases (DatabaseName, DatabaseNameFS, DatabaseType, AvailabilityGroup)
   SELECT [name] AS DatabaseName,
          RTRIM(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE([name],'\',''),'/',''),':',''),'*',''),'?',''),'"',''),'<',''),'>',''),'|','')) AS DatabaseNameFS,
          CASE WHEN name IN('master','msdb','model') OR is_distributor = 1 THEN 'S' ELSE 'U' END AS DatabaseType,
-         NULL AS AvailabilityGroup,
-         0 AS [Order],
-         0 AS Selected,
-         0 AS Completed
+         NULL AS AvailabilityGroup
   FROM sys.databases
   WHERE [name] <> 'tempdb'
   AND source_database_id IS NULL
@@ -4852,7 +4848,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-06-25 10:21:34                                                               //--
+  --// Version: 2026-06-28 10:45:05                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -4934,15 +4930,15 @@ BEGIN
                                LastCommandTime datetime2,
                                DatabaseSize bigint,
                                LastGoodCheckDbTime datetime2,
-                               [Order] int,
-                               Selected bit,
-                               Completed bit,
-                               PRIMARY KEY(Selected, Completed, [Order], ID))
+                               [Order] int DEFAULT 0,
+                               Selected bit DEFAULT 0,
+                               Completed bit DEFAULT 0,
+                               PRIMARY KEY (Selected, Completed, [Order], ID))
 
   DECLARE @tmpAvailabilityGroups TABLE (ID int IDENTITY PRIMARY KEY,
                                         AvailabilityGroupName nvarchar(max),
                                         StartPosition int,
-                                        Selected bit)
+                                        Selected bit DEFAULT 0)
 
   DECLARE @tmpDatabasesAvailabilityGroups TABLE (DatabaseName nvarchar(max),
                                                  AvailabilityGroupName nvarchar(max))
@@ -4951,10 +4947,10 @@ BEGIN
                                 FileGroupID int,
                                 FileGroupName nvarchar(max),
                                 StartPosition int,
-                                [Order] int,
-                                Selected bit,
-                                Completed bit,
-                                PRIMARY KEY(Selected, Completed, [Order], ID))
+                                [Order] int DEFAULT 0,
+                                Selected bit DEFAULT 0,
+                                Completed bit DEFAULT 0,
+                                PRIMARY KEY (Selected, Completed, [Order], ID))
 
   DECLARE @tmpObjects TABLE (ID int IDENTITY,
                              SchemaID int,
@@ -4963,10 +4959,10 @@ BEGIN
                              ObjectName nvarchar(max),
                              ObjectType nvarchar(max),
                              StartPosition int,
-                             [Order] int,
-                             Selected bit,
-                             Completed bit,
-                             PRIMARY KEY(Selected, Completed, [Order], ID))
+                             [Order] int DEFAULT 0,
+                             Selected bit DEFAULT 0,
+                             Completed bit DEFAULT 0,
+                             PRIMARY KEY (Selected, Completed, [Order], ID))
 
   DECLARE @SelectedDatabases TABLE (DatabaseName nvarchar(max),
                                     DatabaseType nvarchar(max),
@@ -5204,9 +5200,8 @@ BEGIN
 
   IF SERVERPROPERTY('IsHadrEnabled') = 1
   BEGIN
-    INSERT INTO @tmpAvailabilityGroups (AvailabilityGroupName, Selected)
-    SELECT name AS AvailabilityGroupName,
-           0 AS Selected
+    INSERT INTO @tmpAvailabilityGroups (AvailabilityGroupName)
+    SELECT name AS AvailabilityGroupName
     FROM sys.availability_groups
 
     INSERT INTO @tmpDatabasesAvailabilityGroups (DatabaseName, AvailabilityGroupName)
@@ -5217,14 +5212,11 @@ BEGIN
     INNER JOIN sys.availability_groups availability_groups ON availability_replicas.group_id = availability_groups.group_id
   END
 
-  INSERT INTO @tmpDatabases (DatabaseName, DatabaseType, AvailabilityGroup, [Snapshot], [Order], Selected, Completed)
+  INSERT INTO @tmpDatabases (DatabaseName, DatabaseType, AvailabilityGroup, [Snapshot])
   SELECT [name] AS DatabaseName,
          CASE WHEN name IN('master','msdb','model') OR is_distributor = 1 THEN 'S' ELSE 'U' END AS DatabaseType,
          NULL AS AvailabilityGroup,
-         CASE WHEN source_database_id IS NOT NULL THEN 1 ELSE 0 END AS [Snapshot],
-         0 AS [Order],
-         0 AS Selected,
-         0 AS Completed
+         CASE WHEN source_database_id IS NOT NULL THEN 1 ELSE 0 END AS [Snapshot]
   FROM sys.databases
   ORDER BY [name] ASC
 
@@ -6331,9 +6323,9 @@ BEGIN
       AND (@CurrentAvailabilityGroupRole = 'PRIMARY' OR (@CurrentAvailabilityGroupRole = 'SECONDARY' AND @CurrentSecondaryRoleAllowConnections = 'ALL') OR @CurrentAvailabilityGroupRole IS NULL)
       AND (SYSDATETIME() < DATEADD(SECOND,@TimeLimit,@StartTime) OR @TimeLimit IS NULL)
       BEGIN
-        SET @CurrentCommand = 'SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED; SELECT data_space_id AS FileGroupID, name AS FileGroupName, 0 AS [Order], 0 AS Selected, 0 AS Completed FROM sys.filegroups filegroups WHERE [type] <> ''FX'' ORDER BY CASE WHEN filegroups.name = ''PRIMARY'' THEN 1 ELSE 0 END DESC, filegroups.name ASC'
+        SET @CurrentCommand = 'SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED; SELECT data_space_id AS FileGroupID, name AS FileGroupName FROM sys.filegroups filegroups WHERE [type] <> ''FX'' ORDER BY CASE WHEN filegroups.name = ''PRIMARY'' THEN 1 ELSE 0 END DESC, filegroups.name ASC'
 
-        INSERT INTO @tmpFileGroups (FileGroupID, FileGroupName, [Order], Selected, Completed)
+        INSERT INTO @tmpFileGroups (FileGroupID, FileGroupName)
         EXECUTE @CurrentDatabase_sp_executesql  @stmt = @CurrentCommand
         SET @Error = @@ERROR
         IF @Error <> 0 SET @ReturnCode = @Error
@@ -6497,9 +6489,9 @@ BEGIN
       AND (@CurrentAvailabilityGroupRole = 'PRIMARY' OR (@CurrentAvailabilityGroupRole = 'SECONDARY' AND @CurrentSecondaryRoleAllowConnections = 'ALL') OR @CurrentAvailabilityGroupRole IS NULL)
       AND (SYSDATETIME() < DATEADD(SECOND,@TimeLimit,@StartTime) OR @TimeLimit IS NULL)
       BEGIN
-        SET @CurrentCommand = 'SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED; SELECT schemas.[schema_id] AS SchemaID, schemas.[name] AS SchemaName, objects.[object_id] AS ObjectID, objects.[name] AS ObjectName, RTRIM(objects.[type]) AS ObjectType, 0 AS [Order], 0 AS Selected, 0 AS Completed FROM sys.objects objects INNER JOIN sys.schemas schemas ON objects.schema_id = schemas.schema_id LEFT OUTER JOIN sys.tables tables ON objects.object_id = tables.object_id WHERE objects.[type] IN(''U'',''V'') AND EXISTS(SELECT * FROM sys.indexes indexes WHERE indexes.object_id = objects.object_id) AND (tables.is_memory_optimized = 0 OR is_memory_optimized IS NULL) ORDER BY schemas.name ASC, objects.name ASC'
+        SET @CurrentCommand = 'SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED; SELECT schemas.[schema_id] AS SchemaID, schemas.[name] AS SchemaName, objects.[object_id] AS ObjectID, objects.[name] AS ObjectName, RTRIM(objects.[type]) AS ObjectType FROM sys.objects objects INNER JOIN sys.schemas schemas ON objects.schema_id = schemas.schema_id LEFT OUTER JOIN sys.tables tables ON objects.object_id = tables.object_id WHERE objects.[type] IN(''U'',''V'') AND EXISTS(SELECT * FROM sys.indexes indexes WHERE indexes.object_id = objects.object_id) AND (tables.is_memory_optimized = 0 OR is_memory_optimized IS NULL) ORDER BY schemas.name ASC, objects.name ASC'
 
-        INSERT INTO @tmpObjects (SchemaID, SchemaName, ObjectID, ObjectName, ObjectType, [Order], Selected, Completed)
+        INSERT INTO @tmpObjects (SchemaID, SchemaName, ObjectID, ObjectName, ObjectType)
         EXECUTE @CurrentDatabase_sp_executesql @stmt = @CurrentCommand
         SET @Error = @@ERROR
         IF @Error <> 0 SET @ReturnCode = @Error
@@ -6804,7 +6796,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-06-25 10:21:34                                                               //--
+  --// Version: 2026-06-28 10:45:05                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -6828,8 +6820,6 @@ BEGIN
   DECLARE @HostPlatform nvarchar(max)
   DECLARE @ContainedAvailabilityGroupListenerConnection bit = 0
 
-  DECLARE @PartitionLevelStatistics bit
-
   DECLARE @QueueID int
   DECLARE @QueueStartTime datetime2
 
@@ -6844,6 +6834,7 @@ BEGIN
   DECLARE @CurrentDatabaseState nvarchar(max)
   DECLARE @CurrentInStandby bit
   DECLARE @CurrentRecoveryModel nvarchar(max)
+  DECLARE @CurrentDatabaseHasReadOnlyFileGroup bit
 
   DECLARE @CurrentAvailabilityGroupReplicaID uniqueidentifier
   DECLARE @CurrentAvailabilityGroupID uniqueidentifier
@@ -6924,28 +6915,28 @@ BEGIN
                                AvailabilityGroup bit,
                                StartPosition int,
                                DatabaseSize bigint,
-                               [Order] int,
-                               Selected bit,
-                               Completed bit,
-                               PRIMARY KEY(Selected, Completed, [Order], ID))
+                               [Order] int DEFAULT 0,
+                               Selected bit DEFAULT 0,
+                               Completed bit DEFAULT 0,
+                               PRIMARY KEY (Selected, Completed, [Order], ID))
 
   DECLARE @tmpAvailabilityGroups TABLE (ID int IDENTITY PRIMARY KEY,
                                         AvailabilityGroupName nvarchar(max),
                                         StartPosition int,
-                                        Selected bit)
+                                        Selected bit DEFAULT 0)
 
   DECLARE @tmpDatabasesAvailabilityGroups TABLE (DatabaseName nvarchar(max),
                                                  AvailabilityGroupName nvarchar(max))
 
   DECLARE @tmpIndexesStatistics TABLE (ID int IDENTITY,
                                        SchemaID int,
-                                       SchemaName nvarchar(max),
+                                       SchemaName nvarchar(128),
                                        ObjectID int,
-                                       ObjectName nvarchar(max),
-                                       ObjectType nvarchar(max),
+                                       ObjectName nvarchar(128),
+                                       ObjectType nvarchar(2),
                                        IsMemoryOptimized bit,
                                        IndexID int,
-                                       IndexName nvarchar(max),
+                                       IndexName nvarchar(128),
                                        IndexType int,
                                        AllowPageLocks bit,
                                        HasFilter bit,
@@ -6961,17 +6952,37 @@ BEGIN
                                        OnReadOnlyFileGroup bit,
                                        ResumableIndexOperation bit,
                                        StatisticsID int,
-                                       StatisticsName nvarchar(max),
+                                       StatisticsName nvarchar(128),
                                        [NoRecompute] bit,
                                        IsIncremental bit,
                                        PartitionID bigint,
                                        PartitionNumber int,
                                        PartitionCount int,
                                        StartPosition int,
-                                       [Order] int,
-                                       Selected bit,
-                                       Completed bit,
-                                       PRIMARY KEY(Selected, Completed, [Order], ID))
+                                       [Order] int DEFAULT 0,
+                                       Selected bit DEFAULT 0,
+                                       Completed bit DEFAULT 0,
+                                       PRIMARY KEY (Selected, Completed, [Order], ID))
+
+  DECLARE @tmpObjectProperties TABLE (ObjectID int NOT NULL,
+                                      HasClusteredColumnstore bit,
+                                      HasNonClusteredColumnstore bit,
+                                      IsClusteredIndexComputed bit,
+                                      PRIMARY KEY (ObjectID))
+
+  DECLARE @tmpIndexProperties TABLE (ObjectID int NOT NULL,
+                                     IndexID int NOT NULL,
+                                     IsImageText bit,
+                                     IsNewLOB bit,
+                                     IsFileStream bit,
+                                     IsColumnstoreOrdered bit,
+                                     IsComputed bit,
+                                     IsTimestamp bit,
+                                     PRIMARY KEY (ObjectID, IndexID))
+
+  DECLARE @tmpResumableOperations TABLE (ObjectID int NOT NULL,
+                                         IndexID int NOT NULL,
+                                         PartitionNumber int)
 
   DECLARE @SelectedDatabases TABLE (DatabaseName nvarchar(max),
                                     DatabaseType nvarchar(max),
@@ -7236,9 +7247,8 @@ BEGIN
 
   IF SERVERPROPERTY('IsHadrEnabled') = 1
   BEGIN
-    INSERT INTO @tmpAvailabilityGroups (AvailabilityGroupName, Selected)
-    SELECT name AS AvailabilityGroupName,
-           0 AS Selected
+    INSERT INTO @tmpAvailabilityGroups (AvailabilityGroupName)
+    SELECT name AS AvailabilityGroupName
     FROM sys.availability_groups
 
     INSERT INTO @tmpDatabasesAvailabilityGroups (DatabaseName, AvailabilityGroupName)
@@ -7249,13 +7259,10 @@ BEGIN
     INNER JOIN sys.availability_groups availability_groups ON availability_replicas.group_id = availability_groups.group_id
   END
 
-  INSERT INTO @tmpDatabases (DatabaseName, DatabaseType, AvailabilityGroup, [Order], Selected, Completed)
+  INSERT INTO @tmpDatabases (DatabaseName, DatabaseType, AvailabilityGroup)
   SELECT [name] AS DatabaseName,
          CASE WHEN name IN('master','msdb','model') OR is_distributor = 1 THEN 'S' ELSE 'U' END AS DatabaseType,
-         NULL AS AvailabilityGroup,
-         0 AS [Order],
-         0 AS Selected,
-         0 AS Completed
+         NULL AS AvailabilityGroup
   FROM sys.databases
   WHERE [name] <> 'tempdb'
   AND source_database_id IS NULL
@@ -7995,12 +8002,6 @@ BEGIN
   END
 
   ----------------------------------------------------------------------------------------------------
-  --// Should statistics be updated on the partition level?                                       //--
-  ----------------------------------------------------------------------------------------------------
-
-  SET @PartitionLevelStatistics = CASE WHEN @PartitionLevel = 'Y' THEN 1 ELSE 0 END
-
-  ----------------------------------------------------------------------------------------------------
   --// Update database order                                                                      //--
   ----------------------------------------------------------------------------------------------------
 
@@ -8357,265 +8358,385 @@ BEGIN
     AND (@CurrentExecuteAsUserExists = 1 OR @CurrentExecuteAsUserExists IS NULL)
     BEGIN
 
-      -- Select indexes in the current database
       IF (EXISTS(SELECT * FROM @ActionsPreferred) OR @UpdateStatistics IS NOT NULL) AND (SYSDATETIME() < DATEADD(SECOND,@TimeLimit,@StartTime) OR @TimeLimit IS NULL)
       BEGIN
-        SET @CurrentCommand = 'SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;'
-                              + ' SELECT SchemaID, SchemaName, ObjectID, ObjectName, ObjectType, IsMemoryOptimized, IndexID, IndexName, IndexType, AllowPageLocks, HasFilter, IsImageText, IsNewLOB, IsFileStream, HasClusteredColumnstore, HasNonClusteredColumnstore, IsColumnstoreOrdered, IsComputed, IsClusteredIndexComputed, IsTimestamp, OnReadOnlyFileGroup, ResumableIndexOperation, StatisticsID, StatisticsName, NoRecompute, IsIncremental, PartitionID, PartitionNumber, PartitionCount, [Order], Selected, Completed'
-                              + ' FROM ('
-
         IF EXISTS(SELECT * FROM @ActionsPreferred) OR @UpdateStatistics IN('ALL','INDEX')
         BEGIN
-          SET @CurrentCommand = @CurrentCommand + 'SELECT schemas.[schema_id] AS SchemaID'
-                                                    + ', schemas.[name] AS SchemaName'
-                                                    + ', objects.[object_id] AS ObjectID'
-                                                    + ', objects.[name] AS ObjectName'
-                                                    + ', RTRIM(objects.[type]) AS ObjectType'
-                                                    + ', ISNULL(tables.is_memory_optimized, 0) AS IsMemoryOptimized'
-                                                    + ', indexes.index_id AS IndexID'
-                                                    + ', indexes.[name] AS IndexName'
-                                                    + ', indexes.[type] AS IndexType'
-                                                    + ', indexes.allow_page_locks AS AllowPageLocks'
-                                                    + ', indexes.has_filter AS HasFilter'
-
-                                                    + ', CASE WHEN indexes.[type] = 1 AND EXISTS(SELECT * FROM sys.columns columns INNER JOIN sys.types types ON columns.system_type_id = types.user_type_id WHERE columns.[object_id] = objects.object_id AND types.name IN(''image'',''text'',''ntext'')) THEN 1 ELSE 0 END AS IsImageText'
-
-                                                    + ', CASE WHEN indexes.[type] = 1 AND EXISTS(SELECT * FROM sys.columns columns INNER JOIN sys.types types ON columns.system_type_id = types.user_type_id OR (columns.user_type_id = types.user_type_id AND types.is_assembly_type = 1) WHERE columns.[object_id] = objects.object_id AND (types.name IN(''xml'') OR (types.name IN(''varchar'',''nvarchar'',''varbinary'') AND columns.max_length = -1) OR (types.is_assembly_type = 1 AND columns.max_length = -1))) THEN 1'
-                                                    + ' WHEN indexes.[type] = 2 AND EXISTS(SELECT * FROM sys.index_columns index_columns INNER JOIN sys.columns columns ON index_columns.[object_id] = columns.[object_id] AND index_columns.column_id = columns.column_id INNER JOIN sys.types types ON columns.system_type_id = types.user_type_id OR (columns.user_type_id = types.user_type_id AND types.is_assembly_type = 1) WHERE index_columns.[object_id] = objects.object_id AND index_columns.index_id = indexes.index_id AND (types.[name] IN(''xml'') OR (types.[name] IN(''varchar'',''nvarchar'',''varbinary'') AND columns.max_length = -1) OR (types.is_assembly_type = 1 AND columns.max_length = -1))) THEN 1 ELSE 0 END AS IsNewLOB'
-
-                                                    + ', CASE WHEN indexes.[type] = 1 AND EXISTS(SELECT * FROM sys.columns columns WHERE columns.[object_id] = objects.object_id  AND columns.is_filestream = 1) THEN 1 ELSE 0 END AS IsFileStream'
-
-                                                    + ', CASE WHEN EXISTS(SELECT * FROM sys.indexes indexes WHERE indexes.[object_id] = objects.object_id AND [type] = 5) THEN 1 ELSE 0 END AS HasClusteredColumnstore'
-
-                                                    + ', CASE WHEN EXISTS(SELECT * FROM sys.indexes indexes WHERE indexes.[object_id] = objects.object_id AND [type] = 6) THEN 1 ELSE 0 END AS HasNonClusteredColumnstore'
-
-                                                    + ', ' + CASE WHEN (@Version >= 16 OR SERVERPROPERTY('EngineEdition') = 5 OR (SERVERPROPERTY('EngineEdition') = 8 AND SERVERPROPERTY('ProductUpdateType') = 'Continuous')) THEN 'CASE WHEN EXISTS(SELECT * FROM sys.index_columns index_columns WHERE index_columns.[object_id] = indexes.[object_id] AND index_columns.index_id = indexes.index_id AND index_columns.column_store_order_ordinal = 1) THEN 1 ELSE 0 END' ELSE '0' END + ' AS IsColumnstoreOrdered'
-
-                                                    + ', CASE WHEN EXISTS(SELECT * FROM sys.index_columns index_columns INNER JOIN sys.columns columns ON index_columns.object_id = columns.object_id AND index_columns.column_id = columns.column_id WHERE (index_columns.key_ordinal > 0 OR index_columns.partition_ordinal > 0 OR index_columns.is_included_column = 1) AND columns.is_computed = 1 AND index_columns.object_id = indexes.object_id AND index_columns.index_id = indexes.index_id) THEN 1 ELSE 0 END AS IsComputed'
-
-                                                    + ', CASE WHEN EXISTS(SELECT * FROM sys.index_columns index_columns INNER JOIN sys.columns columns ON index_columns.object_id = columns.object_id AND index_columns.column_id = columns.column_id INNER JOIN sys.indexes indexes2 ON index_columns.object_id = indexes2.object_id AND index_columns.index_id = indexes2.index_id WHERE (index_columns.key_ordinal > 0 OR index_columns.partition_ordinal > 0) AND columns.is_computed = 1 AND indexes2.[type] = 1 AND index_columns.object_id = indexes.object_id) THEN 1 ELSE 0 END AS IsClusteredIndexComputed'
-
-                                                    + ', CASE WHEN EXISTS(SELECT * FROM sys.index_columns index_columns INNER JOIN sys.columns columns ON index_columns.[object_id] = columns.[object_id] AND index_columns.column_id = columns.column_id INNER JOIN sys.types types ON columns.system_type_id = types.system_type_id WHERE (index_columns.key_ordinal > 0 OR index_columns.partition_ordinal > 0) AND index_columns.[object_id] = objects.object_id AND index_columns.index_id = indexes.index_id AND types.[name] = ''timestamp'') THEN 1 ELSE 0 END AS IsTimestamp'
-
-                                                    + ', CASE WHEN EXISTS (SELECT * FROM sys.indexes indexes2 INNER JOIN sys.destination_data_spaces destination_data_spaces ON indexes.data_space_id = destination_data_spaces.partition_scheme_id INNER JOIN sys.filegroups filegroups ON destination_data_spaces.data_space_id = filegroups.data_space_id WHERE filegroups.is_read_only = 1 AND indexes2.[object_id] = indexes.[object_id] AND indexes2.[index_id] = indexes.index_id' + CASE WHEN @PartitionLevel = 'Y' THEN ' AND destination_data_spaces.destination_id = partitions.partition_number' ELSE '' END + ') THEN 1'
-                                                    + ' WHEN EXISTS (SELECT * FROM sys.indexes indexes2 INNER JOIN sys.filegroups filegroups ON indexes.data_space_id = filegroups.data_space_id WHERE filegroups.is_read_only = 1 AND indexes.[object_id] = indexes2.[object_id] AND indexes.[index_id] = indexes2.index_id) THEN 1'
-                                                    + ' WHEN indexes.[type] = 1 AND EXISTS (SELECT * FROM sys.tables tables INNER JOIN sys.filegroups filegroups ON tables.lob_data_space_id = filegroups.data_space_id WHERE filegroups.is_read_only = 1 AND tables.[object_id] = objects.[object_id]) THEN 1 ELSE 0 END AS OnReadOnlyFileGroup'
-
-                                                    + ', CASE WHEN EXISTS(SELECT * FROM sys.index_resumable_operations index_resumable_operations WHERE state_desc = ''PAUSED'' AND index_resumable_operations.object_id = indexes.object_id AND index_resumable_operations.index_id = indexes.index_id' + CASE WHEN @PartitionLevel = 'Y' THEN ' AND (index_resumable_operations.partition_number = partitions.partition_number OR index_resumable_operations.partition_number IS NULL)' ELSE '' END + ') THEN 1 ELSE 0 END AS ResumableIndexOperation'
-
-                                                    + ', stats.stats_id AS StatisticsID'
-                                                    + ', stats.name AS StatisticsName'
-                                                    + ', stats.no_recompute AS NoRecompute'
-                                                    + ', stats.is_incremental AS IsIncremental'
-                                                    + ', ' + CASE WHEN @PartitionLevel = 'Y' THEN 'partitions.partition_id AS PartitionID' WHEN @PartitionLevel = 'N' THEN 'NULL AS PartitionID' END
-                                                    + ', ' + CASE WHEN @PartitionLevel = 'Y' THEN 'partitions.partition_number AS PartitionNumber' WHEN @PartitionLevel = 'N' THEN 'NULL AS PartitionNumber' END
-                                                    + ', ' + CASE WHEN @PartitionLevel = 'Y' THEN 'IndexPartitions.partition_count AS PartitionCount' WHEN @PartitionLevel = 'N' THEN 'NULL AS PartitionCount' END
-                                                    + ', 0 AS [Order]'
-                                                    + ', 0 AS Selected'
-                                                    + ', 0 AS Completed'
-                                                    + ' FROM sys.indexes indexes'
-                                                    + ' INNER JOIN sys.objects objects ON indexes.[object_id] = objects.[object_id]'
-                                                    + ' INNER JOIN sys.schemas schemas ON objects.[schema_id] = schemas.[schema_id]'
-                                                    + ' LEFT OUTER JOIN sys.tables tables ON objects.[object_id] = tables.[object_id]'
-                                                    + ' LEFT OUTER JOIN sys.stats stats ON indexes.[object_id] = stats.[object_id] AND indexes.[index_id] = stats.[stats_id]'
-          IF @PartitionLevel = 'Y'
+          -- Check if there are read-only filegroups in the database
+          SET @CurrentCommand = 'SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;'
+                              + ' SELECT @ParamDatabaseHasReadOnlyFileGroup = CASE WHEN EXISTS(SELECT * FROM sys.filegroups filegroups WHERE filegroups.is_read_only = 1) THEN 1 ELSE 0 END'
+          EXECUTE @CurrentDatabase_sp_executesql @stmt = @CurrentCommand, @params = N'@ParamDatabaseHasReadOnlyFileGroup bit OUTPUT', @ParamDatabaseHasReadOnlyFileGroup = @CurrentDatabaseHasReadOnlyFileGroup OUTPUT
+          SET @Error = @@ERROR
+          IF @Error <> 0
           BEGIN
-            SET @CurrentCommand = @CurrentCommand + ' LEFT OUTER JOIN sys.partitions partitions ON indexes.[object_id] = partitions.[object_id] AND indexes.index_id = partitions.index_id'
-                                                      + ' LEFT OUTER JOIN (SELECT partitions.[object_id], partitions.index_id, COUNT(DISTINCT partitions.partition_number) AS partition_count FROM sys.partitions partitions GROUP BY partitions.[object_id], partitions.index_id) IndexPartitions ON partitions.[object_id] = IndexPartitions.[object_id] AND partitions.[index_id] = IndexPartitions.[index_id]'
+            SET @ReturnCode = @Error
           END
 
-          SET @CurrentCommand = @CurrentCommand + ' WHERE objects.[type] IN(''U'',''V'')'
-                                                    + ' AND (tables.is_external = 0 OR tables.is_external IS NULL)'
-                                                    + CASE WHEN @MSShippedObjects = 'N' THEN ' AND objects.is_ms_shipped = 0' ELSE '' END
-                                                    + ' AND indexes.[type] IN(1,2,3,4,5,6,7)'
-                                                    + ' AND indexes.is_disabled = 0 AND indexes.is_hypothetical = 0'
-        END
+          -- Select indexes on tables
+          SET @CurrentCommand = 'SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;'
+                              + ' SELECT schemas.[schema_id] AS SchemaID'
+                              + ', schemas.[name] AS SchemaName'
+                              + ', objects.[object_id] AS ObjectID'
+                              + ', objects.[name] AS ObjectName'
+                              + ', RTRIM(objects.[type]) AS ObjectType'
+                              + ', ISNULL(tables.is_memory_optimized, 0) AS IsMemoryOptimized'
+                              + ', indexes.index_id AS IndexID'
+                              + ', indexes.[name] AS IndexName'
+                              + ', indexes.[type] AS IndexType'
+                              + ', indexes.allow_page_locks AS AllowPageLocks'
+                              + ', indexes.has_filter AS HasFilter'
+                              + CASE WHEN @CurrentDatabaseHasReadOnlyFileGroup = 1 THEN ', CASE WHEN EXISTS (SELECT * FROM sys.indexes indexes2 INNER JOIN sys.destination_data_spaces destination_data_spaces ON indexes.data_space_id = destination_data_spaces.partition_scheme_id INNER JOIN sys.filegroups filegroups ON destination_data_spaces.data_space_id = filegroups.data_space_id WHERE filegroups.is_read_only = 1 AND indexes2.[object_id] = indexes.[object_id] AND indexes2.[index_id] = indexes.index_id' + CASE WHEN @PartitionLevel = 'Y' THEN ' AND destination_data_spaces.destination_id = partitions.partition_number' ELSE '' END + ') THEN 1'
+                              + ' WHEN EXISTS (SELECT * FROM sys.indexes indexes2 INNER JOIN sys.filegroups filegroups ON indexes.data_space_id = filegroups.data_space_id WHERE filegroups.is_read_only = 1 AND indexes.[object_id] = indexes2.[object_id] AND indexes.[index_id] = indexes2.index_id) THEN 1'
+                              + ' WHEN indexes.[type] = 1 AND EXISTS (SELECT * FROM sys.tables tables INNER JOIN sys.filegroups filegroups ON tables.lob_data_space_id = filegroups.data_space_id WHERE filegroups.is_read_only = 1 AND tables.[object_id] = objects.[object_id]) THEN 1 ELSE 0 END AS OnReadOnlyFileGroup' ELSE ', 0 AS OnReadOnlyFileGroup' END
+                              + ', 0 AS ResumableIndexOperation'
+                              + ', stats.stats_id AS StatisticsID'
+                              + ', stats.name AS StatisticsName'
+                              + ', stats.no_recompute AS NoRecompute'
+                              + ', stats.is_incremental AS IsIncremental'
+                              + ', ' + CASE WHEN @PartitionLevel = 'Y' THEN 'partitions.partition_id AS PartitionID' WHEN @PartitionLevel = 'N' THEN 'NULL AS PartitionID' END
+                              + ', ' + CASE WHEN @PartitionLevel = 'Y' THEN 'partitions.partition_number AS PartitionNumber' WHEN @PartitionLevel = 'N' THEN 'NULL AS PartitionNumber' END
+                              + ' FROM sys.indexes indexes'
+                              + ' INNER JOIN sys.objects objects ON indexes.[object_id] = objects.[object_id]'
+                              + ' INNER JOIN sys.schemas schemas ON objects.[schema_id] = schemas.[schema_id]'
+                              + ' INNER JOIN sys.tables tables ON objects.[object_id] = tables.[object_id]'
+                              + ' INNER JOIN sys.stats stats ON indexes.[object_id] = stats.[object_id] AND indexes.[index_id] = stats.[stats_id]'
+          IF @PartitionLevel = 'Y'
+          BEGIN
+            SET @CurrentCommand += ' INNER JOIN sys.partitions partitions ON indexes.[object_id] = partitions.[object_id] AND indexes.index_id = partitions.index_id'
+          END
+          SET @CurrentCommand += ' WHERE objects.[type] = ''U'''
+                               + ' AND tables.is_external = 0'
+                               + CASE WHEN @MSShippedObjects = 'N' THEN ' AND objects.is_ms_shipped = 0' ELSE '' END
+                               + ' AND indexes.[type] IN(1,2,5,6,7)'
+                               + ' AND indexes.is_disabled = 0'
+                               + ' AND indexes.is_hypothetical = 0'
 
-        IF (EXISTS(SELECT * FROM @ActionsPreferred) AND @UpdateStatistics = 'COLUMNS') OR @UpdateStatistics = 'ALL'
-        BEGIN
-          SET @CurrentCommand = @CurrentCommand + ' UNION '
+          INSERT INTO @tmpIndexesStatistics (SchemaID, SchemaName, ObjectID, ObjectName, ObjectType, IsMemoryOptimized, IndexID, IndexName, IndexType, AllowPageLocks, HasFilter, OnReadOnlyFileGroup, ResumableIndexOperation, StatisticsID, StatisticsName, [NoRecompute], IsIncremental, PartitionID, PartitionNumber)
+          EXECUTE @CurrentDatabase_sp_executesql @stmt = @CurrentCommand
+          SET @Error = @@ERROR
+          IF @Error <> 0
+          BEGIN
+            SET @ReturnCode = @Error
+          END
+
+          -- Select special indexes (XML and spatial)
+          SET @CurrentCommand = 'SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;'
+                              + ' SELECT schemas.[schema_id] AS SchemaID'
+                              + ', schemas.[name] AS SchemaName'
+                              + ', objects.[object_id] AS ObjectID'
+                              + ', objects.[name] AS ObjectName'
+                              + ', RTRIM(objects.[type]) AS ObjectType'
+                              + ', ISNULL(tables.is_memory_optimized, 0) AS IsMemoryOptimized'
+                              + ', indexes.index_id AS IndexID'
+                              + ', indexes.[name] AS IndexName'
+                              + ', indexes.[type] AS IndexType'
+                              + ', indexes.allow_page_locks AS AllowPageLocks'
+                              + ', indexes.has_filter AS HasFilter'
+                              + CASE WHEN @CurrentDatabaseHasReadOnlyFileGroup = 1 THEN ', CASE WHEN EXISTS (SELECT * FROM sys.indexes indexes2 INNER JOIN sys.destination_data_spaces destination_data_spaces ON indexes.data_space_id = destination_data_spaces.partition_scheme_id INNER JOIN sys.filegroups filegroups ON destination_data_spaces.data_space_id = filegroups.data_space_id WHERE filegroups.is_read_only = 1 AND indexes2.[object_id] = indexes.[object_id] AND indexes2.[index_id] = indexes.index_id) THEN 1'
+                              + ' WHEN EXISTS (SELECT * FROM sys.indexes indexes2 INNER JOIN sys.filegroups filegroups ON indexes.data_space_id = filegroups.data_space_id WHERE filegroups.is_read_only = 1 AND indexes.[object_id] = indexes2.[object_id] AND indexes.[index_id] = indexes2.index_id) THEN 1 ELSE 0 END AS OnReadOnlyFileGroup' ELSE ', 0 AS OnReadOnlyFileGroup' END
+                              + ', 0 AS ResumableIndexOperation'
+                              + ' FROM sys.indexes indexes'
+                              + ' INNER JOIN sys.objects objects ON indexes.[object_id] = objects.[object_id]'
+                              + ' INNER JOIN sys.schemas schemas ON objects.[schema_id] = schemas.[schema_id]'
+                              + ' INNER JOIN sys.tables tables ON objects.[object_id] = tables.[object_id]'
+                              + ' WHERE objects.[type] = ''U'''
+                              + ' AND tables.is_external = 0'
+                              + CASE WHEN @MSShippedObjects = 'N' THEN ' AND objects.is_ms_shipped = 0' ELSE '' END
+                              + ' AND indexes.[type] IN(3,4)'
+                              + ' AND indexes.is_disabled = 0'
+                              + ' AND indexes.is_hypothetical = 0'
+
+          INSERT INTO @tmpIndexesStatistics (SchemaID, SchemaName, ObjectID, ObjectName, ObjectType, IsMemoryOptimized, IndexID, IndexName, IndexType, AllowPageLocks, HasFilter, OnReadOnlyFileGroup, ResumableIndexOperation)
+          EXECUTE @CurrentDatabase_sp_executesql @stmt = @CurrentCommand
+          SET @Error = @@ERROR
+          IF @Error <> 0
+          BEGIN
+            SET @ReturnCode = @Error
+          END
+
+          -- Select indexes on views
+          SET @CurrentCommand = 'SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;'
+                              + ' SELECT schemas.[schema_id] AS SchemaID'
+                              + ', schemas.[name] AS SchemaName'
+                              + ', objects.[object_id] AS ObjectID'
+                              + ', objects.[name] AS ObjectName'
+                              + ', RTRIM(objects.[type]) AS ObjectType'
+                              + ', 0 AS IsMemoryOptimized'
+                              + ', indexes.index_id AS IndexID'
+                              + ', indexes.[name] AS IndexName'
+                              + ', indexes.[type] AS IndexType'
+                              + ', indexes.allow_page_locks AS AllowPageLocks'
+                              + ', indexes.has_filter AS HasFilter'
+                              + CASE WHEN @CurrentDatabaseHasReadOnlyFileGroup = 1 THEN ', CASE WHEN EXISTS (SELECT * FROM sys.indexes indexes2 INNER JOIN sys.destination_data_spaces destination_data_spaces ON indexes.data_space_id = destination_data_spaces.partition_scheme_id INNER JOIN sys.filegroups filegroups ON destination_data_spaces.data_space_id = filegroups.data_space_id WHERE filegroups.is_read_only = 1 AND indexes2.[object_id] = indexes.[object_id] AND indexes2.[index_id] = indexes.index_id' + CASE WHEN @PartitionLevel = 'Y' THEN ' AND destination_data_spaces.destination_id = partitions.partition_number' ELSE '' END + ') THEN 1'
+                              + ' WHEN EXISTS (SELECT * FROM sys.indexes indexes2 INNER JOIN sys.filegroups filegroups ON indexes.data_space_id = filegroups.data_space_id WHERE filegroups.is_read_only = 1 AND indexes.[object_id] = indexes2.[object_id] AND indexes.[index_id] = indexes2.index_id) THEN 1'
+                              + ' WHEN indexes.[type] = 1 AND EXISTS (SELECT * FROM sys.tables tables INNER JOIN sys.filegroups filegroups ON tables.lob_data_space_id = filegroups.data_space_id WHERE filegroups.is_read_only = 1 AND tables.[object_id] = objects.[object_id]) THEN 1 ELSE 0 END AS OnReadOnlyFileGroup' ELSE ', 0 AS OnReadOnlyFileGroup' END
+                              + ', 0 AS ResumableIndexOperation'
+                              + ', stats.stats_id AS StatisticsID'
+                              + ', stats.name AS StatisticsName'
+                              + ', stats.no_recompute AS NoRecompute'
+                              + ', stats.is_incremental AS IsIncremental'
+                              + ', ' + CASE WHEN @PartitionLevel = 'Y' THEN 'partitions.partition_id AS PartitionID' WHEN @PartitionLevel = 'N' THEN 'NULL AS PartitionID' END
+                              + ', ' + CASE WHEN @PartitionLevel = 'Y' THEN 'partitions.partition_number AS PartitionNumber' WHEN @PartitionLevel = 'N' THEN 'NULL AS PartitionNumber' END
+                              + ' FROM sys.indexes indexes'
+                              + ' INNER JOIN sys.objects objects ON indexes.[object_id] = objects.[object_id]'
+                              + ' INNER JOIN sys.schemas schemas ON objects.[schema_id] = schemas.[schema_id]'
+                              + ' LEFT OUTER JOIN sys.stats stats ON indexes.[object_id] = stats.[object_id] AND indexes.[index_id] = stats.[stats_id]'
+          IF @PartitionLevel = 'Y'
+          BEGIN
+            SET @CurrentCommand += ' LEFT OUTER JOIN sys.partitions partitions ON indexes.[object_id] = partitions.[object_id] AND indexes.index_id = partitions.index_id'
+          END
+          SET @CurrentCommand += ' WHERE objects.[type] = ''V'''
+                               + CASE WHEN @MSShippedObjects = 'N' THEN ' AND objects.is_ms_shipped = 0' ELSE '' END
+                               + ' AND indexes.[type] IN(1,2)'
+                               + ' AND indexes.is_disabled = 0'
+                               + ' AND indexes.is_hypothetical = 0'
+
+          INSERT INTO @tmpIndexesStatistics (SchemaID, SchemaName, ObjectID, ObjectName, ObjectType, IsMemoryOptimized, IndexID, IndexName, IndexType, AllowPageLocks, HasFilter, OnReadOnlyFileGroup, ResumableIndexOperation, StatisticsID, StatisticsName, [NoRecompute], IsIncremental, PartitionID, PartitionNumber)
+          EXECUTE @CurrentDatabase_sp_executesql @stmt = @CurrentCommand
+          SET @Error = @@ERROR
+          IF @Error <> 0
+          BEGIN
+            SET @ReturnCode = @Error
+          END
+
+          -- Select object properties
+          SET @CurrentCommand = 'SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;'
+                              + ' SELECT objects.[object_id] AS ObjectID'
+                              + ', CASE WHEN EXISTS(SELECT * FROM sys.indexes indexes WHERE indexes.[object_id] = objects.object_id AND [type] = 5) THEN 1 ELSE 0 END AS HasClusteredColumnstore'
+                              + ', CASE WHEN EXISTS(SELECT * FROM sys.indexes indexes WHERE indexes.[object_id] = objects.object_id AND [type] = 6) THEN 1 ELSE 0 END AS HasNonClusteredColumnstore'
+                              + ', CASE WHEN EXISTS(SELECT * FROM sys.index_columns index_columns INNER JOIN sys.columns columns ON index_columns.object_id = columns.object_id AND index_columns.column_id = columns.column_id INNER JOIN sys.indexes indexes2 ON index_columns.object_id = indexes2.object_id AND index_columns.index_id = indexes2.index_id WHERE (index_columns.key_ordinal > 0 OR index_columns.partition_ordinal > 0) AND columns.is_computed = 1 AND indexes2.[type] = 1 AND index_columns.object_id = objects.object_id) THEN 1 ELSE 0 END AS IsClusteredIndexComputed'
+                              + ' FROM sys.objects objects'
+                              + ' LEFT OUTER JOIN sys.tables tables ON objects.[object_id] = tables.[object_id]'
+                              + ' WHERE objects.[type] IN(''U'',''V'')'
+                              + ' AND (tables.is_external = 0 OR tables.is_external IS NULL)'
+                              + CASE WHEN @MSShippedObjects = 'N' THEN ' AND objects.is_ms_shipped = 0' ELSE '' END
+
+          INSERT INTO @tmpObjectProperties (ObjectID, HasClusteredColumnstore, HasNonClusteredColumnstore, IsClusteredIndexComputed)
+          EXECUTE @CurrentDatabase_sp_executesql @stmt = @CurrentCommand
+          SET @Error = @@ERROR
+          IF @Error <> 0
+          BEGIN
+            SET @ReturnCode = @Error
+          END
+
+          -- Select index properties
+          SET @CurrentCommand = 'SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;'
+                              + ' SELECT indexes.[object_id] AS ObjectID'
+                              + ', indexes.index_id AS IndexID'
+                              + ', CASE WHEN indexes.[type] = 1 AND EXISTS(SELECT * FROM sys.columns columns INNER JOIN sys.types types ON columns.system_type_id = types.user_type_id WHERE columns.[object_id] = indexes.object_id AND types.name IN(''image'',''text'',''ntext'')) THEN 1 ELSE 0 END AS IsImageText'
+                              + ', CASE WHEN indexes.[type] = 1 AND EXISTS(SELECT * FROM sys.columns columns INNER JOIN sys.types types ON columns.system_type_id = types.user_type_id OR (columns.user_type_id = types.user_type_id AND types.is_assembly_type = 1) WHERE columns.[object_id] = indexes.object_id AND (types.name IN(''xml'') OR (types.name IN(''varchar'',''nvarchar'',''varbinary'') AND columns.max_length = -1) OR (types.is_assembly_type = 1 AND columns.max_length = -1))) THEN 1 WHEN indexes.[type] = 2 AND EXISTS(SELECT * FROM sys.index_columns index_columns INNER JOIN sys.columns columns ON index_columns.[object_id] = columns.[object_id] AND index_columns.column_id = columns.column_id INNER JOIN sys.types types ON columns.system_type_id = types.user_type_id OR (columns.user_type_id = types.user_type_id AND types.is_assembly_type = 1) WHERE index_columns.[object_id] = indexes.[object_id] AND index_columns.index_id = indexes.index_id AND (types.[name] IN(''xml'') OR (types.[name] IN(''varchar'',''nvarchar'',''varbinary'') AND columns.max_length = -1) OR (types.is_assembly_type = 1 AND columns.max_length = -1))) THEN 1 ELSE 0 END AS IsNewLOB'
+                              + ', CASE WHEN indexes.[type] = 1 AND EXISTS(SELECT * FROM sys.columns columns WHERE columns.[object_id] = indexes.object_id AND columns.is_filestream = 1) THEN 1 ELSE 0 END AS IsFileStream'
+                              + ', ' + CASE WHEN (@Version >= 16 OR SERVERPROPERTY('EngineEdition') = 5 OR (SERVERPROPERTY('EngineEdition') = 8 AND SERVERPROPERTY('ProductUpdateType') = 'Continuous')) THEN 'CASE WHEN EXISTS(SELECT * FROM sys.index_columns index_columns WHERE index_columns.[object_id] = indexes.[object_id] AND index_columns.index_id = indexes.index_id AND index_columns.column_store_order_ordinal = 1) THEN 1 ELSE 0 END' ELSE '0' END + ' AS IsColumnstoreOrdered'
+                              + ', CASE WHEN EXISTS(SELECT * FROM sys.index_columns index_columns INNER JOIN sys.columns columns ON index_columns.object_id = columns.object_id AND index_columns.column_id = columns.column_id WHERE (index_columns.key_ordinal > 0 OR index_columns.partition_ordinal > 0 OR index_columns.is_included_column = 1) AND columns.is_computed = 1 AND index_columns.object_id = indexes.object_id AND index_columns.index_id = indexes.index_id) THEN 1 ELSE 0 END AS IsComputed'
+                              + ', CASE WHEN EXISTS(SELECT * FROM sys.index_columns index_columns INNER JOIN sys.columns columns ON index_columns.[object_id] = columns.[object_id] AND index_columns.column_id = columns.column_id INNER JOIN sys.types types ON columns.system_type_id = types.system_type_id WHERE (index_columns.key_ordinal > 0 OR index_columns.partition_ordinal > 0) AND index_columns.[object_id] = indexes.[object_id] AND index_columns.index_id = indexes.index_id AND types.[name] = ''timestamp'') THEN 1 ELSE 0 END AS IsTimestamp'
+                              + ' FROM sys.indexes indexes'
+                              + ' INNER JOIN sys.objects objects ON indexes.[object_id] = objects.[object_id]'
+                              + ' LEFT OUTER JOIN sys.tables tables ON objects.[object_id] = tables.[object_id]'
+                              + ' WHERE objects.[type] IN(''U'',''V'')'
+                              + ' AND (tables.is_external = 0 OR tables.is_external IS NULL)'
+                              + CASE WHEN @MSShippedObjects = 'N' THEN ' AND objects.is_ms_shipped = 0' ELSE '' END
+                              + ' AND indexes.[type] IN(1,2,3,4,5,6,7)'
+                              + ' AND indexes.is_disabled = 0'
+                              + ' AND indexes.is_hypothetical = 0'
+
+          INSERT INTO @tmpIndexProperties (ObjectID, IndexID, IsImageText, IsNewLOB, IsFileStream, IsColumnstoreOrdered, IsComputed, IsTimestamp)
+          EXECUTE @CurrentDatabase_sp_executesql @stmt = @CurrentCommand
+          SET @Error = @@ERROR
+          IF @Error <> 0
+          BEGIN
+            SET @ReturnCode = @Error
+          END
+
+          -- Select paused resumable index operations
+          SET @CurrentCommand = 'SELECT index_resumable_operations.object_id AS ObjectID'
+                                + ', index_resumable_operations.index_id AS IndexID'
+                                + ', ' + CASE WHEN @PartitionLevel = 'Y' THEN 'index_resumable_operations.partition_number AS PartitionNumber' WHEN @PartitionLevel = 'N' THEN 'NULL AS PartitionNumber' END
+                                + ' FROM sys.index_resumable_operations index_resumable_operations'
+                                + ' WHERE index_resumable_operations.state_desc = ''PAUSED'''
+
+          INSERT INTO @tmpResumableOperations (ObjectID, IndexID, PartitionNumber)
+          EXECUTE @CurrentDatabase_sp_executesql @stmt = @CurrentCommand
+          SET @Error = @@ERROR
+          IF @Error <> 0
+          BEGIN
+            SET @ReturnCode = @Error
+          END
         END
 
         IF @UpdateStatistics IN('ALL','COLUMNS')
         BEGIN
-          SET @CurrentCommand = @CurrentCommand + 'SELECT schemas.[schema_id] AS SchemaID'
-                                                    + ', schemas.[name] AS SchemaName'
-                                                    + ', objects.[object_id] AS ObjectID'
-                                                    + ', objects.[name] AS ObjectName'
-                                                    + ', RTRIM(objects.[type]) AS ObjectType'
-                                                    + ', ISNULL(tables.is_memory_optimized, 0) AS IsMemoryOptimized'
-                                                    + ', NULL AS IndexID, NULL AS IndexName'
-                                                    + ', NULL AS IndexType'
-                                                    + ', NULL AS AllowPageLocks'
-                                                    + ', NULL AS HasFilter'
-                                                    + ', NULL AS IsImageText'
-                                                    + ', NULL AS IsNewLOB'
-                                                    + ', NULL AS IsFileStream'
-                                                    + ', NULL AS HasClusteredColumnstore'
-                                                    + ', NULL AS HasNonClusteredColumnstore'
-                                                    + ', NULL AS IsColumnstoreOrdered'
-                                                    + ', NULL AS IsComputed'
-                                                    + ', NULL AS IsClusteredIndexComputed'
-                                                    + ', NULL AS IsTimestamp'
-                                                    + ', NULL AS OnReadOnlyFileGroup'
-                                                    + ', NULL AS ResumableIndexOperation'
-                                                    + ', stats.stats_id AS StatisticsID'
-                                                    + ', stats.name AS StatisticsName'
-                                                    + ', stats.no_recompute AS NoRecompute'
-                                                    + ', stats.is_incremental AS IsIncremental'
-                                                    + ', NULL AS PartitionID'
-                                                    + ', ' + CASE WHEN @PartitionLevelStatistics = 1 THEN 'dm_db_incremental_stats_properties.partition_number' ELSE 'NULL' END + ' AS PartitionNumber'
-                                                    + ', NULL AS PartitionCount'
-                                                    + ', 0 AS [Order]'
-                                                    + ', 0 AS Selected'
-                                                    + ', 0 AS Completed'
-                                                    + ' FROM sys.stats stats'
-                                                    + ' INNER JOIN sys.objects objects ON stats.[object_id] = objects.[object_id]'
-                                                    + ' INNER JOIN sys.schemas schemas ON objects.[schema_id] = schemas.[schema_id]'
-                                                    + ' LEFT OUTER JOIN sys.tables tables ON objects.[object_id] = tables.[object_id]'
-
-          IF @PartitionLevelStatistics = 1
+          -- Select column level statistics
+          SET @CurrentCommand = 'SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;'
+                              + ' SELECT schemas.[schema_id] AS SchemaID'
+                              + ', schemas.[name] AS SchemaName'
+                              + ', objects.[object_id] AS ObjectID'
+                              + ', objects.[name] AS ObjectName'
+                              + ', RTRIM(objects.[type]) AS ObjectType'
+                              + ', ISNULL(tables.is_memory_optimized, 0) AS IsMemoryOptimized'
+                              + ', stats.stats_id AS StatisticsID'
+                              + ', stats.name AS StatisticsName'
+                              + ', stats.no_recompute AS NoRecompute'
+                              + ', stats.is_incremental AS IsIncremental'
+                              + ', ' + CASE WHEN @PartitionLevel = 'Y' THEN 'dm_db_incremental_stats_properties.partition_number' ELSE 'NULL' END + ' AS PartitionNumber'
+                              + ' FROM sys.stats stats'
+                              + ' INNER JOIN sys.objects objects ON stats.[object_id] = objects.[object_id]'
+                              + ' INNER JOIN sys.schemas schemas ON objects.[schema_id] = schemas.[schema_id]'
+                              + ' LEFT OUTER JOIN sys.tables tables ON objects.[object_id] = tables.[object_id]'
+          IF @PartitionLevel = 'Y'
           BEGIN
-            SET @CurrentCommand = @CurrentCommand + ' OUTER APPLY sys.dm_db_incremental_stats_properties(stats.object_id, stats.stats_id) dm_db_incremental_stats_properties'
+            SET @CurrentCommand += ' OUTER APPLY sys.dm_db_incremental_stats_properties(stats.object_id, stats.stats_id) dm_db_incremental_stats_properties'
+          END
+          SET @CurrentCommand += ' WHERE objects.[type] IN(''U'',''V'')'
+                               + ' AND (tables.is_memory_optimized = 0 OR tables.is_memory_optimized IS NULL)'
+                               + ' AND (tables.is_external = 0 OR tables.is_external IS NULL)'
+                               + CASE WHEN @MSShippedObjects = 'N' THEN ' AND objects.is_ms_shipped = 0' ELSE '' END
+                               + ' AND NOT EXISTS(SELECT * FROM sys.indexes indexes WHERE indexes.[object_id] = stats.[object_id] AND indexes.index_id = stats.stats_id)'
+                               + ' AND NOT EXISTS(SELECT * FROM sys.indexes indexes2 WHERE indexes2.[object_id] = stats.[object_id] AND indexes2.type = 1 AND indexes2.is_disabled = 1)'
+
+          INSERT INTO @tmpIndexesStatistics (SchemaID, SchemaName, ObjectID, ObjectName, ObjectType, IsMemoryOptimized, StatisticsID, StatisticsName, [NoRecompute], IsIncremental, PartitionNumber)
+          EXECUTE @CurrentDatabase_sp_executesql @stmt = @CurrentCommand
+          SET @Error = @@ERROR
+          IF @Error <> 0
+          BEGIN
+            SET @ReturnCode = @Error
           END
 
-          SET @CurrentCommand = @CurrentCommand + ' WHERE objects.[type] IN(''U'',''V'')'
-                                                    + ' AND (tables.is_memory_optimized = 0 OR tables.is_memory_optimized IS NULL)'
-                                                    + ' AND (tables.is_external = 0 OR tables.is_external IS NULL)'
-                                                    + CASE WHEN @MSShippedObjects = 'N' THEN ' AND objects.is_ms_shipped = 0' ELSE '' END
-                                                    + ' AND NOT EXISTS(SELECT * FROM sys.indexes indexes WHERE indexes.[object_id] = stats.[object_id] AND indexes.index_id = stats.stats_id)'
-                                                    + ' AND NOT EXISTS(SELECT * FROM sys.indexes indexes2 WHERE indexes2.[object_id] = stats.[object_id] AND indexes2.type = 1 AND indexes2.is_disabled = 1)'
+          -- Select column-level statistics for memory optimized tables
+          SET @CurrentCommand = 'SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;'
+                              + ' SELECT schemas.[schema_id] AS SchemaID'
+                              + ', schemas.[name] AS SchemaName'
+                              + ', objects.[object_id] AS ObjectID'
+                              + ', objects.[name] AS ObjectName'
+                              + ', RTRIM(objects.[type]) AS ObjectType'
+                              + ', tables.is_memory_optimized AS IsMemoryOptimized'
+                              + ', stats.stats_id AS StatisticsID'
+                              + ', stats.name AS StatisticsName'
+                              + ', stats.no_recompute AS NoRecompute'
+                              + ', stats.is_incremental AS IsIncremental'
+                              + ' FROM sys.stats stats'
+                              + ' INNER JOIN sys.objects objects ON stats.[object_id] = objects.[object_id]'
+                              + ' INNER JOIN sys.schemas schemas ON objects.[schema_id] = schemas.[schema_id]'
+                              + ' INNER JOIN sys.tables tables ON objects.[object_id] = tables.[object_id]'
+                              + ' WHERE objects.[type] = ''U'''
+                              + ' AND tables.is_memory_optimized = 1'
+                              + CASE WHEN @MSShippedObjects = 'N' THEN ' AND objects.is_ms_shipped = 0' ELSE '' END
+                              + ' AND NOT EXISTS(SELECT * FROM sys.indexes indexes WHERE indexes.[object_id] = stats.[object_id] AND indexes.index_id = stats.stats_id)'
 
-            SET @CurrentCommand = @CurrentCommand + ' UNION '
-
-            SET @CurrentCommand = @CurrentCommand + 'SELECT schemas.[schema_id] AS SchemaID'
-                                                      + ', schemas.[name] AS SchemaName'
-                                                      + ', objects.[object_id] AS ObjectID'
-                                                      + ', objects.[name] AS ObjectName'
-                                                      + ', RTRIM(objects.[type]) AS ObjectType'
-                                                      + ', tables.is_memory_optimized AS IsMemoryOptimized'
-                                                      + ', NULL AS IndexID, NULL AS IndexName'
-                                                      + ', NULL AS IndexType'
-                                                      + ', NULL AS AllowPageLocks'
-                                                      + ', NULL AS HasFilter'
-                                                      + ', NULL AS IsImageText'
-                                                      + ', NULL AS IsNewLOB'
-                                                      + ', NULL AS IsFileStream'
-                                                      + ', NULL AS HasClusteredColumnstore'
-                                                      + ', NULL AS HasNonClusteredColumnstore'
-                                                      + ', NULL AS IsColumnstoreOrdered'
-                                                      + ', NULL AS IsComputed'
-                                                      + ', NULL AS IsClusteredIndexComputed'
-                                                      + ', NULL AS IsTimestamp'
-                                                      + ', NULL AS OnReadOnlyFileGroup'
-                                                      + ', NULL AS ResumableIndexOperation'
-                                                      + ', stats.stats_id AS StatisticsID'
-                                                      + ', stats.name AS StatisticsName'
-                                                      + ', stats.no_recompute AS NoRecompute'
-                                                      + ', stats.is_incremental AS IsIncremental'
-                                                      + ', NULL AS PartitionID'
-                                                      + ', NULL AS PartitionNumber'
-                                                      + ', NULL AS PartitionCount'
-                                                      + ', 0 AS [Order]'
-                                                      + ', 0 AS Selected'
-                                                      + ', 0 AS Completed'
-                                                      + ' FROM sys.stats stats'
-                                                      + ' INNER JOIN sys.objects objects ON stats.[object_id] = objects.[object_id]'
-                                                      + ' INNER JOIN sys.schemas schemas ON objects.[schema_id] = schemas.[schema_id]'
-                                                      + ' INNER JOIN sys.tables tables ON objects.[object_id] = tables.[object_id]'
-
-            SET @CurrentCommand = @CurrentCommand + ' WHERE objects.[type] = ''U'''
-                                                      + ' AND tables.is_memory_optimized = 1'
-                                                      + CASE WHEN @MSShippedObjects = 'N' THEN ' AND objects.is_ms_shipped = 0' ELSE '' END
-                                                      + ' AND NOT EXISTS(SELECT * FROM sys.indexes indexes WHERE indexes.[object_id] = stats.[object_id] AND indexes.index_id = stats.stats_id)'
+          INSERT INTO @tmpIndexesStatistics (SchemaID, SchemaName, ObjectID, ObjectName, ObjectType, IsMemoryOptimized, StatisticsID, StatisticsName, [NoRecompute], IsIncremental)
+          EXECUTE @CurrentDatabase_sp_executesql @stmt = @CurrentCommand
+          SET @Error = @@ERROR
+          IF @Error <> 0
+          BEGIN
+            SET @ReturnCode = @Error
+          END
         END
 
-        SET @CurrentCommand = @CurrentCommand + ') IndexesStatistics'
+        UPDATE tmpIndexesStatistics
+        SET tmpIndexesStatistics.IsImageText = tmpIndexProperties.IsImageText,
+            tmpIndexesStatistics.IsNewLOB = tmpIndexProperties.IsNewLOB,
+            tmpIndexesStatistics.IsFileStream = tmpIndexProperties.IsFileStream,
+            tmpIndexesStatistics.HasClusteredColumnstore = tmpObjectProperties.HasClusteredColumnstore,
+            tmpIndexesStatistics.HasNonClusteredColumnstore = tmpObjectProperties.HasNonClusteredColumnstore,
+            tmpIndexesStatistics.IsClusteredIndexComputed = tmpObjectProperties.IsClusteredIndexComputed,
+            tmpIndexesStatistics.IsColumnstoreOrdered = tmpIndexProperties.IsColumnstoreOrdered,
+            tmpIndexesStatistics.IsComputed = tmpIndexProperties.IsComputed,
+            tmpIndexesStatistics.IsTimestamp = tmpIndexProperties.IsTimestamp
+        FROM @tmpIndexesStatistics tmpIndexesStatistics
+        INNER JOIN @tmpObjectProperties tmpObjectProperties ON tmpIndexesStatistics.ObjectID = tmpObjectProperties.ObjectID
+        INNER JOIN @tmpIndexProperties tmpIndexProperties ON tmpIndexesStatistics.ObjectID = tmpIndexProperties.ObjectID AND tmpIndexesStatistics.IndexID = tmpIndexProperties.IndexID
+        OPTION (RECOMPILE)
 
-        INSERT INTO @tmpIndexesStatistics (SchemaID, SchemaName, ObjectID, ObjectName, ObjectType, IsMemoryOptimized, IndexID, IndexName, IndexType, AllowPageLocks, HasFilter, IsImageText, IsNewLOB, IsFileStream, HasClusteredColumnstore, HasNonClusteredColumnstore, IsColumnstoreOrdered, IsComputed, IsClusteredIndexComputed, IsTimestamp, OnReadOnlyFileGroup, ResumableIndexOperation, StatisticsID, StatisticsName, [NoRecompute], IsIncremental, PartitionID, PartitionNumber, PartitionCount, [Order], Selected, Completed)
-        EXECUTE @CurrentDatabase_sp_executesql @stmt = @CurrentCommand
-        SET @Error = @@ERROR
-        IF @Error <> 0
+        UPDATE tmpIndexesStatistics
+        SET tmpIndexesStatistics.ResumableIndexOperation = 1
+        FROM @tmpIndexesStatistics tmpIndexesStatistics
+        INNER JOIN @tmpResumableOperations tmpResumableOperations ON tmpIndexesStatistics.ObjectID = tmpResumableOperations.ObjectID AND tmpIndexesStatistics.IndexID = tmpResumableOperations.IndexID AND (tmpIndexesStatistics.PartitionNumber = tmpResumableOperations.PartitionNumber OR tmpResumableOperations.PartitionNumber IS NULL)
+        OPTION (RECOMPILE)
+
+        IF @PartitionLevel = 'Y'
         BEGIN
-          SET @ReturnCode = @Error
+          UPDATE tmpIndexesStatistics
+          SET tmpIndexesStatistics.PartitionCount = PartitionCounts.PartitionCount
+          FROM @tmpIndexesStatistics tmpIndexesStatistics
+          INNER JOIN (SELECT ObjectID, IndexID, COUNT(*) AS PartitionCount FROM @tmpIndexesStatistics WHERE IndexID IS NOT NULL GROUP BY ObjectID, IndexID) PartitionCounts ON tmpIndexesStatistics.ObjectID = PartitionCounts.ObjectID AND tmpIndexesStatistics.IndexID = PartitionCounts.IndexID
+          OPTION (RECOMPILE)
         END
-      END
 
-      IF @Indexes IS NULL
-      BEGIN
-        UPDATE tmpIndexesStatistics
-        SET tmpIndexesStatistics.Selected = 1
+        IF @Indexes IS NULL
+        BEGIN
+          UPDATE tmpIndexesStatistics
+          SET tmpIndexesStatistics.Selected = 1
+          FROM @tmpIndexesStatistics tmpIndexesStatistics
+        END
+        ELSE
+        BEGIN
+          UPDATE tmpIndexesStatistics
+          SET tmpIndexesStatistics.Selected = SelectedIndexes.Selected
+          FROM @tmpIndexesStatistics tmpIndexesStatistics
+          INNER JOIN @SelectedIndexes SelectedIndexes
+          ON @CurrentDatabaseName LIKE REPLACE(REPLACE(SelectedIndexes.DatabaseName,'[','[[]'),'_','[_]') AND tmpIndexesStatistics.SchemaName LIKE REPLACE(REPLACE(SelectedIndexes.SchemaName,'[','[[]'),'_','[_]') AND tmpIndexesStatistics.ObjectName LIKE REPLACE(REPLACE(SelectedIndexes.ObjectName,'[','[[]'),'_','[_]') AND COALESCE(tmpIndexesStatistics.IndexName,tmpIndexesStatistics.StatisticsName) LIKE REPLACE(REPLACE(SelectedIndexes.IndexName,'[','[[]'),'_','[_]')
+          WHERE SelectedIndexes.Selected = 1
+
+          UPDATE tmpIndexesStatistics
+          SET tmpIndexesStatistics.Selected = SelectedIndexes.Selected
+          FROM @tmpIndexesStatistics tmpIndexesStatistics
+          INNER JOIN @SelectedIndexes SelectedIndexes
+          ON @CurrentDatabaseName LIKE REPLACE(REPLACE(SelectedIndexes.DatabaseName,'[','[[]'),'_','[_]') AND tmpIndexesStatistics.SchemaName LIKE REPLACE(REPLACE(SelectedIndexes.SchemaName,'[','[[]'),'_','[_]') AND tmpIndexesStatistics.ObjectName LIKE REPLACE(REPLACE(SelectedIndexes.ObjectName,'[','[[]'),'_','[_]') AND COALESCE(tmpIndexesStatistics.IndexName,tmpIndexesStatistics.StatisticsName) LIKE REPLACE(REPLACE(SelectedIndexes.IndexName,'[','[[]'),'_','[_]')
+          WHERE SelectedIndexes.Selected = 0
+
+          UPDATE tmpIndexesStatistics
+          SET tmpIndexesStatistics.StartPosition = SelectedIndexes2.StartPosition
+          FROM @tmpIndexesStatistics tmpIndexesStatistics
+          INNER JOIN (SELECT tmpIndexesStatistics.SchemaName, tmpIndexesStatistics.ObjectName, tmpIndexesStatistics.IndexName, tmpIndexesStatistics.StatisticsName, MIN(SelectedIndexes.StartPosition) AS StartPosition
+                      FROM @tmpIndexesStatistics tmpIndexesStatistics
+                      INNER JOIN @SelectedIndexes SelectedIndexes
+                      ON @CurrentDatabaseName LIKE REPLACE(REPLACE(SelectedIndexes.DatabaseName,'[','[[]'),'_','[_]') AND tmpIndexesStatistics.SchemaName LIKE REPLACE(REPLACE(SelectedIndexes.SchemaName,'[','[[]'),'_','[_]') AND tmpIndexesStatistics.ObjectName LIKE REPLACE(REPLACE(SelectedIndexes.ObjectName,'[','[[]'),'_','[_]') AND COALESCE(tmpIndexesStatistics.IndexName,tmpIndexesStatistics.StatisticsName) LIKE REPLACE(REPLACE(SelectedIndexes.IndexName,'[','[[]'),'_','[_]')
+                      WHERE SelectedIndexes.Selected = 1
+                      GROUP BY tmpIndexesStatistics.SchemaName, tmpIndexesStatistics.ObjectName, tmpIndexesStatistics.IndexName, tmpIndexesStatistics.StatisticsName) SelectedIndexes2
+          ON tmpIndexesStatistics.SchemaName = SelectedIndexes2.SchemaName
+          AND tmpIndexesStatistics.ObjectName = SelectedIndexes2.ObjectName
+          AND (tmpIndexesStatistics.IndexName = SelectedIndexes2.IndexName OR tmpIndexesStatistics.IndexName IS NULL)
+          AND (tmpIndexesStatistics.StatisticsName = SelectedIndexes2.StatisticsName OR tmpIndexesStatistics.StatisticsName IS NULL)
+        END;
+
+        WITH tmpIndexesStatistics AS (
+        SELECT SchemaName, ObjectName, [Order], ROW_NUMBER() OVER (ORDER BY ISNULL(ResumableIndexOperation,0) DESC, StartPosition ASC, SchemaName ASC, ObjectName ASC, CASE WHEN IndexType IS NULL THEN 1 ELSE 0 END ASC, IndexType ASC, IndexName ASC, StatisticsName ASC, PartitionNumber ASC) AS RowNumber
         FROM @tmpIndexesStatistics tmpIndexesStatistics
-      END
-      ELSE
-      BEGIN
+        WHERE Selected = 1
+        )
         UPDATE tmpIndexesStatistics
-        SET tmpIndexesStatistics.Selected = SelectedIndexes.Selected
-        FROM @tmpIndexesStatistics tmpIndexesStatistics
-        INNER JOIN @SelectedIndexes SelectedIndexes
-        ON @CurrentDatabaseName LIKE REPLACE(REPLACE(SelectedIndexes.DatabaseName,'[','[[]'),'_','[_]') AND tmpIndexesStatistics.SchemaName LIKE REPLACE(REPLACE(SelectedIndexes.SchemaName,'[','[[]'),'_','[_]') AND tmpIndexesStatistics.ObjectName LIKE REPLACE(REPLACE(SelectedIndexes.ObjectName,'[','[[]'),'_','[_]') AND COALESCE(tmpIndexesStatistics.IndexName,tmpIndexesStatistics.StatisticsName) LIKE REPLACE(REPLACE(SelectedIndexes.IndexName,'[','[[]'),'_','[_]')
-        WHERE SelectedIndexes.Selected = 1
+        SET [Order] = RowNumber
 
-        UPDATE tmpIndexesStatistics
-        SET tmpIndexesStatistics.Selected = SelectedIndexes.Selected
-        FROM @tmpIndexesStatistics tmpIndexesStatistics
-        INNER JOIN @SelectedIndexes SelectedIndexes
-        ON @CurrentDatabaseName LIKE REPLACE(REPLACE(SelectedIndexes.DatabaseName,'[','[[]'),'_','[_]') AND tmpIndexesStatistics.SchemaName LIKE REPLACE(REPLACE(SelectedIndexes.SchemaName,'[','[[]'),'_','[_]') AND tmpIndexesStatistics.ObjectName LIKE REPLACE(REPLACE(SelectedIndexes.ObjectName,'[','[[]'),'_','[_]') AND COALESCE(tmpIndexesStatistics.IndexName,tmpIndexesStatistics.StatisticsName) LIKE REPLACE(REPLACE(SelectedIndexes.IndexName,'[','[[]'),'_','[_]')
-        WHERE SelectedIndexes.Selected = 0
+        SELECT @ErrorMessage = STRING_AGG(QUOTENAME(DatabaseName) + '.' + QUOTENAME(SchemaName) + '.' + QUOTENAME(ObjectName), ', ')
+        FROM @SelectedIndexes SelectedIndexes
+        WHERE DatabaseName = @CurrentDatabaseName
+        AND SchemaName NOT LIKE '%[%]%'
+        AND ObjectName NOT LIKE '%[%]%'
+        AND IndexName LIKE '%[%]%'
+        AND NOT EXISTS (SELECT * FROM @tmpIndexesStatistics WHERE SchemaName = SelectedIndexes.SchemaName AND ObjectName = SelectedIndexes.ObjectName)
 
-        UPDATE tmpIndexesStatistics
-        SET tmpIndexesStatistics.StartPosition = SelectedIndexes2.StartPosition
-        FROM @tmpIndexesStatistics tmpIndexesStatistics
-        INNER JOIN (SELECT tmpIndexesStatistics.SchemaName, tmpIndexesStatistics.ObjectName, tmpIndexesStatistics.IndexName, tmpIndexesStatistics.StatisticsName, MIN(SelectedIndexes.StartPosition) AS StartPosition
-                    FROM @tmpIndexesStatistics tmpIndexesStatistics
-                    INNER JOIN @SelectedIndexes SelectedIndexes
-                    ON @CurrentDatabaseName LIKE REPLACE(REPLACE(SelectedIndexes.DatabaseName,'[','[[]'),'_','[_]') AND tmpIndexesStatistics.SchemaName LIKE REPLACE(REPLACE(SelectedIndexes.SchemaName,'[','[[]'),'_','[_]') AND tmpIndexesStatistics.ObjectName LIKE REPLACE(REPLACE(SelectedIndexes.ObjectName,'[','[[]'),'_','[_]') AND COALESCE(tmpIndexesStatistics.IndexName,tmpIndexesStatistics.StatisticsName) LIKE REPLACE(REPLACE(SelectedIndexes.IndexName,'[','[[]'),'_','[_]')
-                    WHERE SelectedIndexes.Selected = 1
-                    GROUP BY tmpIndexesStatistics.SchemaName, tmpIndexesStatistics.ObjectName, tmpIndexesStatistics.IndexName, tmpIndexesStatistics.StatisticsName) SelectedIndexes2
-        ON tmpIndexesStatistics.SchemaName = SelectedIndexes2.SchemaName
-        AND tmpIndexesStatistics.ObjectName = SelectedIndexes2.ObjectName
-        AND (tmpIndexesStatistics.IndexName = SelectedIndexes2.IndexName OR tmpIndexesStatistics.IndexName IS NULL)
-        AND (tmpIndexesStatistics.StatisticsName = SelectedIndexes2.StatisticsName OR tmpIndexesStatistics.StatisticsName IS NULL)
-      END;
+        IF @ErrorMessage IS NOT NULL
+        BEGIN
+          SET @ErrorMessage = 'The following objects in the @Indexes parameter do not exist: ' + @ErrorMessage + '.'
+          RAISERROR('%s',10,1,@ErrorMessage) WITH NOWAIT
+          SET @Error = @@ERROR
+          RAISERROR(@EmptyLine,10,1) WITH NOWAIT
+        END
 
-      WITH tmpIndexesStatistics AS (
-      SELECT SchemaName, ObjectName, [Order], ROW_NUMBER() OVER (ORDER BY ISNULL(ResumableIndexOperation,0) DESC, StartPosition ASC, SchemaName ASC, ObjectName ASC, CASE WHEN IndexType IS NULL THEN 1 ELSE 0 END ASC, IndexType ASC, IndexName ASC, StatisticsName ASC, PartitionNumber ASC) AS RowNumber
-      FROM @tmpIndexesStatistics tmpIndexesStatistics
-      WHERE Selected = 1
-      )
-      UPDATE tmpIndexesStatistics
-      SET [Order] = RowNumber
+        SELECT @ErrorMessage = STRING_AGG(QUOTENAME(DatabaseName) + '.' + QUOTENAME(SchemaName) + '.' + QUOTENAME(ObjectName) + '.' + QUOTENAME(IndexName), ', ')
+        FROM @SelectedIndexes SelectedIndexes
+        WHERE DatabaseName = @CurrentDatabaseName
+        AND SchemaName NOT LIKE '%[%]%'
+        AND ObjectName NOT LIKE '%[%]%'
+        AND IndexName NOT LIKE '%[%]%'
+        AND NOT EXISTS (SELECT * FROM @tmpIndexesStatistics WHERE SchemaName = SelectedIndexes.SchemaName AND ObjectName = SelectedIndexes.ObjectName AND IndexName = SelectedIndexes.IndexName)
 
-      SELECT @ErrorMessage = STRING_AGG(QUOTENAME(DatabaseName) + '.' + QUOTENAME(SchemaName) + '.' + QUOTENAME(ObjectName), ', ')
-      FROM @SelectedIndexes SelectedIndexes
-      WHERE DatabaseName = @CurrentDatabaseName
-      AND SchemaName NOT LIKE '%[%]%'
-      AND ObjectName NOT LIKE '%[%]%'
-      AND IndexName LIKE '%[%]%'
-      AND NOT EXISTS (SELECT * FROM @tmpIndexesStatistics WHERE SchemaName = SelectedIndexes.SchemaName AND ObjectName = SelectedIndexes.ObjectName)
-
-      IF @ErrorMessage IS NOT NULL
-      BEGIN
-        SET @ErrorMessage = 'The following objects in the @Indexes parameter do not exist: ' + @ErrorMessage + '.'
-        RAISERROR('%s',10,1,@ErrorMessage) WITH NOWAIT
-        SET @Error = @@ERROR
-        RAISERROR(@EmptyLine,10,1) WITH NOWAIT
-      END
-
-      SELECT @ErrorMessage = STRING_AGG(QUOTENAME(DatabaseName) + '.' + QUOTENAME(SchemaName) + '.' + QUOTENAME(ObjectName) + '.' + QUOTENAME(IndexName), ', ')
-      FROM @SelectedIndexes SelectedIndexes
-      WHERE DatabaseName = @CurrentDatabaseName
-      AND SchemaName NOT LIKE '%[%]%'
-      AND ObjectName NOT LIKE '%[%]%'
-      AND IndexName NOT LIKE '%[%]%'
-      AND NOT EXISTS (SELECT * FROM @tmpIndexesStatistics WHERE SchemaName = SelectedIndexes.SchemaName AND ObjectName = SelectedIndexes.ObjectName AND IndexName = SelectedIndexes.IndexName)
-
-      IF @ErrorMessage IS NOT NULL
-      BEGIN
-        SET @ErrorMessage = 'The following indexes in the @Indexes parameter do not exist: ' + @ErrorMessage + '.'
-        RAISERROR('%s',10,1,@ErrorMessage) WITH NOWAIT
-        SET @Error = @@ERROR
-        RAISERROR(@EmptyLine,10,1) WITH NOWAIT
+        IF @ErrorMessage IS NOT NULL
+        BEGIN
+          SET @ErrorMessage = 'The following indexes in the @Indexes parameter do not exist: ' + @ErrorMessage + '.'
+          RAISERROR('%s',10,1,@ErrorMessage) WITH NOWAIT
+          SET @Error = @@ERROR
+          RAISERROR(@EmptyLine,10,1) WITH NOWAIT
+        END
       END
 
       WHILE (SYSDATETIME() < DATEADD(SECOND,@TimeLimit,@StartTime) OR @TimeLimit IS NULL)
@@ -8737,7 +8858,7 @@ BEGIN
           SET @CurrentCommand = ''
           IF @LockTimeout IS NOT NULL SET @CurrentCommand = 'SET LOCK_TIMEOUT ' + CAST(@LockTimeout * 1000 AS nvarchar(max)) + '; '
 
-          IF @PartitionLevelStatistics = 1 AND @CurrentIsIncremental = 1
+          IF @PartitionLevel = 'Y' AND @CurrentIsIncremental = 1
           BEGIN
             SET @CurrentCommand += 'SELECT @ParamObjectRowCount = row_count FROM sys.dm_db_partition_stats WHERE [object_id] = @ParamObjectID AND index_id = (SELECT MIN(index_id) FROM sys.indexes WHERE [object_id] = @ParamObjectID) AND partition_number = @ParamPartitionNumber'
           END
@@ -8769,7 +8890,7 @@ BEGIN
 
           IF @LockTimeout IS NOT NULL SET @CurrentCommand = 'SET LOCK_TIMEOUT ' + CAST(@LockTimeout * 1000 AS nvarchar(max)) + '; '
 
-          IF @PartitionLevelStatistics = 1 AND @CurrentIsIncremental = 1
+          IF @PartitionLevel = 'Y' AND @CurrentIsIncremental = 1
           BEGIN
             SET @CurrentCommand += 'SELECT @ParamRowCount = [rows], @ParamModificationCounter = modification_counter FROM sys.dm_db_incremental_stats_properties (@ParamObjectID, @ParamStatisticsID) WHERE partition_number = @ParamPartitionNumber'
           END
@@ -8912,7 +9033,7 @@ BEGIN
         IF @CurrentStatisticsID IS NOT NULL
         AND ((@UpdateStatistics = 'ALL' AND (@CurrentIndexType IN (1,2,3,4,7) OR @CurrentIndexID IS NULL)) OR (@UpdateStatistics = 'INDEX' AND @CurrentIndexID IS NOT NULL AND @CurrentIndexType IN (1,2,3,4,7)) OR (@UpdateStatistics = 'COLUMNS' AND @CurrentIndexID IS NULL))
         AND ((@OnlyModifiedStatistics = 'N' AND @StatisticsModificationLevel IS NULL) OR (@OnlyModifiedStatistics = 'Y' AND @CurrentModificationCounter > 0) OR ((@CurrentModificationCounter * 1. / NULLIF(@CurrentRowCount,0)) * 100 >= @StatisticsModificationLevel) OR (@StatisticsModificationLevel IS NOT NULL AND @CurrentModificationCounter > 0 AND (@CurrentModificationCounter >= SQRT(@CurrentRowCount * 1000))) OR ((@CurrentIndexType IN (1,2) OR @CurrentIndexID IS NULL) AND @CurrentModificationCounter IS NULL AND @CurrentObjectRowCount > 0))
-        AND ((@CurrentIsPartition = 0 AND (@CurrentAction NOT IN('INDEX_REBUILD_ONLINE','INDEX_REBUILD_OFFLINE') OR @CurrentAction IS NULL)) OR (@CurrentIsPartition = 1 AND (@CurrentPartitionNumber = @CurrentPartitionCount OR (@PartitionLevelStatistics = 1 AND @CurrentIsIncremental = 1))))
+        AND ((@CurrentIsPartition = 0 AND (@CurrentAction NOT IN('INDEX_REBUILD_ONLINE','INDEX_REBUILD_OFFLINE') OR @CurrentAction IS NULL)) OR (@CurrentIsPartition = 1 AND (@CurrentPartitionNumber = @CurrentPartitionCount OR (@PartitionLevel = 'Y' AND @CurrentIsIncremental = 1))))
         BEGIN
           SET @CurrentUpdateStatistics = 'Y'
         END
@@ -8926,7 +9047,7 @@ BEGIN
         SET @CurrentStatisticsResample = @StatisticsResample
 
         -- Incremental statistics only supports RESAMPLE
-        IF @PartitionLevelStatistics = 1 AND @CurrentIsIncremental = 1
+        IF @PartitionLevel = 'Y' AND @CurrentIsIncremental = 1
         BEGIN
           SET @CurrentStatisticsSample = NULL
           SET @CurrentStatisticsPersistSample = NULL
@@ -9150,7 +9271,7 @@ BEGIN
             FROM @CurrentUpdateStatisticsWithClauseArguments
           END
 
-          IF @PartitionLevelStatistics = 1 AND @CurrentIsIncremental = 1 AND @CurrentPartitionNumber IS NOT NULL SET @CurrentCommand += ' ON PARTITIONS(' + CAST(@CurrentPartitionNumber AS nvarchar(max)) + ')'
+          IF @PartitionLevel = 'Y' AND @CurrentIsIncremental = 1 AND @CurrentPartitionNumber IS NOT NULL SET @CurrentCommand += ' ON PARTITIONS(' + CAST(@CurrentPartitionNumber AS nvarchar(max)) + ')'
 
           EXECUTE @CurrentCommandOutput = dbo.CommandExecute @DatabaseContext = @CurrentDatabaseContext, @Command = @CurrentCommand, @CommandType = @CurrentCommandType, @Mode = 2, @Comment = @CurrentComment, @DatabaseName = @CurrentDatabaseName, @SchemaName = @CurrentSchemaName, @ObjectName = @CurrentObjectName, @ObjectType = @CurrentObjectType, @IndexName = @CurrentIndexName, @IndexType = @CurrentIndexType, @StatisticsName = @CurrentStatisticsName, @ExtendedInfo = @CurrentExtendedInfo, @LockMessageSeverity = @LockMessageSeverity, @ExecuteAsUser = @ExecuteAsUser, @LogToTable = @LogToTable, @Execute = @Execute
           SET @Error = @@ERROR
@@ -9269,6 +9390,7 @@ BEGIN
     SET @CurrentDatabaseState = NULL
     SET @CurrentInStandby = NULL
     SET @CurrentRecoveryModel = NULL
+    SET @CurrentDatabaseHasReadOnlyFileGroup = NULL
 
     SET @CurrentAvailabilityGroupReplicaID = NULL
     SET @CurrentAvailabilityGroupID = NULL
@@ -9283,6 +9405,9 @@ BEGIN
     SET @CurrentCommand = NULL
 
     DELETE FROM @tmpIndexesStatistics
+    DELETE FROM @tmpObjectProperties
+    DELETE FROM @tmpIndexProperties
+    DELETE FROM @tmpResumableOperations
 
   END
 
