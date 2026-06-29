@@ -10,7 +10,7 @@ License: https://ola.hallengren.com/license.html
 
 GitHub: https://github.com/olahallengren/sql-server-maintenance-solution
 
-Version: 2026-06-28 10:45:05
+Version: 2026-06-29 20:49:12
 
 You can contact me by e-mail at ola@hallengren.com.
 
@@ -133,7 +133,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-06-28 10:45:05                                                               //--
+  --// Version: 2026-06-29 20:49:12                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -492,7 +492,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-06-28 10:45:05                                                               //--
+  --// Version: 2026-06-29 20:49:12                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -4848,7 +4848,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-06-28 10:45:05                                                               //--
+  --// Version: 2026-06-29 20:49:12                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -6796,7 +6796,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-06-28 10:45:05                                                               //--
+  --// Version: 2026-06-29 20:49:12                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -6893,7 +6893,7 @@ BEGIN
   DECLARE @CurrentHasFilter bit
   DECLARE @CurrentNoRecompute bit
   DECLARE @CurrentIsIncremental bit
-  DECLARE @CurrentObjectRowCount bigint
+  DECLARE @CurrentObjectHasRows bit
   DECLARE @CurrentRowCount bigint
   DECLARE @CurrentModificationCounter bigint
   DECLARE @CurrentOnReadOnlyFileGroup bit
@@ -8601,7 +8601,7 @@ BEGIN
             SET @ReturnCode = @Error
           END
 
-          -- Select column-level statistics for memory optimized tables
+          -- Select column level statistics for memory optimized tables
           SET @CurrentCommand = 'SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;'
                               + ' SELECT schemas.[schema_id] AS SchemaID'
                               + ', schemas.[name] AS SchemaName'
@@ -8819,104 +8819,6 @@ BEGIN
           END CATCH
         END
 
-        -- Does the statistics exist?
-        IF @CurrentStatisticsID IS NOT NULL AND @UpdateStatistics IS NOT NULL
-        BEGIN
-          SET @CurrentCommand = ''
-
-          IF @LockTimeout IS NOT NULL SET @CurrentCommand = 'SET LOCK_TIMEOUT ' + CAST(@LockTimeout * 1000 AS nvarchar(max)) + '; '
-
-          SET @CurrentCommand += 'IF EXISTS(SELECT * FROM sys.stats stats INNER JOIN sys.objects objects ON stats.[object_id] = objects.[object_id] INNER JOIN sys.schemas schemas ON objects.[schema_id] = schemas.[schema_id] WHERE objects.[type] IN(''U'',''V'')' + CASE WHEN @MSShippedObjects = 'N' THEN ' AND objects.is_ms_shipped = 0' ELSE '' END + ' AND schemas.[schema_id] = @ParamSchemaID AND schemas.[name] = @ParamSchemaName AND objects.[object_id] = @ParamObjectID AND objects.[name] = @ParamObjectName AND objects.[type] = @ParamObjectType AND stats.stats_id = @ParamStatisticsID AND stats.[name] = @ParamStatisticsName) BEGIN SET @ParamStatisticsExists = 1 END'
-
-          BEGIN TRY
-            EXECUTE @CurrentDatabase_sp_executesql @stmt = @CurrentCommand, @params = N'@ParamSchemaID int, @ParamSchemaName sysname, @ParamObjectID int, @ParamObjectName sysname, @ParamObjectType sysname, @ParamStatisticsID int, @ParamStatisticsName sysname, @ParamStatisticsExists bit OUTPUT', @ParamSchemaID = @CurrentSchemaID, @ParamSchemaName = @CurrentSchemaName, @ParamObjectID = @CurrentObjectID, @ParamObjectName = @CurrentObjectName, @ParamObjectType = @CurrentObjectType, @ParamStatisticsID = @CurrentStatisticsID, @ParamStatisticsName = @CurrentStatisticsName, @ParamStatisticsExists = @CurrentStatisticsExists OUTPUT
-
-            IF @CurrentStatisticsExists IS NULL
-            BEGIN
-              SET @CurrentStatisticsExists = 0
-              GOTO NoAction
-            END
-          END TRY
-          BEGIN CATCH
-            SET @ErrorMessage = 'Msg ' + CAST(ERROR_NUMBER() AS nvarchar(max)) + ', ' + ISNULL(ERROR_MESSAGE(),'') + CASE WHEN ERROR_NUMBER() = 1222 THEN ' The statistics ' + QUOTENAME(@CurrentStatisticsName) + ' on the object ' + QUOTENAME(@CurrentDatabaseName) + '.' + QUOTENAME(@CurrentSchemaName) + '.' + QUOTENAME(@CurrentObjectName) + ' is locked. It could not be checked if the statistics exists.' ELSE '' END
-            SET @Severity = CASE WHEN ERROR_NUMBER() IN(1205,1222) THEN @LockMessageSeverity ELSE 16 END
-            RAISERROR('%s',@Severity,1,@ErrorMessage) WITH NOWAIT
-            RAISERROR(@EmptyLine,10,1) WITH NOWAIT
-
-            IF NOT (ERROR_NUMBER() IN(1205,1222) AND @LockMessageSeverity = 10)
-            BEGIN
-              SET @ReturnCode = ERROR_NUMBER()
-            END
-
-            GOTO NoAction
-          END CATCH
-        END
-
-        -- What is the object row count?
-        IF @CurrentStatisticsID IS NOT NULL AND @UpdateStatistics IS NOT NULL
-        BEGIN
-          SET @CurrentCommand = ''
-          IF @LockTimeout IS NOT NULL SET @CurrentCommand = 'SET LOCK_TIMEOUT ' + CAST(@LockTimeout * 1000 AS nvarchar(max)) + '; '
-
-          IF @PartitionLevel = 'Y' AND @CurrentIsIncremental = 1
-          BEGIN
-            SET @CurrentCommand += 'SELECT @ParamObjectRowCount = row_count FROM sys.dm_db_partition_stats WHERE [object_id] = @ParamObjectID AND index_id = (SELECT MIN(index_id) FROM sys.indexes WHERE [object_id] = @ParamObjectID) AND partition_number = @ParamPartitionNumber'
-          END
-          ELSE
-          BEGIN
-            SET @CurrentCommand += 'SELECT @ParamObjectRowCount = SUM(row_count) FROM sys.dm_db_partition_stats WHERE [object_id] = @ParamObjectID AND index_id = (SELECT MIN(index_id) FROM sys.indexes WHERE [object_id] = @ParamObjectID)'
-          END
-
-          BEGIN TRY
-            EXECUTE @CurrentDatabase_sp_executesql @stmt = @CurrentCommand, @params = N'@ParamObjectID int, @ParamPartitionNumber int, @ParamObjectRowCount bigint OUTPUT', @ParamObjectID = @CurrentObjectID, @ParamPartitionNumber = @CurrentPartitionNumber, @ParamObjectRowCount = @CurrentObjectRowCount OUTPUT
-          END TRY
-          BEGIN CATCH
-            SET @ErrorMessage = 'Msg ' + CAST(ERROR_NUMBER() AS nvarchar(max)) + ', ' + ISNULL(ERROR_MESSAGE(),'') + CASE WHEN ERROR_NUMBER() = 1222 THEN ' The object ' + QUOTENAME(@CurrentDatabaseName) + '.' + QUOTENAME(@CurrentSchemaName) + '.' + QUOTENAME(@CurrentObjectName) + ' is locked. The row count could not be checked.' ELSE '' END
-            SET @Severity = CASE WHEN ERROR_NUMBER() IN(1205,1222) THEN @LockMessageSeverity ELSE 16 END
-            RAISERROR('%s',@Severity,1,@ErrorMessage) WITH NOWAIT
-            RAISERROR(@EmptyLine,10,1) WITH NOWAIT
-            IF NOT (ERROR_NUMBER() IN(1205,1222) AND @LockMessageSeverity = 10)
-            BEGIN
-              SET @ReturnCode = ERROR_NUMBER()
-            END
-            GOTO NoAction
-          END CATCH
-        END
-
-        -- Has the data in the statistics been modified since the statistics was last updated?
-        IF @CurrentStatisticsID IS NOT NULL AND @UpdateStatistics IS NOT NULL
-        BEGIN
-          SET @CurrentCommand = ''
-
-          IF @LockTimeout IS NOT NULL SET @CurrentCommand = 'SET LOCK_TIMEOUT ' + CAST(@LockTimeout * 1000 AS nvarchar(max)) + '; '
-
-          IF @PartitionLevel = 'Y' AND @CurrentIsIncremental = 1
-          BEGIN
-            SET @CurrentCommand += 'SELECT @ParamRowCount = [rows], @ParamModificationCounter = modification_counter FROM sys.dm_db_incremental_stats_properties (@ParamObjectID, @ParamStatisticsID) WHERE partition_number = @ParamPartitionNumber'
-          END
-          ELSE
-          BEGIN
-            SET @CurrentCommand += 'SELECT @ParamRowCount = [rows], @ParamModificationCounter = modification_counter FROM sys.dm_db_stats_properties (@ParamObjectID, @ParamStatisticsID)'
-          END
-
-          BEGIN TRY
-            EXECUTE @CurrentDatabase_sp_executesql @stmt = @CurrentCommand, @params = N'@ParamObjectID int, @ParamStatisticsID int, @ParamPartitionNumber int, @ParamRowCount bigint OUTPUT, @ParamModificationCounter bigint OUTPUT', @ParamObjectID = @CurrentObjectID, @ParamStatisticsID = @CurrentStatisticsID, @ParamPartitionNumber = @CurrentPartitionNumber, @ParamRowCount = @CurrentRowCount OUTPUT, @ParamModificationCounter = @CurrentModificationCounter OUTPUT
-          END TRY
-          BEGIN CATCH
-            SET @ErrorMessage = 'Msg ' + CAST(ERROR_NUMBER() AS nvarchar(max)) + ', ' + ISNULL(ERROR_MESSAGE(),'') + CASE WHEN ERROR_NUMBER() = 1222 THEN ' The statistics ' + QUOTENAME(@CurrentStatisticsName) + ' on the object ' + QUOTENAME(@CurrentDatabaseName) + '.' + QUOTENAME(@CurrentSchemaName) + '.' + QUOTENAME(@CurrentObjectName) + ' is locked. The rows and modification_counter could not be checked.' ELSE '' END
-            SET @Severity = CASE WHEN ERROR_NUMBER() IN(1205,1222) THEN @LockMessageSeverity ELSE 16 END
-            RAISERROR('%s',@Severity,1,@ErrorMessage) WITH NOWAIT
-            RAISERROR(@EmptyLine,10,1) WITH NOWAIT
-
-            IF NOT (ERROR_NUMBER() IN(1205,1222) AND @LockMessageSeverity = 10)
-            BEGIN
-              SET @ReturnCode = ERROR_NUMBER()
-            END
-
-            GOTO NoAction
-          END CATCH
-        END
-
         -- Is the index fragmented?
         IF @CurrentIndexID IS NOT NULL
         AND @CurrentOnReadOnlyFileGroup = 0
@@ -9029,33 +8931,8 @@ BEGIN
           SET @CurrentMaxDOP = 1
         END
 
-        -- Update statistics?
-        IF @CurrentStatisticsID IS NOT NULL
-        AND ((@UpdateStatistics = 'ALL' AND (@CurrentIndexType IN (1,2,3,4,7) OR @CurrentIndexID IS NULL)) OR (@UpdateStatistics = 'INDEX' AND @CurrentIndexID IS NOT NULL AND @CurrentIndexType IN (1,2,3,4,7)) OR (@UpdateStatistics = 'COLUMNS' AND @CurrentIndexID IS NULL))
-        AND ((@OnlyModifiedStatistics = 'N' AND @StatisticsModificationLevel IS NULL) OR (@OnlyModifiedStatistics = 'Y' AND @CurrentModificationCounter > 0) OR ((@CurrentModificationCounter * 1. / NULLIF(@CurrentRowCount,0)) * 100 >= @StatisticsModificationLevel) OR (@StatisticsModificationLevel IS NOT NULL AND @CurrentModificationCounter > 0 AND (@CurrentModificationCounter >= SQRT(@CurrentRowCount * 1000))) OR ((@CurrentIndexType IN (1,2) OR @CurrentIndexID IS NULL) AND @CurrentModificationCounter IS NULL AND @CurrentObjectRowCount > 0))
-        AND ((@CurrentIsPartition = 0 AND (@CurrentAction NOT IN('INDEX_REBUILD_ONLINE','INDEX_REBUILD_OFFLINE') OR @CurrentAction IS NULL)) OR (@CurrentIsPartition = 1 AND (@CurrentPartitionNumber = @CurrentPartitionCount OR (@PartitionLevel = 'Y' AND @CurrentIsIncremental = 1))))
-        BEGIN
-          SET @CurrentUpdateStatistics = 'Y'
-        END
-        ELSE
-        BEGIN
-          SET @CurrentUpdateStatistics = 'N'
-        END
-
-        SET @CurrentStatisticsSample = @StatisticsSample
-        SET @CurrentStatisticsPersistSample = @StatisticsPersistSample
-        SET @CurrentStatisticsResample = @StatisticsResample
-
-        -- Incremental statistics only supports RESAMPLE
-        IF @PartitionLevel = 'Y' AND @CurrentIsIncremental = 1
-        BEGIN
-          SET @CurrentStatisticsSample = NULL
-          SET @CurrentStatisticsPersistSample = NULL
-          SET @CurrentStatisticsResample = 'Y'
-        END
-
         -- Create index comment
-        IF @CurrentIndexID IS NOT NULL
+        IF @CurrentAction IS NOT NULL
         BEGIN
           SET @CurrentComment = 'ObjectType: ' + CASE WHEN @CurrentObjectType = 'U' THEN 'Table' WHEN @CurrentObjectType = 'V' THEN 'View' ELSE 'N/A' END + ', '
           SET @CurrentComment += 'IndexType: ' + CASE WHEN @CurrentIndexType = 1 THEN 'Clustered' WHEN @CurrentIndexType = 2 THEN 'NonClustered' WHEN @CurrentIndexType = 3 THEN 'XML' WHEN @CurrentIndexType = 4 THEN 'Spatial' WHEN @CurrentIndexType = 5 THEN 'Clustered Columnstore' WHEN @CurrentIndexType = 6 THEN 'NonClustered Columnstore' WHEN @CurrentIndexType = 7 THEN 'NonClustered Hash' ELSE 'N/A' END + ', '
@@ -9074,7 +8951,7 @@ BEGIN
           SET @CurrentComment += 'Fragmentation: ' + ISNULL(CAST(@CurrentFragmentationLevel AS nvarchar(max)),'N/A')
         END
 
-        IF @CurrentIndexID IS NOT NULL AND (@CurrentPageCount IS NOT NULL OR @CurrentFragmentationLevel IS NOT NULL)
+        IF @CurrentAction IS NOT NULL AND (@CurrentPageCount IS NOT NULL OR @CurrentFragmentationLevel IS NOT NULL)
         BEGIN
         SET @CurrentExtendedInfo = (SELECT *
                                     FROM (SELECT CAST(@CurrentPageCount AS nvarchar(max)) AS [PageCount],
@@ -9082,7 +8959,7 @@ BEGIN
                                     ) ExtendedInfo FOR XML RAW('ExtendedInfo'), ELEMENTS)
         END
 
-        IF @CurrentIndexID IS NOT NULL AND @CurrentAction IS NOT NULL AND (SYSDATETIME() < DATEADD(SECOND,@TimeLimit,@StartTime) OR @TimeLimit IS NULL)
+        IF @CurrentAction IS NOT NULL AND (SYSDATETIME() < DATEADD(SECOND,@TimeLimit,@StartTime) OR @TimeLimit IS NULL)
         BEGIN
           SET @CurrentDatabaseContext = @CurrentDatabaseName
 
@@ -9194,8 +9071,131 @@ BEGIN
 
         SET @CurrentMaxDOP = @MaxDOP
 
-        -- Create statistics comment
+        -- Should the statistics be updated? - Pre checks and final decision
         IF @CurrentStatisticsID IS NOT NULL
+        AND ((@UpdateStatistics = 'ALL' AND (@CurrentIndexType IN (1,2,3,4,7) OR @CurrentIndexID IS NULL)) OR (@UpdateStatistics = 'INDEX' AND @CurrentIndexID IS NOT NULL AND @CurrentIndexType IN (1,2,3,4,7)) OR (@UpdateStatistics = 'COLUMNS' AND @CurrentIndexID IS NULL))
+        AND ((@CurrentIsPartition = 0 AND (@CurrentAction NOT IN('INDEX_REBUILD_ONLINE','INDEX_REBUILD_OFFLINE') OR @CurrentAction IS NULL)) OR (@CurrentIsPartition = 1 AND (@CurrentPartitionNumber = @CurrentPartitionCount OR (@PartitionLevel = 'Y' AND @CurrentIsIncremental = 1))))
+        BEGIN
+          -- Does the statistics exist?
+          SET @CurrentCommand = ''
+
+          IF @LockTimeout IS NOT NULL SET @CurrentCommand = 'SET LOCK_TIMEOUT ' + CAST(@LockTimeout * 1000 AS nvarchar(max)) + '; '
+
+          SET @CurrentCommand += 'IF EXISTS(SELECT * FROM sys.stats stats INNER JOIN sys.objects objects ON stats.[object_id] = objects.[object_id] INNER JOIN sys.schemas schemas ON objects.[schema_id] = schemas.[schema_id] WHERE objects.[type] IN(''U'',''V'')' + CASE WHEN @MSShippedObjects = 'N' THEN ' AND objects.is_ms_shipped = 0' ELSE '' END + ' AND schemas.[schema_id] = @ParamSchemaID AND schemas.[name] = @ParamSchemaName AND objects.[object_id] = @ParamObjectID AND objects.[name] = @ParamObjectName AND objects.[type] = @ParamObjectType AND stats.stats_id = @ParamStatisticsID AND stats.[name] = @ParamStatisticsName) BEGIN SET @ParamStatisticsExists = 1 END'
+
+          BEGIN TRY
+            EXECUTE @CurrentDatabase_sp_executesql @stmt = @CurrentCommand, @params = N'@ParamSchemaID int, @ParamSchemaName sysname, @ParamObjectID int, @ParamObjectName sysname, @ParamObjectType sysname, @ParamStatisticsID int, @ParamStatisticsName sysname, @ParamStatisticsExists bit OUTPUT', @ParamSchemaID = @CurrentSchemaID, @ParamSchemaName = @CurrentSchemaName, @ParamObjectID = @CurrentObjectID, @ParamObjectName = @CurrentObjectName, @ParamObjectType = @CurrentObjectType, @ParamStatisticsID = @CurrentStatisticsID, @ParamStatisticsName = @CurrentStatisticsName, @ParamStatisticsExists = @CurrentStatisticsExists OUTPUT
+
+            IF @CurrentStatisticsExists IS NULL
+            BEGIN
+              SET @CurrentStatisticsExists = 0
+              GOTO NoAction
+            END
+          END TRY
+          BEGIN CATCH
+            SET @ErrorMessage = 'Msg ' + CAST(ERROR_NUMBER() AS nvarchar(max)) + ', ' + ISNULL(ERROR_MESSAGE(),'') + CASE WHEN ERROR_NUMBER() = 1222 THEN ' The statistics ' + QUOTENAME(@CurrentStatisticsName) + ' on the object ' + QUOTENAME(@CurrentDatabaseName) + '.' + QUOTENAME(@CurrentSchemaName) + '.' + QUOTENAME(@CurrentObjectName) + ' is locked. It could not be checked if the statistics exists.' ELSE '' END
+            SET @Severity = CASE WHEN ERROR_NUMBER() IN(1205,1222) THEN @LockMessageSeverity ELSE 16 END
+            RAISERROR('%s',@Severity,1,@ErrorMessage) WITH NOWAIT
+            RAISERROR(@EmptyLine,10,1) WITH NOWAIT
+
+            IF NOT (ERROR_NUMBER() IN(1205,1222) AND @LockMessageSeverity = 10)
+            BEGIN
+              SET @ReturnCode = ERROR_NUMBER()
+            END
+
+            GOTO NoAction
+          END CATCH
+
+          -- Does the object or partition have rows?
+          IF NOT (@OnlyModifiedStatistics = 'N' AND @StatisticsModificationLevel IS NULL)
+          BEGIN
+            SET @CurrentCommand = ''
+            IF @LockTimeout IS NOT NULL SET @CurrentCommand = 'SET LOCK_TIMEOUT ' + CAST(@LockTimeout * 1000 AS nvarchar(max)) + '; '
+
+            IF @PartitionLevel = 'Y' AND @CurrentIsIncremental = 1
+            BEGIN
+              SET @CurrentCommand += 'SELECT @ParamObjectHasRows = CASE WHEN EXISTS (SELECT * FROM sys.dm_db_partition_stats WHERE [object_id] = @ParamObjectID AND index_id IN (0,1) AND partition_number = @ParamPartitionNumber AND row_count > 0) THEN 1 ELSE 0 END'
+            END
+            ELSE
+            BEGIN
+              SET @CurrentCommand += 'SELECT @ParamObjectHasRows = CASE WHEN EXISTS (SELECT * FROM sys.dm_db_partition_stats WHERE [object_id] = @ParamObjectID AND index_id IN (0,1) AND row_count > 0) THEN 1 ELSE 0 END'
+            END
+
+            BEGIN TRY
+              EXECUTE @CurrentDatabase_sp_executesql @stmt = @CurrentCommand, @params = N'@ParamObjectID int, @ParamPartitionNumber int, @ParamObjectHasRows bit OUTPUT', @ParamObjectID = @CurrentObjectID, @ParamPartitionNumber = @CurrentPartitionNumber, @ParamObjectHasRows = @CurrentObjectHasRows OUTPUT
+            END TRY
+            BEGIN CATCH
+              SET @ErrorMessage = 'Msg ' + CAST(ERROR_NUMBER() AS nvarchar(max)) + ', ' + ISNULL(ERROR_MESSAGE(),'') + CASE WHEN ERROR_NUMBER() = 1222 THEN ' The object ' + QUOTENAME(@CurrentDatabaseName) + '.' + QUOTENAME(@CurrentSchemaName) + '.' + QUOTENAME(@CurrentObjectName) + ' is locked. The row count could not be checked.' ELSE '' END
+              SET @Severity = CASE WHEN ERROR_NUMBER() IN(1205,1222) THEN @LockMessageSeverity ELSE 16 END
+              RAISERROR('%s',@Severity,1,@ErrorMessage) WITH NOWAIT
+              RAISERROR(@EmptyLine,10,1) WITH NOWAIT
+              IF NOT (ERROR_NUMBER() IN(1205,1222) AND @LockMessageSeverity = 10)
+              BEGIN
+                SET @ReturnCode = ERROR_NUMBER()
+              END
+              GOTO NoAction
+            END CATCH
+          END
+
+          -- Has the data in the statistics been modified since the statistics was last updated?
+          IF NOT (@OnlyModifiedStatistics = 'N' AND @StatisticsModificationLevel IS NULL)
+          BEGIN
+            SET @CurrentCommand = ''
+
+            IF @LockTimeout IS NOT NULL SET @CurrentCommand = 'SET LOCK_TIMEOUT ' + CAST(@LockTimeout * 1000 AS nvarchar(max)) + '; '
+
+            IF @PartitionLevel = 'Y' AND @CurrentIsIncremental = 1
+            BEGIN
+              SET @CurrentCommand += 'SELECT @ParamRowCount = [rows], @ParamModificationCounter = modification_counter FROM sys.dm_db_incremental_stats_properties (@ParamObjectID, @ParamStatisticsID) WHERE partition_number = @ParamPartitionNumber'
+            END
+            ELSE
+            BEGIN
+              SET @CurrentCommand += 'SELECT @ParamRowCount = [rows], @ParamModificationCounter = modification_counter FROM sys.dm_db_stats_properties (@ParamObjectID, @ParamStatisticsID)'
+            END
+
+            BEGIN TRY
+              EXECUTE @CurrentDatabase_sp_executesql @stmt = @CurrentCommand, @params = N'@ParamObjectID int, @ParamStatisticsID int, @ParamPartitionNumber int, @ParamRowCount bigint OUTPUT, @ParamModificationCounter bigint OUTPUT', @ParamObjectID = @CurrentObjectID, @ParamStatisticsID = @CurrentStatisticsID, @ParamPartitionNumber = @CurrentPartitionNumber, @ParamRowCount = @CurrentRowCount OUTPUT, @ParamModificationCounter = @CurrentModificationCounter OUTPUT
+            END TRY
+            BEGIN CATCH
+              SET @ErrorMessage = 'Msg ' + CAST(ERROR_NUMBER() AS nvarchar(max)) + ', ' + ISNULL(ERROR_MESSAGE(),'') + CASE WHEN ERROR_NUMBER() = 1222 THEN ' The statistics ' + QUOTENAME(@CurrentStatisticsName) + ' on the object ' + QUOTENAME(@CurrentDatabaseName) + '.' + QUOTENAME(@CurrentSchemaName) + '.' + QUOTENAME(@CurrentObjectName) + ' is locked. The rows and modification_counter could not be checked.' ELSE '' END
+              SET @Severity = CASE WHEN ERROR_NUMBER() IN(1205,1222) THEN @LockMessageSeverity ELSE 16 END
+              RAISERROR('%s',@Severity,1,@ErrorMessage) WITH NOWAIT
+              RAISERROR(@EmptyLine,10,1) WITH NOWAIT
+
+              IF NOT (ERROR_NUMBER() IN(1205,1222) AND @LockMessageSeverity = 10)
+              BEGIN
+                SET @ReturnCode = ERROR_NUMBER()
+              END
+
+              GOTO NoAction
+            END CATCH
+          END
+
+          -- Update statistics?
+          IF ((@OnlyModifiedStatistics = 'N' AND @StatisticsModificationLevel IS NULL) OR (@OnlyModifiedStatistics = 'Y' AND @CurrentModificationCounter > 0) OR ((@CurrentModificationCounter * 1. / NULLIF(@CurrentRowCount,0)) * 100 >= @StatisticsModificationLevel) OR (@StatisticsModificationLevel IS NOT NULL AND @CurrentModificationCounter > 0 AND (@CurrentModificationCounter >= SQRT(@CurrentRowCount * 1000))) OR ((@CurrentIndexType IN (1,2) OR @CurrentIndexID IS NULL) AND @CurrentModificationCounter IS NULL AND @CurrentObjectHasRows = 1))
+          BEGIN
+            SET @CurrentUpdateStatistics = 'Y'
+          END
+          ELSE
+          BEGIN
+            SET @CurrentUpdateStatistics = 'N'
+          END
+        END
+
+        SET @CurrentStatisticsSample = @StatisticsSample
+        SET @CurrentStatisticsPersistSample = @StatisticsPersistSample
+        SET @CurrentStatisticsResample = @StatisticsResample
+
+        -- Incremental statistics only supports RESAMPLE
+        IF @PartitionLevel = 'Y' AND @CurrentIsIncremental = 1
+        BEGIN
+          SET @CurrentStatisticsSample = NULL
+          SET @CurrentStatisticsPersistSample = NULL
+          SET @CurrentStatisticsResample = 'Y'
+        END
+
+        -- Create statistics comment
+        IF @CurrentUpdateStatistics = 'Y'
         BEGIN
           SET @CurrentComment = 'ObjectType: ' + CASE WHEN @CurrentObjectType = 'U' THEN 'Table' WHEN @CurrentObjectType = 'V' THEN 'View' ELSE 'N/A' END + ', '
           SET @CurrentComment += 'StatisticsType: ' + CASE WHEN @CurrentIndexID IS NOT NULL THEN 'Index' ELSE 'Column' END + ', '
@@ -9205,15 +9205,19 @@ BEGIN
           SET @CurrentComment += 'ModificationCounter: ' + ISNULL(CAST(@CurrentModificationCounter AS nvarchar(max)),'N/A')
         END
 
-        IF @CurrentStatisticsID IS NOT NULL AND (@CurrentRowCount IS NOT NULL OR @CurrentModificationCounter IS NOT NULL)
+        IF @CurrentUpdateStatistics = 'Y' AND (@CurrentRowCount IS NOT NULL OR @CurrentModificationCounter IS NOT NULL)
         BEGIN
-        SET @CurrentExtendedInfo = (SELECT *
-                                    FROM (SELECT CAST(@CurrentRowCount AS nvarchar(max)) AS [RowCount],
-                                                 CAST(@CurrentModificationCounter AS nvarchar(max)) AS ModificationCounter
-                                    ) ExtendedInfo FOR XML RAW('ExtendedInfo'), ELEMENTS)
+          SET @CurrentExtendedInfo = (SELECT *
+                                      FROM (SELECT CAST(@CurrentRowCount AS nvarchar(max)) AS [RowCount],
+                                                   CAST(@CurrentModificationCounter AS nvarchar(max)) AS ModificationCounter
+                                      ) ExtendedInfo FOR XML RAW('ExtendedInfo'), ELEMENTS)
+        END
+        ELSE
+        BEGIN
+          SET @CurrentExtendedInfo = NULL
         END
 
-        IF @CurrentStatisticsID IS NOT NULL AND @CurrentUpdateStatistics = 'Y' AND (SYSDATETIME() < DATEADD(SECOND,@TimeLimit,@StartTime) OR @TimeLimit IS NULL)
+        IF @CurrentUpdateStatistics = 'Y' AND (SYSDATETIME() < DATEADD(SECOND,@TimeLimit,@StartTime) OR @TimeLimit IS NULL)
         BEGIN
           SET @CurrentDatabaseContext = @CurrentDatabaseName
 
@@ -9330,7 +9334,7 @@ BEGIN
         SET @CurrentHasFilter = NULL
         SET @CurrentNoRecompute = NULL
         SET @CurrentIsIncremental = NULL
-        SET @CurrentObjectRowCount = NULL
+        SET @CurrentObjectHasRows = NULL
         SET @CurrentRowCount = NULL
         SET @CurrentModificationCounter = NULL
         SET @CurrentOnReadOnlyFileGroup = NULL
