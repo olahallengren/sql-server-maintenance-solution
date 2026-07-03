@@ -40,7 +40,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-06-29 20:49:12                                                               //--
+  --// Version: 2026-07-03 20:28:19                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -114,8 +114,8 @@ BEGIN
   DECLARE @CurrentState int
 
   DECLARE @tmpDatabases TABLE (ID int IDENTITY,
-                               DatabaseName nvarchar(max),
-                               DatabaseType nvarchar(max),
+                               DatabaseName nvarchar(128),
+                               DatabaseType nvarchar(1),
                                AvailabilityGroup bit,
                                [Snapshot] bit,
                                StartPosition int,
@@ -128,16 +128,16 @@ BEGIN
                                PRIMARY KEY (Selected, Completed, [Order], ID))
 
   DECLARE @tmpAvailabilityGroups TABLE (ID int IDENTITY PRIMARY KEY,
-                                        AvailabilityGroupName nvarchar(max),
+                                        AvailabilityGroupName nvarchar(128),
                                         StartPosition int,
                                         Selected bit DEFAULT 0)
 
-  DECLARE @tmpDatabasesAvailabilityGroups TABLE (DatabaseName nvarchar(max),
-                                                 AvailabilityGroupName nvarchar(max))
+  DECLARE @tmpDatabasesAvailabilityGroups TABLE (DatabaseName nvarchar(128),
+                                                 AvailabilityGroupName nvarchar(128))
 
   DECLARE @tmpFileGroups TABLE (ID int IDENTITY,
                                 FileGroupID int,
-                                FileGroupName nvarchar(max),
+                                FileGroupName nvarchar(128),
                                 StartPosition int,
                                 [Order] int DEFAULT 0,
                                 Selected bit DEFAULT 0,
@@ -146,10 +146,10 @@ BEGIN
 
   DECLARE @tmpObjects TABLE (ID int IDENTITY,
                              SchemaID int,
-                             SchemaName nvarchar(max),
+                             SchemaName nvarchar(128),
                              ObjectID int,
-                             ObjectName nvarchar(max),
-                             ObjectType nvarchar(max),
+                             ObjectName nvarchar(128),
+                             ObjectType nvarchar(2),
                              StartPosition int,
                              [Order] int DEFAULT 0,
                              Selected bit DEFAULT 0,
@@ -157,8 +157,8 @@ BEGIN
                              PRIMARY KEY (Selected, Completed, [Order], ID))
 
   DECLARE @SelectedDatabases TABLE (DatabaseName nvarchar(max),
-                                    DatabaseType nvarchar(max),
-                                    AvailabilityGroup nvarchar(max),
+                                    DatabaseType nvarchar(1),
+                                    AvailabilityGroup bit,
                                     StartPosition int,
                                     Selected bit)
 
@@ -955,7 +955,8 @@ BEGIN
   --// Check that selected databases and availability groups exist                                //--
   ----------------------------------------------------------------------------------------------------
 
-  SELECT @ErrorMessage = STRING_AGG(QUOTENAME(DatabaseName), ', ')
+  SELECT @ErrorMessage = STRING_AGG(CAST(QUOTENAME(DatabaseName) AS nvarchar(max)), ', ')
+                         WITHIN GROUP (ORDER BY DatabaseName ASC)
   FROM @SelectedDatabases
   WHERE DatabaseName NOT LIKE '%[%]%'
   AND DatabaseName NOT IN (SELECT DatabaseName FROM @tmpDatabases)
@@ -966,7 +967,8 @@ BEGIN
     SELECT 'The following databases in the @Databases parameter do not exist: ' + @ErrorMessage + '.', 10, 1
   END
 
-  SELECT @ErrorMessage = STRING_AGG(QUOTENAME(DatabaseName), ', ')
+  SELECT @ErrorMessage = STRING_AGG(CAST(QUOTENAME(DatabaseName) AS nvarchar(max)), ', ')
+                         WITHIN GROUP (ORDER BY DatabaseName ASC)
   FROM @SelectedFileGroups
   WHERE DatabaseName NOT LIKE '%[%]%'
   AND DatabaseName NOT IN (SELECT DatabaseName FROM @tmpDatabases)
@@ -977,7 +979,8 @@ BEGIN
     SELECT 'The following databases in the @FileGroups parameter do not exist: ' + @ErrorMessage + '.', 10, 1
   END
 
-  SELECT @ErrorMessage = STRING_AGG(QUOTENAME(DatabaseName), ', ')
+  SELECT @ErrorMessage = STRING_AGG(CAST(QUOTENAME(DatabaseName) AS nvarchar(max)), ', ')
+                         WITHIN GROUP (ORDER BY DatabaseName ASC)
   FROM @SelectedObjects
   WHERE DatabaseName NOT LIKE '%[%]%'
   AND DatabaseName NOT IN (SELECT DatabaseName FROM @tmpDatabases)
@@ -988,7 +991,8 @@ BEGIN
     SELECT 'The following databases in the @Objects parameter do not exist: ' + @ErrorMessage + '.', 10, 1
   END
 
-  SELECT @ErrorMessage = STRING_AGG(QUOTENAME(AvailabilityGroupName), ', ')
+  SELECT @ErrorMessage = STRING_AGG(CAST(QUOTENAME(AvailabilityGroupName) AS nvarchar(max)), ', ')
+                         WITHIN GROUP (ORDER BY AvailabilityGroupName ASC)
   FROM @SelectedAvailabilityGroups
   WHERE AvailabilityGroupName NOT LIKE '%[%]%'
   AND AvailabilityGroupName NOT IN (SELECT AvailabilityGroupName FROM @tmpAvailabilityGroups)
@@ -999,7 +1003,8 @@ BEGIN
     SELECT 'The following availability groups do not exist: ' + @ErrorMessage + '.', 10, 1
   END
 
-  SELECT @ErrorMessage = STRING_AGG(QUOTENAME(DatabaseName), ', ')
+  SELECT @ErrorMessage = STRING_AGG(CAST(QUOTENAME(DatabaseName) AS nvarchar(max)), ', ')
+                         WITHIN GROUP (ORDER BY DatabaseName ASC)
   FROM @SelectedFileGroups
   WHERE DatabaseName NOT LIKE '%[%]%'
   AND DatabaseName IN (SELECT DatabaseName FROM @tmpDatabases)
@@ -1011,7 +1016,8 @@ BEGIN
     SELECT 'The following databases have been selected in the @FileGroups parameter, but not in the @Databases or @AvailabilityGroups parameters: ' + @ErrorMessage + '.', 10, 1
   END
 
-  SELECT @ErrorMessage = STRING_AGG(QUOTENAME(DatabaseName), ', ')
+  SELECT @ErrorMessage = STRING_AGG(CAST(QUOTENAME(DatabaseName) AS nvarchar(max)), ', ')
+                         WITHIN GROUP (ORDER BY DatabaseName ASC)
   FROM @SelectedObjects
   WHERE DatabaseName NOT LIKE '%[%]%'
   AND DatabaseName IN (SELECT DatabaseName FROM @tmpDatabases)
@@ -1564,7 +1570,8 @@ BEGIN
         UPDATE tmpFileGroups
         SET [Order] = RowNumber
 
-        SELECT @ErrorMessage = STRING_AGG(QUOTENAME(DatabaseName) + '.' + QUOTENAME(FileGroupName), ', ')
+        SELECT @ErrorMessage = STRING_AGG(CAST(QUOTENAME(DatabaseName) AS nvarchar(max)) + '.' + QUOTENAME(FileGroupName), ', ')
+                               WITHIN GROUP (ORDER BY DatabaseName ASC, FileGroupName ASC)
         FROM @SelectedFileGroups SelectedFileGroups
         WHERE DatabaseName = @CurrentDatabaseName
         AND FileGroupName NOT LIKE '%[%]%'
@@ -1730,7 +1737,8 @@ BEGIN
         UPDATE tmpObjects
         SET [Order] = RowNumber
 
-        SELECT @ErrorMessage = STRING_AGG(QUOTENAME(DatabaseName) + '.' + QUOTENAME(SchemaName) + '.' + QUOTENAME(ObjectName), ', ')
+        SELECT @ErrorMessage = STRING_AGG(CAST(QUOTENAME(DatabaseName) AS nvarchar(max)) + '.' + QUOTENAME(SchemaName) + '.' + QUOTENAME(ObjectName), ', ')
+                               WITHIN GROUP (ORDER BY DatabaseName ASC, SchemaName ASC, ObjectName ASC)
         FROM @SelectedObjects SelectedObjects
         WHERE DatabaseName = @CurrentDatabaseName
         AND SchemaName NOT LIKE '%[%]%'
