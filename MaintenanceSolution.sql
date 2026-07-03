@@ -10,7 +10,7 @@ License: https://ola.hallengren.com/license.html
 
 GitHub: https://github.com/olahallengren/sql-server-maintenance-solution
 
-Version: 2026-06-29 20:49:12
+Version: 2026-07-03 20:47:15
 
 You can contact me by e-mail at ola@hallengren.com.
 
@@ -133,7 +133,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-06-29 20:49:12                                                               //--
+  --// Version: 2026-07-03 20:47:15                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -492,7 +492,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-06-29 20:49:12                                                               //--
+  --// Version: 2026-07-03 20:47:15                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -608,9 +608,9 @@ BEGIN
                                 ParentDirectoryExists bit)
 
   DECLARE @tmpDatabases TABLE (ID int IDENTITY,
-                               DatabaseName nvarchar(max),
-                               DatabaseNameFS nvarchar(max),
-                               DatabaseType nvarchar(max),
+                               DatabaseName nvarchar(128),
+                               DatabaseNameFS nvarchar(128),
+                               DatabaseType nvarchar(1),
                                AvailabilityGroup bit,
                                StartPosition int,
                                DatabaseSize bigint,
@@ -621,16 +621,16 @@ BEGIN
                                PRIMARY KEY (Selected, Completed, [Order], ID))
 
   DECLARE @tmpAvailabilityGroups TABLE (ID int IDENTITY PRIMARY KEY,
-                                        AvailabilityGroupName nvarchar(max),
+                                        AvailabilityGroupName nvarchar(128),
                                         StartPosition int,
                                         Selected bit DEFAULT 0)
 
-  DECLARE @tmpDatabasesAvailabilityGroups TABLE (DatabaseName nvarchar(max),
-                                                 AvailabilityGroupName nvarchar(max))
+  DECLARE @tmpDatabasesAvailabilityGroups TABLE (DatabaseName nvarchar(128),
+                                                 AvailabilityGroupName nvarchar(128))
 
   DECLARE @SelectedDatabases TABLE (DatabaseName nvarchar(max),
-                                    DatabaseType nvarchar(max),
-                                    AvailabilityGroup nvarchar(max),
+                                    DatabaseType nvarchar(1),
+                                    AvailabilityGroup bit,
                                     StartPosition int,
                                     Selected bit)
 
@@ -661,7 +661,7 @@ BEGIN
                               Mirror bit,
                               DirectoryNumber int)
 
-  DECLARE @CurrentFiles TABLE ([Type] nvarchar(max),
+  DECLARE @CurrentFiles TABLE ([Type] nvarchar(4),
                                FilePath nvarchar(max),
                                Mirror bit)
 
@@ -1119,7 +1119,7 @@ BEGIN
   --// Check database names                                                                       //--
   ----------------------------------------------------------------------------------------------------
 
-  SELECT @ErrorMessage = STRING_AGG(QUOTENAME(DatabaseName), ', ')
+  SELECT @ErrorMessage = STRING_AGG(CAST(QUOTENAME(DatabaseName) AS nvarchar(max)), ', ')
                          WITHIN GROUP (ORDER BY DatabaseName ASC)
   FROM @tmpDatabases
   WHERE Selected = 1
@@ -1131,7 +1131,7 @@ BEGIN
     SELECT 'The names of the following databases are not supported: ' + @ErrorMessage + '.', 16, 1
   END
 
-  SELECT @ErrorMessage = STRING_AGG(QUOTENAME(DatabaseName), ', ')
+  SELECT @ErrorMessage = STRING_AGG(CAST(QUOTENAME(DatabaseName) AS nvarchar(max)), ', ')
                          WITHIN GROUP (ORDER BY DatabaseName ASC)
   FROM @tmpDatabases
   WHERE UPPER(DatabaseNameFS) IN(SELECT UPPER(DatabaseNameFS) FROM @tmpDatabases GROUP BY UPPER(DatabaseNameFS) HAVING COUNT(*) > 1 AND MAX(CAST(Selected AS int)) = 1)
@@ -2839,7 +2839,8 @@ BEGIN
   --// Check that selected databases and availability groups exist                                //--
   ----------------------------------------------------------------------------------------------------
 
-  SELECT @ErrorMessage = STRING_AGG(QUOTENAME(DatabaseName), ', ')
+  SELECT @ErrorMessage = STRING_AGG(CAST(QUOTENAME(DatabaseName) AS nvarchar(max)), ', ')
+                         WITHIN GROUP (ORDER BY DatabaseName ASC)
   FROM @SelectedDatabases
   WHERE DatabaseName NOT LIKE '%[%]%'
   AND DatabaseName NOT IN (SELECT DatabaseName FROM @tmpDatabases)
@@ -2850,7 +2851,8 @@ BEGIN
     SELECT 'The following databases in the @Databases parameter do not exist: ' + @ErrorMessage + '.', 10, 1
   END
 
-  SELECT @ErrorMessage = STRING_AGG(QUOTENAME(AvailabilityGroupName), ', ')
+  SELECT @ErrorMessage = STRING_AGG(CAST(QUOTENAME(AvailabilityGroupName) AS nvarchar(max)), ', ')
+                         WITHIN GROUP (ORDER BY AvailabilityGroupName ASC)
   FROM @SelectedAvailabilityGroups
   WHERE AvailabilityGroupName NOT LIKE '%[%]%'
   AND AvailabilityGroupName NOT IN (SELECT AvailabilityGroupName FROM @tmpAvailabilityGroups)
@@ -4848,7 +4850,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-06-29 20:49:12                                                               //--
+  --// Version: 2026-07-03 20:47:15                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -4922,8 +4924,8 @@ BEGIN
   DECLARE @CurrentState int
 
   DECLARE @tmpDatabases TABLE (ID int IDENTITY,
-                               DatabaseName nvarchar(max),
-                               DatabaseType nvarchar(max),
+                               DatabaseName nvarchar(128),
+                               DatabaseType nvarchar(1),
                                AvailabilityGroup bit,
                                [Snapshot] bit,
                                StartPosition int,
@@ -4936,16 +4938,16 @@ BEGIN
                                PRIMARY KEY (Selected, Completed, [Order], ID))
 
   DECLARE @tmpAvailabilityGroups TABLE (ID int IDENTITY PRIMARY KEY,
-                                        AvailabilityGroupName nvarchar(max),
+                                        AvailabilityGroupName nvarchar(128),
                                         StartPosition int,
                                         Selected bit DEFAULT 0)
 
-  DECLARE @tmpDatabasesAvailabilityGroups TABLE (DatabaseName nvarchar(max),
-                                                 AvailabilityGroupName nvarchar(max))
+  DECLARE @tmpDatabasesAvailabilityGroups TABLE (DatabaseName nvarchar(128),
+                                                 AvailabilityGroupName nvarchar(128))
 
   DECLARE @tmpFileGroups TABLE (ID int IDENTITY,
                                 FileGroupID int,
-                                FileGroupName nvarchar(max),
+                                FileGroupName nvarchar(128),
                                 StartPosition int,
                                 [Order] int DEFAULT 0,
                                 Selected bit DEFAULT 0,
@@ -4954,10 +4956,10 @@ BEGIN
 
   DECLARE @tmpObjects TABLE (ID int IDENTITY,
                              SchemaID int,
-                             SchemaName nvarchar(max),
+                             SchemaName nvarchar(128),
                              ObjectID int,
-                             ObjectName nvarchar(max),
-                             ObjectType nvarchar(max),
+                             ObjectName nvarchar(128),
+                             ObjectType nvarchar(2),
                              StartPosition int,
                              [Order] int DEFAULT 0,
                              Selected bit DEFAULT 0,
@@ -4965,8 +4967,8 @@ BEGIN
                              PRIMARY KEY (Selected, Completed, [Order], ID))
 
   DECLARE @SelectedDatabases TABLE (DatabaseName nvarchar(max),
-                                    DatabaseType nvarchar(max),
-                                    AvailabilityGroup nvarchar(max),
+                                    DatabaseType nvarchar(1),
+                                    AvailabilityGroup bit,
                                     StartPosition int,
                                     Selected bit)
 
@@ -5763,7 +5765,8 @@ BEGIN
   --// Check that selected databases and availability groups exist                                //--
   ----------------------------------------------------------------------------------------------------
 
-  SELECT @ErrorMessage = STRING_AGG(QUOTENAME(DatabaseName), ', ')
+  SELECT @ErrorMessage = STRING_AGG(CAST(QUOTENAME(DatabaseName) AS nvarchar(max)), ', ')
+                         WITHIN GROUP (ORDER BY DatabaseName ASC)
   FROM @SelectedDatabases
   WHERE DatabaseName NOT LIKE '%[%]%'
   AND DatabaseName NOT IN (SELECT DatabaseName FROM @tmpDatabases)
@@ -5774,7 +5777,8 @@ BEGIN
     SELECT 'The following databases in the @Databases parameter do not exist: ' + @ErrorMessage + '.', 10, 1
   END
 
-  SELECT @ErrorMessage = STRING_AGG(QUOTENAME(DatabaseName), ', ')
+  SELECT @ErrorMessage = STRING_AGG(CAST(QUOTENAME(DatabaseName) AS nvarchar(max)), ', ')
+                         WITHIN GROUP (ORDER BY DatabaseName ASC)
   FROM @SelectedFileGroups
   WHERE DatabaseName NOT LIKE '%[%]%'
   AND DatabaseName NOT IN (SELECT DatabaseName FROM @tmpDatabases)
@@ -5785,7 +5789,8 @@ BEGIN
     SELECT 'The following databases in the @FileGroups parameter do not exist: ' + @ErrorMessage + '.', 10, 1
   END
 
-  SELECT @ErrorMessage = STRING_AGG(QUOTENAME(DatabaseName), ', ')
+  SELECT @ErrorMessage = STRING_AGG(CAST(QUOTENAME(DatabaseName) AS nvarchar(max)), ', ')
+                         WITHIN GROUP (ORDER BY DatabaseName ASC)
   FROM @SelectedObjects
   WHERE DatabaseName NOT LIKE '%[%]%'
   AND DatabaseName NOT IN (SELECT DatabaseName FROM @tmpDatabases)
@@ -5796,7 +5801,8 @@ BEGIN
     SELECT 'The following databases in the @Objects parameter do not exist: ' + @ErrorMessage + '.', 10, 1
   END
 
-  SELECT @ErrorMessage = STRING_AGG(QUOTENAME(AvailabilityGroupName), ', ')
+  SELECT @ErrorMessage = STRING_AGG(CAST(QUOTENAME(AvailabilityGroupName) AS nvarchar(max)), ', ')
+                         WITHIN GROUP (ORDER BY AvailabilityGroupName ASC)
   FROM @SelectedAvailabilityGroups
   WHERE AvailabilityGroupName NOT LIKE '%[%]%'
   AND AvailabilityGroupName NOT IN (SELECT AvailabilityGroupName FROM @tmpAvailabilityGroups)
@@ -5807,7 +5813,8 @@ BEGIN
     SELECT 'The following availability groups do not exist: ' + @ErrorMessage + '.', 10, 1
   END
 
-  SELECT @ErrorMessage = STRING_AGG(QUOTENAME(DatabaseName), ', ')
+  SELECT @ErrorMessage = STRING_AGG(CAST(QUOTENAME(DatabaseName) AS nvarchar(max)), ', ')
+                         WITHIN GROUP (ORDER BY DatabaseName ASC)
   FROM @SelectedFileGroups
   WHERE DatabaseName NOT LIKE '%[%]%'
   AND DatabaseName IN (SELECT DatabaseName FROM @tmpDatabases)
@@ -5819,7 +5826,8 @@ BEGIN
     SELECT 'The following databases have been selected in the @FileGroups parameter, but not in the @Databases or @AvailabilityGroups parameters: ' + @ErrorMessage + '.', 10, 1
   END
 
-  SELECT @ErrorMessage = STRING_AGG(QUOTENAME(DatabaseName), ', ')
+  SELECT @ErrorMessage = STRING_AGG(CAST(QUOTENAME(DatabaseName) AS nvarchar(max)), ', ')
+                         WITHIN GROUP (ORDER BY DatabaseName ASC)
   FROM @SelectedObjects
   WHERE DatabaseName NOT LIKE '%[%]%'
   AND DatabaseName IN (SELECT DatabaseName FROM @tmpDatabases)
@@ -6372,7 +6380,8 @@ BEGIN
         UPDATE tmpFileGroups
         SET [Order] = RowNumber
 
-        SELECT @ErrorMessage = STRING_AGG(QUOTENAME(DatabaseName) + '.' + QUOTENAME(FileGroupName), ', ')
+        SELECT @ErrorMessage = STRING_AGG(CAST(QUOTENAME(DatabaseName) AS nvarchar(max)) + '.' + QUOTENAME(FileGroupName), ', ')
+                               WITHIN GROUP (ORDER BY DatabaseName ASC, FileGroupName ASC)
         FROM @SelectedFileGroups SelectedFileGroups
         WHERE DatabaseName = @CurrentDatabaseName
         AND FileGroupName NOT LIKE '%[%]%'
@@ -6538,7 +6547,8 @@ BEGIN
         UPDATE tmpObjects
         SET [Order] = RowNumber
 
-        SELECT @ErrorMessage = STRING_AGG(QUOTENAME(DatabaseName) + '.' + QUOTENAME(SchemaName) + '.' + QUOTENAME(ObjectName), ', ')
+        SELECT @ErrorMessage = STRING_AGG(CAST(QUOTENAME(DatabaseName) AS nvarchar(max)) + '.' + QUOTENAME(SchemaName) + '.' + QUOTENAME(ObjectName), ', ')
+                               WITHIN GROUP (ORDER BY DatabaseName ASC, SchemaName ASC, ObjectName ASC)
         FROM @SelectedObjects SelectedObjects
         WHERE DatabaseName = @CurrentDatabaseName
         AND SchemaName NOT LIKE '%[%]%'
@@ -6796,7 +6806,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-06-29 20:49:12                                                               //--
+  --// Version: 2026-07-03 20:47:15                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -6910,8 +6920,8 @@ BEGIN
   DECLARE @CurrentDelay datetime
 
   DECLARE @tmpDatabases TABLE (ID int IDENTITY,
-                               DatabaseName nvarchar(max),
-                               DatabaseType nvarchar(max),
+                               DatabaseName nvarchar(128),
+                               DatabaseType nvarchar(1),
                                AvailabilityGroup bit,
                                StartPosition int,
                                DatabaseSize bigint,
@@ -6921,12 +6931,12 @@ BEGIN
                                PRIMARY KEY (Selected, Completed, [Order], ID))
 
   DECLARE @tmpAvailabilityGroups TABLE (ID int IDENTITY PRIMARY KEY,
-                                        AvailabilityGroupName nvarchar(max),
+                                        AvailabilityGroupName nvarchar(128),
                                         StartPosition int,
                                         Selected bit DEFAULT 0)
 
-  DECLARE @tmpDatabasesAvailabilityGroups TABLE (DatabaseName nvarchar(max),
-                                                 AvailabilityGroupName nvarchar(max))
+  DECLARE @tmpDatabasesAvailabilityGroups TABLE (DatabaseName nvarchar(128),
+                                                 AvailabilityGroupName nvarchar(128))
 
   DECLARE @tmpIndexesStatistics TABLE (ID int IDENTITY,
                                        SchemaID int,
@@ -6980,13 +6990,20 @@ BEGIN
                                      IsTimestamp bit,
                                      PRIMARY KEY (ObjectID, IndexID))
 
+  DECLARE @tmpIndexStatisticsProperties TABLE (ObjectID int NOT NULL,
+                                               StatisticsID int NOT NULL,
+                                               StatisticsName nvarchar(128),
+                                               [NoRecompute] bit,
+                                               IsIncremental bit,
+                                               PRIMARY KEY (ObjectID, StatisticsID))
+
   DECLARE @tmpResumableOperations TABLE (ObjectID int NOT NULL,
                                          IndexID int NOT NULL,
                                          PartitionNumber int)
 
   DECLARE @SelectedDatabases TABLE (DatabaseName nvarchar(max),
-                                    DatabaseType nvarchar(max),
-                                    AvailabilityGroup nvarchar(max),
+                                    DatabaseType nvarchar(1),
+                                    AvailabilityGroup bit,
                                     StartPosition int,
                                     Selected bit)
 
@@ -7928,7 +7945,8 @@ BEGIN
   --// Check that selected databases and availability groups exist                                //--
   ----------------------------------------------------------------------------------------------------
 
-  SELECT @ErrorMessage = STRING_AGG(QUOTENAME(DatabaseName), ', ')
+  SELECT @ErrorMessage = STRING_AGG(CAST(QUOTENAME(DatabaseName) AS nvarchar(max)), ', ')
+                         WITHIN GROUP (ORDER BY DatabaseName ASC)
   FROM @SelectedDatabases
   WHERE DatabaseName NOT LIKE '%[%]%'
   AND DatabaseName NOT IN (SELECT DatabaseName FROM @tmpDatabases)
@@ -7939,7 +7957,8 @@ BEGIN
     SELECT 'The following databases in the @Databases parameter do not exist: ' + @ErrorMessage + '.', 10, 1
   END
 
-  SELECT @ErrorMessage = STRING_AGG(QUOTENAME(DatabaseName), ', ')
+  SELECT @ErrorMessage = STRING_AGG(CAST(QUOTENAME(DatabaseName) AS nvarchar(max)), ', ')
+                         WITHIN GROUP (ORDER BY DatabaseName ASC)
   FROM @SelectedIndexes
   WHERE DatabaseName NOT LIKE '%[%]%'
   AND DatabaseName NOT IN (SELECT DatabaseName FROM @tmpDatabases)
@@ -7950,7 +7969,8 @@ BEGIN
     SELECT 'The following databases in the @Indexes parameter do not exist: ' + @ErrorMessage + '.', 10, 1
   END
 
-  SELECT @ErrorMessage = STRING_AGG(QUOTENAME(AvailabilityGroupName), ', ')
+  SELECT @ErrorMessage = STRING_AGG(CAST(QUOTENAME(AvailabilityGroupName) AS nvarchar(max)), ', ')
+                         WITHIN GROUP (ORDER BY AvailabilityGroupName ASC)
   FROM @SelectedAvailabilityGroups
   WHERE AvailabilityGroupName NOT LIKE '%[%]%'
   AND AvailabilityGroupName NOT IN (SELECT AvailabilityGroupName FROM @tmpAvailabilityGroups)
@@ -7961,7 +7981,8 @@ BEGIN
     SELECT 'The following availability groups do not exist: ' + @ErrorMessage + '.', 10, 1
   END
 
-  SELECT @ErrorMessage = STRING_AGG(QUOTENAME(DatabaseName), ', ')
+  SELECT @ErrorMessage = STRING_AGG(CAST(QUOTENAME(DatabaseName) AS nvarchar(max)), ', ')
+                         WITHIN GROUP (ORDER BY DatabaseName ASC)
   FROM @SelectedIndexes
   WHERE DatabaseName NOT LIKE '%[%]%'
   AND DatabaseName IN (SELECT DatabaseName FROM @tmpDatabases)
@@ -8389,17 +8410,12 @@ BEGIN
                               + ' WHEN EXISTS (SELECT * FROM sys.indexes indexes2 INNER JOIN sys.filegroups filegroups ON indexes.data_space_id = filegroups.data_space_id WHERE filegroups.is_read_only = 1 AND indexes.[object_id] = indexes2.[object_id] AND indexes.[index_id] = indexes2.index_id) THEN 1'
                               + ' WHEN indexes.[type] = 1 AND EXISTS (SELECT * FROM sys.tables tables INNER JOIN sys.filegroups filegroups ON tables.lob_data_space_id = filegroups.data_space_id WHERE filegroups.is_read_only = 1 AND tables.[object_id] = objects.[object_id]) THEN 1 ELSE 0 END AS OnReadOnlyFileGroup' ELSE ', 0 AS OnReadOnlyFileGroup' END
                               + ', 0 AS ResumableIndexOperation'
-                              + ', stats.stats_id AS StatisticsID'
-                              + ', stats.name AS StatisticsName'
-                              + ', stats.no_recompute AS NoRecompute'
-                              + ', stats.is_incremental AS IsIncremental'
                               + ', ' + CASE WHEN @PartitionLevel = 'Y' THEN 'partitions.partition_id AS PartitionID' WHEN @PartitionLevel = 'N' THEN 'NULL AS PartitionID' END
                               + ', ' + CASE WHEN @PartitionLevel = 'Y' THEN 'partitions.partition_number AS PartitionNumber' WHEN @PartitionLevel = 'N' THEN 'NULL AS PartitionNumber' END
                               + ' FROM sys.indexes indexes'
                               + ' INNER JOIN sys.objects objects ON indexes.[object_id] = objects.[object_id]'
                               + ' INNER JOIN sys.schemas schemas ON objects.[schema_id] = schemas.[schema_id]'
                               + ' INNER JOIN sys.tables tables ON objects.[object_id] = tables.[object_id]'
-                              + ' INNER JOIN sys.stats stats ON indexes.[object_id] = stats.[object_id] AND indexes.[index_id] = stats.[stats_id]'
           IF @PartitionLevel = 'Y'
           BEGIN
             SET @CurrentCommand += ' INNER JOIN sys.partitions partitions ON indexes.[object_id] = partitions.[object_id] AND indexes.index_id = partitions.index_id'
@@ -8411,7 +8427,7 @@ BEGIN
                                + ' AND indexes.is_disabled = 0'
                                + ' AND indexes.is_hypothetical = 0'
 
-          INSERT INTO @tmpIndexesStatistics (SchemaID, SchemaName, ObjectID, ObjectName, ObjectType, IsMemoryOptimized, IndexID, IndexName, IndexType, AllowPageLocks, HasFilter, OnReadOnlyFileGroup, ResumableIndexOperation, StatisticsID, StatisticsName, [NoRecompute], IsIncremental, PartitionID, PartitionNumber)
+          INSERT INTO @tmpIndexesStatistics (SchemaID, SchemaName, ObjectID, ObjectName, ObjectType, IsMemoryOptimized, IndexID, IndexName, IndexType, AllowPageLocks, HasFilter, OnReadOnlyFileGroup, ResumableIndexOperation, PartitionID, PartitionNumber)
           EXECUTE @CurrentDatabase_sp_executesql @stmt = @CurrentCommand
           SET @Error = @@ERROR
           IF @Error <> 0
@@ -8447,6 +8463,32 @@ BEGIN
                               + ' AND indexes.is_hypothetical = 0'
 
           INSERT INTO @tmpIndexesStatistics (SchemaID, SchemaName, ObjectID, ObjectName, ObjectType, IsMemoryOptimized, IndexID, IndexName, IndexType, AllowPageLocks, HasFilter, OnReadOnlyFileGroup, ResumableIndexOperation)
+          EXECUTE @CurrentDatabase_sp_executesql @stmt = @CurrentCommand
+          SET @Error = @@ERROR
+          IF @Error <> 0
+          BEGIN
+            SET @ReturnCode = @Error
+          END
+
+          -- Select statistics on indexes on tables
+          SET @CurrentCommand = 'SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;'
+                              + ' SELECT stats.[object_id] AS ObjectID'
+                              + ', stats.stats_id AS StatisticsID'
+                              + ', stats.name AS StatisticsName'
+                              + ', stats.no_recompute AS NoRecompute'
+                              + ', stats.is_incremental AS IsIncremental'
+                              + ' FROM sys.stats stats'
+                              + ' INNER JOIN sys.indexes indexes ON stats.[object_id] = indexes.[object_id] AND stats.stats_id = indexes.index_id'
+                              + ' INNER JOIN sys.objects objects ON indexes.[object_id] = objects.[object_id]'
+                              + ' INNER JOIN sys.tables tables ON objects.[object_id] = tables.[object_id]'
+                              + ' WHERE objects.[type] = ''U'''
+                              + ' AND tables.is_external = 0'
+                              + CASE WHEN @MSShippedObjects = 'N' THEN ' AND objects.is_ms_shipped = 0' ELSE '' END
+                              + ' AND indexes.[type] IN(1,2,5,6,7)'
+                              + ' AND indexes.is_disabled = 0'
+                              + ' AND indexes.is_hypothetical = 0'
+
+          INSERT INTO @tmpIndexStatisticsProperties (ObjectID, StatisticsID, StatisticsName, [NoRecompute], IsIncremental)
           EXECUTE @CurrentDatabase_sp_executesql @stmt = @CurrentCommand
           SET @Error = @@ERROR
           IF @Error <> 0
@@ -8548,11 +8590,12 @@ BEGIN
           END
 
           -- Select paused resumable index operations
-          SET @CurrentCommand = 'SELECT index_resumable_operations.object_id AS ObjectID'
-                                + ', index_resumable_operations.index_id AS IndexID'
-                                + ', ' + CASE WHEN @PartitionLevel = 'Y' THEN 'index_resumable_operations.partition_number AS PartitionNumber' WHEN @PartitionLevel = 'N' THEN 'NULL AS PartitionNumber' END
-                                + ' FROM sys.index_resumable_operations index_resumable_operations'
-                                + ' WHERE index_resumable_operations.state_desc = ''PAUSED'''
+          SET @CurrentCommand = 'SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;'
+                              + ' SELECT index_resumable_operations.object_id AS ObjectID'
+                              + ', index_resumable_operations.index_id AS IndexID'
+                              + ', ' + CASE WHEN @PartitionLevel = 'Y' THEN 'index_resumable_operations.partition_number AS PartitionNumber' WHEN @PartitionLevel = 'N' THEN 'NULL AS PartitionNumber' END
+                              + ' FROM sys.index_resumable_operations index_resumable_operations'
+                              + ' WHERE index_resumable_operations.state_desc = ''PAUSED'''
 
           INSERT INTO @tmpResumableOperations (ObjectID, IndexID, PartitionNumber)
           EXECUTE @CurrentDatabase_sp_executesql @stmt = @CurrentCommand
@@ -8632,6 +8675,15 @@ BEGIN
         END
 
         UPDATE tmpIndexesStatistics
+        SET tmpIndexesStatistics.StatisticsID = tmpIndexStatisticsProperties.StatisticsID,
+            tmpIndexesStatistics.StatisticsName = tmpIndexStatisticsProperties.StatisticsName,
+            tmpIndexesStatistics.[NoRecompute] = tmpIndexStatisticsProperties.[NoRecompute],
+            tmpIndexesStatistics.IsIncremental = tmpIndexStatisticsProperties.IsIncremental
+        FROM @tmpIndexesStatistics tmpIndexesStatistics
+        INNER JOIN @tmpIndexStatisticsProperties tmpIndexStatisticsProperties ON tmpIndexesStatistics.ObjectID = tmpIndexStatisticsProperties.ObjectID AND tmpIndexesStatistics.IndexID = tmpIndexStatisticsProperties.StatisticsID
+        OPTION (RECOMPILE)
+
+        UPDATE tmpIndexesStatistics
         SET tmpIndexesStatistics.IsImageText = tmpIndexProperties.IsImageText,
             tmpIndexesStatistics.IsNewLOB = tmpIndexProperties.IsNewLOB,
             tmpIndexesStatistics.IsFileStream = tmpIndexProperties.IsFileStream,
@@ -8706,7 +8758,8 @@ BEGIN
         UPDATE tmpIndexesStatistics
         SET [Order] = RowNumber
 
-        SELECT @ErrorMessage = STRING_AGG(QUOTENAME(DatabaseName) + '.' + QUOTENAME(SchemaName) + '.' + QUOTENAME(ObjectName), ', ')
+        SELECT @ErrorMessage = STRING_AGG(CAST(QUOTENAME(DatabaseName) AS nvarchar(max)) + '.' + QUOTENAME(SchemaName) + '.' + QUOTENAME(ObjectName), ', ')
+                               WITHIN GROUP (ORDER BY DatabaseName ASC, SchemaName ASC, ObjectName ASC)
         FROM @SelectedIndexes SelectedIndexes
         WHERE DatabaseName = @CurrentDatabaseName
         AND SchemaName NOT LIKE '%[%]%'
@@ -8722,7 +8775,8 @@ BEGIN
           RAISERROR(@EmptyLine,10,1) WITH NOWAIT
         END
 
-        SELECT @ErrorMessage = STRING_AGG(QUOTENAME(DatabaseName) + '.' + QUOTENAME(SchemaName) + '.' + QUOTENAME(ObjectName) + '.' + QUOTENAME(IndexName), ', ')
+        SELECT @ErrorMessage = STRING_AGG(CAST(QUOTENAME(DatabaseName) AS nvarchar(max)) + '.' + QUOTENAME(SchemaName) + '.' + QUOTENAME(ObjectName) + '.' + QUOTENAME(IndexName), ', ')
+                               WITHIN GROUP (ORDER BY DatabaseName ASC, SchemaName ASC, ObjectName ASC, IndexName ASC)
         FROM @SelectedIndexes SelectedIndexes
         WHERE DatabaseName = @CurrentDatabaseName
         AND SchemaName NOT LIKE '%[%]%'
@@ -9073,7 +9127,7 @@ BEGIN
 
         -- Should the statistics be updated? - Pre checks and final decision
         IF @CurrentStatisticsID IS NOT NULL
-        AND ((@UpdateStatistics = 'ALL' AND (@CurrentIndexType IN (1,2,3,4,7) OR @CurrentIndexID IS NULL)) OR (@UpdateStatistics = 'INDEX' AND @CurrentIndexID IS NOT NULL AND @CurrentIndexType IN (1,2,3,4,7)) OR (@UpdateStatistics = 'COLUMNS' AND @CurrentIndexID IS NULL))
+        AND ((@UpdateStatistics = 'ALL' AND (@CurrentIndexType IN (1,2,7) OR @CurrentIndexID IS NULL)) OR (@UpdateStatistics = 'INDEX' AND @CurrentIndexID IS NOT NULL AND @CurrentIndexType IN (1,2,7)) OR (@UpdateStatistics = 'COLUMNS' AND @CurrentIndexID IS NULL))
         AND ((@CurrentIsPartition = 0 AND (@CurrentAction NOT IN('INDEX_REBUILD_ONLINE','INDEX_REBUILD_OFFLINE') OR @CurrentAction IS NULL)) OR (@CurrentIsPartition = 1 AND (@CurrentPartitionNumber = @CurrentPartitionCount OR (@PartitionLevel = 'Y' AND @CurrentIsIncremental = 1))))
         BEGIN
           -- Does the statistics exist?
@@ -9411,6 +9465,7 @@ BEGIN
     DELETE FROM @tmpIndexesStatistics
     DELETE FROM @tmpObjectProperties
     DELETE FROM @tmpIndexProperties
+    DELETE FROM @tmpIndexStatisticsProperties
     DELETE FROM @tmpResumableOperations
 
   END
