@@ -10,7 +10,7 @@ License: https://ola.hallengren.com/license.html
 
 GitHub: https://github.com/olahallengren/sql-server-maintenance-solution
 
-Version: 2026-07-03 22:08:38
+Version: 2026-07-03 22:14:11
 
 You can contact me by e-mail at ola@hallengren.com.
 
@@ -133,7 +133,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-07-03 22:08:38                                                               //--
+  --// Version: 2026-07-03 22:14:11                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -492,7 +492,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-07-03 22:08:38                                                               //--
+  --// Version: 2026-07-03 22:14:11                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -4850,7 +4850,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-07-03 22:08:38                                                               //--
+  --// Version: 2026-07-03 22:14:11                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -6806,7 +6806,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-07-03 22:08:38                                                               //--
+  --// Version: 2026-07-03 22:14:11                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -8677,17 +8677,14 @@ BEGIN
           END
         END
 
-        IF @UpdateStatistics IN('ALL','INDEX')
-        BEGIN
-          UPDATE tmpIndexesStatistics
-          SET tmpIndexesStatistics.StatisticsID = tmpIndexStatisticsProperties.StatisticsID,
-              tmpIndexesStatistics.StatisticsName = tmpIndexStatisticsProperties.StatisticsName,
-              tmpIndexesStatistics.[NoRecompute] = tmpIndexStatisticsProperties.[NoRecompute],
-              tmpIndexesStatistics.IsIncremental = tmpIndexStatisticsProperties.IsIncremental
-          FROM @tmpIndexesStatistics tmpIndexesStatistics
-          INNER JOIN @tmpIndexStatisticsProperties tmpIndexStatisticsProperties ON tmpIndexesStatistics.ObjectID = tmpIndexStatisticsProperties.ObjectID AND tmpIndexesStatistics.IndexID = tmpIndexStatisticsProperties.StatisticsID
-          OPTION (RECOMPILE)
-        END
+        UPDATE tmpIndexesStatistics
+        SET tmpIndexesStatistics.StatisticsID = tmpIndexStatisticsProperties.StatisticsID,
+            tmpIndexesStatistics.StatisticsName = tmpIndexStatisticsProperties.StatisticsName,
+            tmpIndexesStatistics.[NoRecompute] = tmpIndexStatisticsProperties.[NoRecompute],
+            tmpIndexesStatistics.IsIncremental = tmpIndexStatisticsProperties.IsIncremental
+        FROM @tmpIndexesStatistics tmpIndexesStatistics
+        INNER JOIN @tmpIndexStatisticsProperties tmpIndexStatisticsProperties ON tmpIndexesStatistics.ObjectID = tmpIndexStatisticsProperties.ObjectID AND tmpIndexesStatistics.IndexID = tmpIndexStatisticsProperties.StatisticsID
+        OPTION (RECOMPILE)
 
         UPDATE tmpIndexesStatistics
         SET tmpIndexesStatistics.IsImageText = tmpIndexProperties.IsImageText,
