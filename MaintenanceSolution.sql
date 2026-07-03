@@ -10,7 +10,7 @@ License: https://ola.hallengren.com/license.html
 
 GitHub: https://github.com/olahallengren/sql-server-maintenance-solution
 
-Version: 2026-07-03 20:47:15
+Version: 2026-07-03 22:08:38
 
 You can contact me by e-mail at ola@hallengren.com.
 
@@ -133,7 +133,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-07-03 20:47:15                                                               //--
+  --// Version: 2026-07-03 22:08:38                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -492,7 +492,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-07-03 20:47:15                                                               //--
+  --// Version: 2026-07-03 22:08:38                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -4850,7 +4850,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-07-03 20:47:15                                                               //--
+  --// Version: 2026-07-03 22:08:38                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -6806,7 +6806,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-07-03 20:47:15                                                               //--
+  --// Version: 2026-07-03 22:08:38                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -8470,32 +8470,6 @@ BEGIN
             SET @ReturnCode = @Error
           END
 
-          -- Select statistics on indexes on tables
-          SET @CurrentCommand = 'SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;'
-                              + ' SELECT stats.[object_id] AS ObjectID'
-                              + ', stats.stats_id AS StatisticsID'
-                              + ', stats.name AS StatisticsName'
-                              + ', stats.no_recompute AS NoRecompute'
-                              + ', stats.is_incremental AS IsIncremental'
-                              + ' FROM sys.stats stats'
-                              + ' INNER JOIN sys.indexes indexes ON stats.[object_id] = indexes.[object_id] AND stats.stats_id = indexes.index_id'
-                              + ' INNER JOIN sys.objects objects ON indexes.[object_id] = objects.[object_id]'
-                              + ' INNER JOIN sys.tables tables ON objects.[object_id] = tables.[object_id]'
-                              + ' WHERE objects.[type] = ''U'''
-                              + ' AND tables.is_external = 0'
-                              + CASE WHEN @MSShippedObjects = 'N' THEN ' AND objects.is_ms_shipped = 0' ELSE '' END
-                              + ' AND indexes.[type] IN(1,2,5,6,7)'
-                              + ' AND indexes.is_disabled = 0'
-                              + ' AND indexes.is_hypothetical = 0'
-
-          INSERT INTO @tmpIndexStatisticsProperties (ObjectID, StatisticsID, StatisticsName, [NoRecompute], IsIncremental)
-          EXECUTE @CurrentDatabase_sp_executesql @stmt = @CurrentCommand
-          SET @Error = @@ERROR
-          IF @Error <> 0
-          BEGIN
-            SET @ReturnCode = @Error
-          END
-
           -- Select indexes on views
           SET @CurrentCommand = 'SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;'
                               + ' SELECT schemas.[schema_id] AS SchemaID'
@@ -8606,6 +8580,35 @@ BEGIN
           END
         END
 
+        IF @UpdateStatistics IN('ALL','INDEX')
+        BEGIN
+          -- Select statistics on indexes on tables
+          SET @CurrentCommand = 'SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;'
+                              + ' SELECT stats.[object_id] AS ObjectID'
+                              + ', stats.stats_id AS StatisticsID'
+                              + ', stats.name AS StatisticsName'
+                              + ', stats.no_recompute AS NoRecompute'
+                              + ', stats.is_incremental AS IsIncremental'
+                              + ' FROM sys.stats stats'
+                              + ' INNER JOIN sys.indexes indexes ON stats.[object_id] = indexes.[object_id] AND stats.stats_id = indexes.index_id'
+                              + ' INNER JOIN sys.objects objects ON indexes.[object_id] = objects.[object_id]'
+                              + ' INNER JOIN sys.tables tables ON objects.[object_id] = tables.[object_id]'
+                              + ' WHERE objects.[type] = ''U'''
+                              + ' AND tables.is_external = 0'
+                              + CASE WHEN @MSShippedObjects = 'N' THEN ' AND objects.is_ms_shipped = 0' ELSE '' END
+                              + ' AND indexes.[type] IN(1,2,5,6,7)'
+                              + ' AND indexes.is_disabled = 0'
+                              + ' AND indexes.is_hypothetical = 0'
+
+          INSERT INTO @tmpIndexStatisticsProperties (ObjectID, StatisticsID, StatisticsName, [NoRecompute], IsIncremental)
+          EXECUTE @CurrentDatabase_sp_executesql @stmt = @CurrentCommand
+          SET @Error = @@ERROR
+          IF @Error <> 0
+          BEGIN
+            SET @ReturnCode = @Error
+          END
+        END
+
         IF @UpdateStatistics IN('ALL','COLUMNS')
         BEGIN
           -- Select column level statistics
@@ -8674,14 +8677,17 @@ BEGIN
           END
         END
 
-        UPDATE tmpIndexesStatistics
-        SET tmpIndexesStatistics.StatisticsID = tmpIndexStatisticsProperties.StatisticsID,
-            tmpIndexesStatistics.StatisticsName = tmpIndexStatisticsProperties.StatisticsName,
-            tmpIndexesStatistics.[NoRecompute] = tmpIndexStatisticsProperties.[NoRecompute],
-            tmpIndexesStatistics.IsIncremental = tmpIndexStatisticsProperties.IsIncremental
-        FROM @tmpIndexesStatistics tmpIndexesStatistics
-        INNER JOIN @tmpIndexStatisticsProperties tmpIndexStatisticsProperties ON tmpIndexesStatistics.ObjectID = tmpIndexStatisticsProperties.ObjectID AND tmpIndexesStatistics.IndexID = tmpIndexStatisticsProperties.StatisticsID
-        OPTION (RECOMPILE)
+        IF @UpdateStatistics IN('ALL','INDEX')
+        BEGIN
+          UPDATE tmpIndexesStatistics
+          SET tmpIndexesStatistics.StatisticsID = tmpIndexStatisticsProperties.StatisticsID,
+              tmpIndexesStatistics.StatisticsName = tmpIndexStatisticsProperties.StatisticsName,
+              tmpIndexesStatistics.[NoRecompute] = tmpIndexStatisticsProperties.[NoRecompute],
+              tmpIndexesStatistics.IsIncremental = tmpIndexStatisticsProperties.IsIncremental
+          FROM @tmpIndexesStatistics tmpIndexesStatistics
+          INNER JOIN @tmpIndexStatisticsProperties tmpIndexStatisticsProperties ON tmpIndexesStatistics.ObjectID = tmpIndexStatisticsProperties.ObjectID AND tmpIndexesStatistics.IndexID = tmpIndexStatisticsProperties.StatisticsID
+          OPTION (RECOMPILE)
+        END
 
         UPDATE tmpIndexesStatistics
         SET tmpIndexesStatistics.IsImageText = tmpIndexProperties.IsImageText,
