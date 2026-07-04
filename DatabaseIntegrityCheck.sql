@@ -40,7 +40,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-07-04 11:58:45                                                               //--
+  --// Version: 2026-07-04 13:43:07                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -710,7 +710,7 @@ BEGIN
   IF NOT EXISTS (SELECT * FROM @SelectedCheckCommands)
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @CheckCommands is not supported.' , 16, 3
+    SELECT 'The value for the parameter @CheckCommands is not supported.', 16, 3
   END
 
   IF EXISTS (SELECT * FROM @SelectedCheckCommands WHERE CheckCommand IN('CHECKDB')) AND EXISTS (SELECT CheckCommand FROM @SelectedCheckCommands WHERE CheckCommand IN('CHECKFILEGROUP','CHECKALLOC','CHECKTABLE','CHECKCATALOG'))
