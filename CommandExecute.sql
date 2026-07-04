@@ -38,7 +38,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-07-04 14:16:17                                                               //--
+  --// Version: 2026-07-04 14:39:16                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -226,9 +226,9 @@ BEGIN
   BEGIN
     INSERT INTO dbo.CommandLog (DatabaseName, SchemaName, ObjectName, ObjectType, IndexName, IndexType, StatisticsName, PartitionNumber, ExtendedInfo, CommandType, Command, StartTime)
     VALUES (@DatabaseName, @SchemaName, @ObjectName, @ObjectType, @IndexName, @IndexType, @StatisticsName, @PartitionNumber, @ExtendedInfo, @CommandType, @CommandMasked, @StartTime)
-  END
 
-  SET @ID = SCOPE_IDENTITY()
+    SET @ID = SCOPE_IDENTITY()
+  END
 
   ----------------------------------------------------------------------------------------------------
   --// Execute command                                                                            //--
