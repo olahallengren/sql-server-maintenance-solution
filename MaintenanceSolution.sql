@@ -10,7 +10,7 @@ License: https://ola.hallengren.com/license.html
 
 GitHub: https://github.com/olahallengren/sql-server-maintenance-solution
 
-Version: 2026-07-04 11:58:45
+Version: 2026-07-04 13:43:07
 
 You can contact me by e-mail at ola@hallengren.com.
 
@@ -133,7 +133,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-07-04 11:58:45                                                               //--
+  --// Version: 2026-07-04 13:43:07                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -492,7 +492,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-07-04 11:58:45                                                               //--
+  --// Version: 2026-07-04 13:43:07                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -1289,25 +1289,25 @@ BEGIN
   IF @BackupSoftware IN('SQLBACKUP','SQLSAFE') AND (SELECT COUNT(*) FROM @Directories WHERE Mirror = 1) > 1
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @MirrorDirectory is not supported.', 16, 4
+    SELECT 'The value for the parameter @MirrorDirectory is not supported.', 16, 2
   END
 
   IF @MirrorDirectory IS NOT NULL AND SERVERPROPERTY('EngineEdition') = 8
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @MirrorDirectory is not supported.', 16, 5
+    SELECT 'The value for the parameter @MirrorDirectory is not supported.', 16, 3
   END
 
   IF @MirrorDirectory IS NOT NULL AND @BackupSoftware = 'DATA_DOMAIN_BOOST'
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @MirrorDirectory is not supported.', 16, 6
+    SELECT 'The value for the parameter @MirrorDirectory is not supported.', 16, 4
   END
 
   IF (@BackupSoftware IS NULL AND EXISTS(SELECT * FROM @Directories WHERE Mirror = 1) AND SERVERPROPERTY('EngineEdition') <> 3)
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @MirrorDirectory is not supported. Mirrored backup to disk is only available in Enterprise and Developer Edition.', 16, 8
+    SELECT 'The value for the parameter @MirrorDirectory is not supported. Mirrored backup to disk is only available in Enterprise and Developer Edition.', 16, 5
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -1596,25 +1596,25 @@ BEGIN
   IF @CleanupTime IS NOT NULL AND EXISTS(SELECT * FROM @Directories WHERE DirectoryPath = 'NUL')
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @CleanupTime is not supported. Cleanup is not supported when backing up to NUL.', 16, 4
+    SELECT 'The value for the parameter @CleanupTime is not supported. Cleanup is not supported when backing up to NUL.', 16, 3
   END
 
   IF @CleanupTime IS NOT NULL AND ((@DirectoryStructure NOT LIKE '%{DatabaseName}%' OR @DirectoryStructure IS NULL) OR (SERVERPROPERTY('IsHadrEnabled') = 1 AND (@AvailabilityGroupDirectoryStructure NOT LIKE '%{DatabaseName}%' OR @AvailabilityGroupDirectoryStructure IS NULL)))
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @CleanupTime is not supported. Cleanup is not supported if the token {DatabaseName} is not part of the directory.', 16, 5
+    SELECT 'The value for the parameter @CleanupTime is not supported. Cleanup is not supported if the token {DatabaseName} is not part of the directory.', 16, 4
   END
 
   IF @CleanupTime IS NOT NULL AND ((@DirectoryStructure NOT LIKE '%{BackupType}%' OR @DirectoryStructure IS NULL) OR (SERVERPROPERTY('IsHadrEnabled') = 1 AND (@AvailabilityGroupDirectoryStructure NOT LIKE '%{BackupType}%' OR @AvailabilityGroupDirectoryStructure IS NULL))) AND (SELECT COUNT(*) FROM (SELECT @FileExtensionFull AS FileExtension UNION SELECT @FileExtensionDiff UNION SELECT @FileExtensionLog) FileExtension) <> 3
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @CleanupTime is not supported. Cleanup is not supported if the token {BackupType} is not part of the directory and the file extensions are not unique.', 16, 6
+    SELECT 'The value for the parameter @CleanupTime is not supported. Cleanup is not supported if the token {BackupType} is not part of the directory and the file extensions are not unique.', 16, 5
   END
 
   IF @CleanupTime IS NOT NULL AND @CopyOnly = 'Y' AND ((@DirectoryStructure NOT LIKE '%{CopyOnly}%' OR @DirectoryStructure IS NULL) OR (SERVERPROPERTY('IsHadrEnabled') = 1 AND (@AvailabilityGroupDirectoryStructure NOT LIKE '%{CopyOnly}%' OR @AvailabilityGroupDirectoryStructure IS NULL)))
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @CleanupTime is not supported. Cleanup is not supported if the token {CopyOnly} is not part of the directory.', 16, 7
+    SELECT 'The value for the parameter @CleanupTime is not supported. Cleanup is not supported if the token {CopyOnly} is not part of the directory.', 16, 6
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -2235,7 +2235,7 @@ BEGIN
   IF @URL IS NOT NULL AND @BackupSoftware IS NOT NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @URL is not supported.', 16, 4
+    SELECT 'The value for the parameter @URL is not supported.', 16, 3
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -2243,19 +2243,19 @@ BEGIN
   IF @Credential IS NOT NULL AND @URL IS NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @Credential is not supported.', 16, 2
+    SELECT 'The value for the parameter @Credential is not supported.', 16, 1
   END
 
   IF @URL IS NOT NULL AND @Credential IS NULL AND NOT EXISTS(SELECT * FROM sys.credentials WHERE UPPER(credential_identity) IN('SHARED ACCESS SIGNATURE','MANAGED IDENTITY','S3 ACCESS KEY'))
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @Credential is not supported.', 16, 3
+    SELECT 'The value for the parameter @Credential is not supported.', 16, 2
   END
 
   IF @Credential IS NOT NULL AND NOT EXISTS(SELECT * FROM sys.credentials WHERE name = @Credential)
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @Credential is not supported.', 16, 4
+    SELECT 'The value for the parameter @Credential is not supported.', 16, 3
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -2297,13 +2297,13 @@ BEGIN
   IF @MirrorURL IS NOT NULL AND @BackupSoftware IS NOT NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @MirrorURL is not supported.', 16, 4
+    SELECT 'The value for the parameter @MirrorURL is not supported.', 16, 3
   END
 
   IF @MirrorURL IS NOT NULL AND @URL IS NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @MirrorURL is not supported.', 16, 5
+    SELECT 'The value for the parameter @MirrorURL is not supported.', 16, 4
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -2333,19 +2333,19 @@ BEGIN
   IF @MinModificationLevel <= 0 OR @MinModificationLevel > 100
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @MinModificationLevel is not supported.', 16, 2
+    SELECT 'The value for the parameter @MinModificationLevel is not supported.', 16, 1
   END
 
   IF @MinModificationLevel IS NOT NULL AND @ChangeBackupType = 'N'
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The parameter @MinModificationLevel can only be used together with @ChangeBackupType = ''Y''.', 16, 3
+    SELECT 'The parameter @MinModificationLevel can only be used together with @ChangeBackupType = ''Y''.', 16, 2
   END
 
   IF @MinModificationLevel IS NOT NULL AND @BackupType <> 'DIFF'
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The parameter @MinModificationLevel can only be used for differential backups.', 16, 4
+    SELECT 'The parameter @MinModificationLevel can only be used for differential backups.', 16, 3
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -2367,7 +2367,7 @@ BEGIN
   IF @MinLogSizeSinceLastLogBackup IS NOT NULL AND @BackupType <> 'LOG'
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @MinLogSizeSinceLastLogBackup is not supported.', 16, 2
+    SELECT 'The value for the parameter @MinLogSizeSinceLastLogBackup is not supported.', 16, 1
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -2375,7 +2375,7 @@ BEGIN
   IF @MinTimeSinceLastLogBackup IS NOT NULL AND @BackupType <> 'LOG'
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @MinTimeSinceLastLogBackup is not supported.', 16, 2
+    SELECT 'The value for the parameter @MinTimeSinceLastLogBackup is not supported.', 16, 1
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -2775,7 +2775,7 @@ BEGIN
   IF @DatabaseOrder IS NOT NULL AND SERVERPROPERTY('EngineEdition') = 5
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @DatabaseOrder is not supported.', 16, 3
+    SELECT 'The value for the parameter @DatabaseOrder is not supported.', 16, 2
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -4831,7 +4831,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-07-04 11:58:45                                                               //--
+  --// Version: 2026-07-04 13:43:07                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -5501,7 +5501,7 @@ BEGIN
   IF NOT EXISTS (SELECT * FROM @SelectedCheckCommands)
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @CheckCommands is not supported.' , 16, 3
+    SELECT 'The value for the parameter @CheckCommands is not supported.', 16, 3
   END
 
   IF EXISTS (SELECT * FROM @SelectedCheckCommands WHERE CheckCommand IN('CHECKDB')) AND EXISTS (SELECT CheckCommand FROM @SelectedCheckCommands WHERE CheckCommand IN('CHECKFILEGROUP','CHECKALLOC','CHECKTABLE','CHECKCATALOG'))
@@ -6793,7 +6793,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-07-04 11:58:45                                                               //--
+  --// Version: 2026-07-04 13:43:07                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -7707,7 +7707,7 @@ BEGIN
   IF @Resumable = 'Y' AND @SortInTempdb = 'Y'
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'You can only specify one of the parameters @Resumable and @SortInTempdb.', 16, 3
+    SELECT 'You can only specify one of the parameters @Resumable and @SortInTempdb.', 16, 2
   END
 
   ----------------------------------------------------------------------------------------------------
