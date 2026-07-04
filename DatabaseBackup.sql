@@ -93,7 +93,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-07-03 22:14:11                                                               //--
+  --// Version: 2026-07-04 11:58:45                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -301,7 +301,7 @@ BEGIN
     END
   END
 
-  DECLARE @AmazonRDS bit = CASE WHEN EXISTS (SELECT * FROM sys.databases WHERE [name] = 'rdsadmin') AND SUSER_SNAME(0x01) = 'rdsa' THEN 1 ELSE 0 END
+  DECLARE @AmazonRDS bit = CASE WHEN SERVERPROPERTY('EngineEdition') IN (5, 8) THEN 0 WHEN EXISTS (SELECT * FROM sys.databases WHERE [name] = 'rdsadmin') AND SUSER_SNAME(0x01) = 'rdsa' THEN 1 ELSE 0 END
 
   ----------------------------------------------------------------------------------------------------
   --// Log initial information                                                                    //--
@@ -846,7 +846,7 @@ BEGIN
   IF EXISTS (SELECT * FROM @Directories GROUP BY DirectoryPath HAVING COUNT(*) <> 1)
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @Directory is not supported.', 16, 2
+    SELECT 'The same directory has been specified multiple times in the parameters @Directory and @MirrorDirectory.', 16, 2
   END
 
   IF (SELECT COUNT(*) FROM @Directories WHERE Mirror = 0) <> (SELECT COUNT(*) FROM @Directories WHERE Mirror = 1) AND (SELECT COUNT(*) FROM @Directories WHERE Mirror = 1) > 0
@@ -885,12 +885,6 @@ BEGIN
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
     SELECT 'The value for the parameter @MirrorDirectory is not supported.', 16, 1
-  END
-
-  IF EXISTS (SELECT * FROM @Directories GROUP BY DirectoryPath HAVING COUNT(*) <> 1)
-  BEGIN
-    INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @MirrorDirectory is not supported.', 16, 2
   END
 
   IF @BackupSoftware IN('SQLBACKUP','SQLSAFE') AND (SELECT COUNT(*) FROM @Directories WHERE Mirror = 1) > 1
@@ -1031,13 +1025,13 @@ BEGIN
   IF EXISTS (SELECT * FROM @URLs GROUP BY DirectoryPath HAVING COUNT(*) <> 1)
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @URL is not supported.', 16, 2
+    SELECT 'The same URL has been specified multiple times in the parameters @URL and @MirrorURL.', 16, 2
   END
 
   IF (SELECT COUNT(*) FROM @URLs WHERE Mirror = 0) <> (SELECT COUNT(*) FROM @URLs WHERE Mirror = 1) AND (SELECT COUNT(*) FROM @URLs WHERE Mirror = 1) > 0
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @URL is not supported.', 16, 3
+    SELECT 'The number of URLs for the parameters @URL and @MirrorURL has to be the same.', 16, 3
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -1046,18 +1040,6 @@ BEGIN
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
     SELECT 'The value for the parameter @MirrorURL is not supported.', 16, 1
-  END
-
-  IF EXISTS (SELECT * FROM @URLs GROUP BY DirectoryPath HAVING COUNT(*) <> 1)
-  BEGIN
-    INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @MirrorURL is not supported.', 16, 2
-  END
-
-  IF (SELECT COUNT(*) FROM @URLs WHERE Mirror = 0) <> (SELECT COUNT(*) FROM @URLs WHERE Mirror = 1) AND (SELECT COUNT(*) FROM @URLs WHERE Mirror = 1) > 0
-  BEGIN
-    INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @MirrorURL is not supported.', 16, 3
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -1706,7 +1688,6 @@ BEGIN
   END
 
   IF @BackupSoftware = 'SQLSAFE' AND @Encrypt = 'Y' AND (@EncryptionAlgorithm NOT IN('AES_128','AES_256') OR @EncryptionAlgorithm IS NULL)
-  OR (@EncryptionAlgorithm IS NOT NULL AND @BackupSoftware = 'DATA_DOMAIN_BOOST')
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
     SELECT 'The value for the parameter @EncryptionAlgorithm is not supported.', 16, 4
@@ -2293,25 +2274,25 @@ BEGIN
   IF @ObjectLevelRecoveryMap NOT IN('Y','N') OR @ObjectLevelRecoveryMap IS NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @ObjectLevelRecovery is not supported.', 16, 1
+    SELECT 'The value for the parameter @ObjectLevelRecoveryMap is not supported.', 16, 1
   END
 
   IF @ObjectLevelRecoveryMap = 'Y' AND @BackupSoftware IS NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @ObjectLevelRecovery is not supported.', 16, 2
+    SELECT 'The value for the parameter @ObjectLevelRecoveryMap is not supported.', 16, 2
   END
 
   IF @ObjectLevelRecoveryMap = 'Y' AND @BackupSoftware <> 'LITESPEED'
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @ObjectLevelRecovery is not supported.', 16, 3
+    SELECT 'The value for the parameter @ObjectLevelRecoveryMap is not supported.', 16, 3
   END
 
   IF @ObjectLevelRecoveryMap = 'Y' AND @BackupType = 'LOG'
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @ObjectLevelRecovery is not supported.', 16, 4
+    SELECT 'The value for the parameter @ObjectLevelRecoveryMap is not supported.', 16, 4
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -2365,7 +2346,7 @@ BEGIN
   IF @RetainDays IS NOT NULL AND @BackupSoftware <> 'LITESPEED'
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @RetainDays is not supported.', 16, 1
+    SELECT 'The value for the parameter @RetainDays is not supported.', 16, 2
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -3448,7 +3429,7 @@ BEGIN
       SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'{Second}',RIGHT('0' + CAST(DATEPART(SECOND,CASE WHEN @TokenTimezone = 'UTC' THEN @CurrentDateUTC ELSE @CurrentDate END) AS nvarchar(max)),2))
       SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'{Millisecond}',RIGHT('00' + CAST(DATEPART(MILLISECOND,CASE WHEN @TokenTimezone = 'UTC' THEN @CurrentDateUTC ELSE @CurrentDate END) AS nvarchar(max)),3))
       SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'{Microsecond}',RIGHT('00000' + CAST(DATEPART(MICROSECOND,CASE WHEN @TokenTimezone = 'UTC' THEN @CurrentDateUTC ELSE @CurrentDate END) AS nvarchar(max)),6))
-      SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'{NumberOfFiles}',@CurrentNumberOfFiles)
+      SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'{NumberOfFiles}',CAST(@CurrentNumberOfFiles AS nvarchar(max)))
       SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'{FileExtension}',@CurrentFileExtension)
       SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'{MajorVersion}',ISNULL(CAST(SERVERPROPERTY('ProductMajorVersion') AS nvarchar(max)),PARSENAME(CAST(SERVERPROPERTY('ProductVersion') AS nvarchar(max)),4)))
       SET @CurrentDatabaseFileName = REPLACE(@CurrentDatabaseFileName,'{MinorVersion}',ISNULL(CAST(SERVERPROPERTY('ProductMinorVersion') AS nvarchar(max)),PARSENAME(CAST(SERVERPROPERTY('ProductVersion') AS nvarchar(max)),3)))
