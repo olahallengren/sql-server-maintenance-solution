@@ -56,7 +56,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-07-04 14:39:16                                                               //--
+  --// Version: 2026-07-04 20:57:51                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -1412,17 +1412,17 @@ BEGIN
                DatabaseName
         FROM @tmpDatabases tmpDatabases
         WHERE Selected = 1
-        AND NOT EXISTS (SELECT * FROM dbo.QueueDatabase WHERE DatabaseName = tmpDatabases.DatabaseName AND QueueID = @QueueID)
+        AND NOT EXISTS (SELECT * FROM dbo.QueueDatabase WHERE DatabaseName COLLATE DATABASE_DEFAULT = tmpDatabases.DatabaseName AND QueueID = @QueueID)
 
         DELETE QueueDatabase
         FROM dbo.QueueDatabase QueueDatabase
         WHERE QueueID = @QueueID
-        AND NOT EXISTS (SELECT * FROM @tmpDatabases tmpDatabases WHERE DatabaseName = QueueDatabase.DatabaseName AND Selected = 1)
+        AND NOT EXISTS (SELECT * FROM @tmpDatabases tmpDatabases WHERE DatabaseName = QueueDatabase.DatabaseName COLLATE DATABASE_DEFAULT AND Selected = 1)
 
         UPDATE QueueDatabase
         SET DatabaseOrder = tmpDatabases.[Order]
         FROM dbo.QueueDatabase QueueDatabase
-        INNER JOIN @tmpDatabases tmpDatabases ON QueueDatabase.DatabaseName = tmpDatabases.DatabaseName
+        INNER JOIN @tmpDatabases tmpDatabases ON QueueDatabase.DatabaseName COLLATE DATABASE_DEFAULT = tmpDatabases.DatabaseName
         WHERE QueueID = @QueueID
       END
 
@@ -1453,7 +1453,7 @@ BEGIN
   ----------------------------------------------------------------------------------------------------
 
   WHILE (1 = 1)
-  BEGIN
+  BEGIN -- Start of database loop
 
     IF @DatabasesInParallel = 'Y'
     BEGIN
@@ -2734,7 +2734,7 @@ BEGIN
     DELETE FROM @tmpIndexStatisticsProperties
     DELETE FROM @tmpResumableOperations
 
-  END
+  END -- End of database loop
 
   ----------------------------------------------------------------------------------------------------
   --// Log completing information                                                                 //--
