@@ -40,7 +40,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-07-04 13:43:07                                                               //--
+  --// Version: 2026-07-04 14:39:16                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -1587,7 +1587,6 @@ BEGIN
         BEGIN
           SET @ErrorMessage = 'The following file groups do not exist: ' + @ErrorMessage + '.'
           RAISERROR('%s',10,1,@ErrorMessage) WITH NOWAIT
-          SET @Error = @@ERROR
           RAISERROR(@EmptyLine,10,1) WITH NOWAIT
         END
 
@@ -1755,7 +1754,6 @@ BEGIN
         BEGIN
           SET @ErrorMessage = 'The following objects do not exist: ' + @ErrorMessage + '.'
           RAISERROR('%s',10,1,@ErrorMessage) WITH NOWAIT
-          SET @Error = @@ERROR
           RAISERROR(@EmptyLine,10,1) WITH NOWAIT
         END
 
@@ -1870,6 +1868,7 @@ BEGIN
       SET @ErrorMessage = 'The database ' + QUOTENAME(@CurrentDatabaseName) + ' is in a SUSPECT state.'
       RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
       SET @Error = @@ERROR
+      SET @ReturnCode = @Error
       RAISERROR(@EmptyLine,10,1) WITH NOWAIT
     END
 
