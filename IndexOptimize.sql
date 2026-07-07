@@ -56,7 +56,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-07-04 20:57:51                                                               //--
+  --// Version: 2026-07-07 20:44:09                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -1684,12 +1684,19 @@ BEGIN
           BEGIN
             SET @CurrentCommand += ' INNER JOIN sys.partitions partitions ON indexes.[object_id] = partitions.[object_id] AND indexes.index_id = partitions.index_id'
           END
+
+          IF @PartitionLevel = 'Y' AND (@UpdateStatistics = 'COLUMNS' OR @UpdateStatistics IS NULL) AND (@MinNumberOfPages > 0 OR @MaxNumberOfPages IS NOT NULL)
+          BEGIN
+            SET @CurrentCommand += ' INNER JOIN sys.dm_db_partition_stats dm_db_partition_stats ON partitions.partition_id = dm_db_partition_stats.partition_id'
+          END
           SET @CurrentCommand += ' WHERE objects.[type] = ''U'''
                                + ' AND tables.is_external = 0'
                                + CASE WHEN @MSShippedObjects = 'N' THEN ' AND objects.is_ms_shipped = 0' ELSE '' END
                                + ' AND indexes.[type] IN(1,2,5,6,7)'
                                + ' AND indexes.is_disabled = 0'
                                + ' AND indexes.is_hypothetical = 0'
+                               + CASE WHEN @PartitionLevel = 'Y' AND (@UpdateStatistics = 'COLUMNS' OR @UpdateStatistics IS NULL) AND @MinNumberOfPages > 0 THEN ' AND dm_db_partition_stats.in_row_data_page_count >= ' + CAST(@MinNumberOfPages AS nvarchar(max)) ELSE '' END
+                               + CASE WHEN @PartitionLevel = 'Y' AND (@UpdateStatistics = 'COLUMNS' OR @UpdateStatistics IS NULL) AND @MaxNumberOfPages IS NOT NULL THEN ' AND dm_db_partition_stats.in_row_data_page_count <= ' + CAST(@MaxNumberOfPages AS nvarchar(max)) ELSE '' END
 
           INSERT INTO @tmpIndexesStatistics (SchemaID, SchemaName, ObjectID, ObjectName, ObjectType, IsMemoryOptimized, IndexID, IndexName, IndexType, AllowPageLocks, HasFilter, OnReadOnlyFileGroup, ResumableIndexOperation, PartitionID, PartitionNumber)
           EXECUTE @CurrentDatabase_sp_executesql @stmt = @CurrentCommand
