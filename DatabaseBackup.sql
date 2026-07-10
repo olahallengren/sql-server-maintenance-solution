@@ -73,7 +73,7 @@ ALTER PROCEDURE [dbo].[DatabaseBackup]
 @Format nvarchar(max) = 'N',
 @ObjectLevelRecoveryMap nvarchar(max) = 'N',
 @ExcludeLogShippedFromLogBackup nvarchar(max) = 'Y',
-@ExcludeAutomaticSeedingFromLogBackup nvarchar(max) = 'N',
+@ExcludeSeedingFromLogBackup nvarchar(max) = 'N',
 @DirectoryCheck nvarchar(max) = 'Y',
 @BackupOptions nvarchar(max) = NULL,
 @Stats int = NULL,
@@ -94,7 +94,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-07-09 21:29:17                                                               //--
+  --// Version: 2026-07-10 22:21:31                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -173,7 +173,7 @@ BEGIN
   DECLARE @CurrentIsPreferredBackupReplica bit
   DECLARE @CurrentDatabaseMirroringRole nvarchar(max)
   DECLARE @CurrentLogShippingRole nvarchar(max)
-  DECLARE @CurrentIsAutomaticSeeding bit
+  DECLARE @CurrentIsSeeding bit
   DECLARE @CurrentBackupOperationSupportedOnSecondaryReplicas bit
 
   DECLARE @CurrentBackupSetID int
@@ -373,7 +373,7 @@ BEGIN
   SET @Parameters += ', @Format = ' + ISNULL('''' + REPLACE(@Format,'''','''''') + '''','NULL')
   SET @Parameters += ', @ObjectLevelRecoveryMap = ' + ISNULL('''' + REPLACE(@ObjectLevelRecoveryMap,'''','''''') + '''','NULL')
   SET @Parameters += ', @ExcludeLogShippedFromLogBackup = ' + ISNULL('''' + REPLACE(@ExcludeLogShippedFromLogBackup,'''','''''') + '''','NULL')
-  SET @Parameters += ', @ExcludeAutomaticSeedingFromLogBackup = ' + ISNULL('''' + REPLACE(@ExcludeAutomaticSeedingFromLogBackup,'''','''''') + '''','NULL')
+  SET @Parameters += ', @ExcludeSeedingFromLogBackup = ' + ISNULL('''' + REPLACE(@ExcludeSeedingFromLogBackup,'''','''''') + '''','NULL')
   SET @Parameters += ', @DirectoryCheck = ' + ISNULL('''' + REPLACE(@DirectoryCheck,'''','''''') + '''','NULL')
   SET @Parameters += ', @BackupOptions = ' + ISNULL('''' + REPLACE(@BackupOptions,'''','''''') + '''','NULL')
   SET @Parameters += ', @Stats = ' + ISNULL(CAST(@Stats AS nvarchar(max)),'NULL')
@@ -2308,10 +2308,16 @@ BEGIN
 
   ----------------------------------------------------------------------------------------------------
 
-  IF @ExcludeAutomaticSeedingFromLogBackup NOT IN('Y','N') OR @ExcludeAutomaticSeedingFromLogBackup IS NULL
+  IF @ExcludeSeedingFromLogBackup NOT IN('Y','N') OR @ExcludeSeedingFromLogBackup IS NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @ExcludeAutomaticSeedingFromLogBackup is not supported.', 16, 1
+    SELECT 'The value for the parameter @ExcludeSeedingFromLogBackup is not supported.', 16, 1
+  END
+
+  IF @ExcludeSeedingFromLogBackup = 'Y' AND @BackupType <> 'LOG'
+  BEGIN
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'The parameter @ExcludeSeedingFromLogBackup can only be used for log backups.', 16, 2
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -2833,7 +2839,7 @@ BEGIN
 
     IF SERVERPROPERTY('IsHadrEnabled') = 1 AND @CurrentAvailabilityGroup IS NOT NULL
     BEGIN
-      SELECT @CurrentIsAutomaticSeeding = CASE WHEN EXISTS (SELECT * FROM sys.dm_hadr_physical_seeding_stats dm_hadr_physical_seeding_stats WHERE dm_hadr_physical_seeding_stats.local_database_name = @CurrentDatabaseName AND dm_hadr_physical_seeding_stats.role_desc IN('Source','Forwarder') AND dm_hadr_physical_seeding_stats.end_time_utc IS NULL) THEN 1 ELSE 0 END
+      SELECT @CurrentIsSeeding = CASE WHEN EXISTS (SELECT * FROM sys.dm_hadr_physical_seeding_stats dm_hadr_physical_seeding_stats WHERE dm_hadr_physical_seeding_stats.local_database_name = @CurrentDatabaseName AND dm_hadr_physical_seeding_stats.role_desc IN('Source','Forwarder') AND dm_hadr_physical_seeding_stats.end_time_utc IS NULL) THEN 1 ELSE 0 END
     END
 
     IF SERVERPROPERTY('IsHadrEnabled') = 1 AND @CurrentAvailabilityGroup IS NOT NULL
@@ -2996,7 +3002,7 @@ BEGIN
         RAISERROR('%s',10,1,@DatabaseMessage) WITH NOWAIT
       END
 
-      SET @DatabaseMessage = 'Is automatic seeding: ' + CASE WHEN @CurrentIsAutomaticSeeding = 1 THEN 'Yes' WHEN @CurrentIsAutomaticSeeding = 0 THEN 'No' ELSE 'N/A' END
+      SET @DatabaseMessage = 'Is seeding: ' + CASE WHEN @CurrentIsSeeding = 1 THEN 'Yes' WHEN @CurrentIsSeeding = 0 THEN 'No' ELSE 'N/A' END
       RAISERROR('%s',10,1,@DatabaseMessage) WITH NOWAIT
     END
 
@@ -3071,7 +3077,7 @@ BEGIN
     AND NOT (@CurrentDistributedAvailabilityGroup IS NOT NULL AND @CurrentBackupOperationSupportedOnSecondaryReplicas = 0 AND (@CurrentDistributedAvailabilityGroupRole <> 'PRIMARY' OR @CurrentDistributedAvailabilityGroupRole IS NULL))
     AND NOT (@CurrentDistributedAvailabilityGroup IS NOT NULL AND (@CurrentDistributedAvailabilityGroupRole <> 'PRIMARY' OR @CurrentDistributedAvailabilityGroupRole IS NULL) AND @AllowNonCopyOnlyBackupsOnForwarder = 'N' AND NOT (@CurrentBackupType = 'FULL' AND @CopyOnly = 'Y'))
     AND NOT ((@CurrentLogShippingRole = 'PRIMARY' AND @CurrentLogShippingRole IS NOT NULL) AND @CurrentBackupType = 'LOG' AND @ExcludeLogShippedFromLogBackup = 'Y')
-    AND NOT (@CurrentBackupType = 'LOG' AND @ExcludeAutomaticSeedingFromLogBackup = 'Y' AND @CurrentIsAutomaticSeeding = 1)
+    AND NOT (@CurrentAvailabilityGroup IS NOT NULL AND @CurrentBackupType = 'LOG' AND @ExcludeSeedingFromLogBackup = 'Y' AND @CurrentIsSeeding = 1)
     AND NOT (@CurrentIsReadOnly = 1 AND @Updateability = 'READ_WRITE')
     AND NOT (@CurrentIsReadOnly = 0 AND @Updateability = 'READ_ONLY')
     AND NOT (@CurrentBackupType = 'LOG' AND @MinLogSizeSinceLastLogBackup IS NOT NULL AND @MinTimeSinceLastLogBackup IS NOT NULL AND NOT(@CurrentLogSizeSinceLastLogBackup >= @MinLogSizeSinceLastLogBackup OR @CurrentLogSizeSinceLastLogBackup IS NULL OR DATEDIFF(SECOND,@CurrentLastLogBackup,SYSDATETIME()) >= @MinTimeSinceLastLogBackup OR @CurrentLastLogBackup IS NULL))
@@ -4371,7 +4377,7 @@ BEGIN
     SET @CurrentDistributedAvailabilityGroupRole = NULL
     SET @CurrentDatabaseMirroringRole = NULL
     SET @CurrentLogShippingRole = NULL
-    SET @CurrentIsAutomaticSeeding = NULL
+    SET @CurrentIsSeeding = NULL
     SET @CurrentBackupOperationSupportedOnSecondaryReplicas = NULL
     SET @CurrentLastLogBackup = NULL
     SET @CurrentLogSizeSinceLastLogBackup = NULL
