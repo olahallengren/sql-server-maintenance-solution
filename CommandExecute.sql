@@ -38,7 +38,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-07-07 20:44:09                                                               //--
+  --// Version: 2026-07-11 19:11:40                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
