@@ -94,7 +94,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-07-12 10:00:16                                                               //--
+  --// Version: 2026-07-14 22:07:20                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -2904,7 +2904,7 @@ BEGIN
       BEGIN
         SET @CurrentBackupType = 'DIFF'
       END
-      IF @CurrentBackupType = 'DIFF' AND ((@CurrentDatabaseName = 'master' AND @ContainedAvailabilityGroupListenerConnection = 0) OR @CurrentDifferentialBaseLSN IS NULL OR (@CurrentModifiedExtentPageCount * 1. / @CurrentAllocatedExtentPageCount * 100 >= @MinModificationLevel) OR (COALESCE(CAST(@CurrentAllocatedExtentPageCount AS bigint) * 8192, CAST(@CurrentDatabaseSize AS bigint) * 8192) < CAST(@MinDatabaseSizeForDifferentialBackup AS bigint) * 1024 * 1024))
+      IF @CurrentBackupType = 'DIFF' AND ((@CurrentDatabaseName = 'master' AND @ContainedAvailabilityGroupListenerConnection = 0) OR @CurrentDifferentialBaseLSN IS NULL OR (@CurrentModifiedExtentPageCount * 1. / NULLIF(@CurrentAllocatedExtentPageCount, 0) * 100 >= @MinModificationLevel) OR (COALESCE(CAST(@CurrentAllocatedExtentPageCount AS bigint) * 8192, CAST(@CurrentDatabaseSize AS bigint) * 8192) < CAST(@MinDatabaseSizeForDifferentialBackup AS bigint) * 1024 * 1024))
       BEGIN
         SET @CurrentBackupType = 'FULL'
       END
