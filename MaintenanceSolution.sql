@@ -10,7 +10,7 @@ License: https://ola.hallengren.com/license.html
 
 GitHub: https://github.com/olahallengren/sql-server-maintenance-solution
 
-Version: 2026-07-14 22:07:20
+Version: 2026-07-15 14:58:49
 
 You can contact me by e-mail at ola@hallengren.com.
 
@@ -133,7 +133,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-07-14 22:07:20                                                               //--
+  --// Version: 2026-07-15 14:58:49                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -493,7 +493,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-07-14 22:07:20                                                               //--
+  --// Version: 2026-07-15 14:58:49                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -4873,7 +4873,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-07-14 22:07:20                                                               //--
+  --// Version: 2026-07-15 14:58:49                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -6842,7 +6842,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-07-14 22:07:20                                                               //--
+  --// Version: 2026-07-15 14:58:49                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -8844,7 +8844,7 @@ BEGIN
         AND SchemaName NOT LIKE '%[%]%'
         AND ObjectName NOT LIKE '%[%]%'
         AND IndexName LIKE '%[%]%'
-        AND NOT EXISTS (SELECT * FROM @tmpIndexesStatistics WHERE SchemaName = SelectedIndexes.SchemaName AND ObjectName = SelectedIndexes.ObjectName)
+        AND NOT EXISTS (SELECT * FROM #Objects WHERE SchemaName = SelectedIndexes.SchemaName AND ObjectName = SelectedIndexes.ObjectName)
 
         IF @ErrorMessage IS NOT NULL
         BEGIN
@@ -8860,7 +8860,7 @@ BEGIN
         AND SchemaName NOT LIKE '%[%]%'
         AND ObjectName NOT LIKE '%[%]%'
         AND IndexName NOT LIKE '%[%]%'
-        AND NOT EXISTS (SELECT * FROM @tmpIndexesStatistics WHERE SchemaName = SelectedIndexes.SchemaName AND ObjectName = SelectedIndexes.ObjectName AND IndexName = SelectedIndexes.IndexName)
+        AND NOT EXISTS (SELECT * FROM #Indexes Indexes INNER JOIN #Objects Objects ON Indexes.ObjectID = Objects.ObjectID WHERE Objects.SchemaName = SelectedIndexes.SchemaName AND Objects.ObjectName = SelectedIndexes.ObjectName AND Indexes.IndexName = SelectedIndexes.IndexName)
 
         IF @ErrorMessage IS NOT NULL
         BEGIN
