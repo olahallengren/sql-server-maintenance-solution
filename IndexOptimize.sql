@@ -56,7 +56,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-07-15 14:58:49                                                               //--
+  --// Version: 2026-07-15 22:27:18                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -288,6 +288,13 @@ BEGIN
                                   IndexName nvarchar(max),
                                   StartPosition int,
                                   Selected bit)
+
+  DECLARE @IncrementalStatsProperties TABLE (ObjectID int,
+                                             StatisticsID int,
+                                             PartitionNumber int,
+                                             [Rows] bigint,
+                                             ModificationCounter bigint,
+                                             PRIMARY KEY (ObjectID, StatisticsID, PartitionNumber))
 
   DECLARE @Actions TABLE ([Action] nvarchar(max))
 
@@ -2447,8 +2454,73 @@ BEGIN
             GOTO NoAction
           END CATCH
 
-          -- Does the object or partition have rows?
-          IF NOT (@OnlyModifiedStatistics = 'N' AND @StatisticsModificationLevel IS NULL)
+          -- Check non-incremental statistics properties
+          IF NOT (@OnlyModifiedStatistics = 'N' AND @StatisticsModificationLevel IS NULL) AND NOT (@PartitionLevel = 'Y' AND @CurrentIsIncremental = 1)
+          BEGIN
+            SET @CurrentCommand = ''
+
+            IF @LockTimeout IS NOT NULL SET @CurrentCommand = 'SET LOCK_TIMEOUT ' + CAST(@LockTimeout * 1000 AS nvarchar(max)) + '; '
+
+            SET @CurrentCommand += 'SELECT @ParamRowCount = [rows], @ParamModificationCounter = modification_counter FROM sys.dm_db_stats_properties (@ParamObjectID, @ParamStatisticsID)'
+
+            BEGIN TRY
+              EXECUTE @CurrentDatabase_sp_executesql @stmt = @CurrentCommand, @params = N'@ParamObjectID int, @ParamStatisticsID int, @ParamRowCount bigint OUTPUT, @ParamModificationCounter bigint OUTPUT', @ParamObjectID = @CurrentObjectID, @ParamStatisticsID = @CurrentStatisticsID, @ParamRowCount = @CurrentRowCount OUTPUT, @ParamModificationCounter = @CurrentModificationCounter OUTPUT
+            END TRY
+            BEGIN CATCH
+              SET @ErrorMessage = 'Msg ' + CAST(ERROR_NUMBER() AS nvarchar(max)) + ', ' + ISNULL(ERROR_MESSAGE(),'') + CASE WHEN ERROR_NUMBER() = 1222 THEN ' The statistics ' + QUOTENAME(@CurrentStatisticsName) + ' on the object ' + QUOTENAME(@CurrentDatabaseName) + '.' + QUOTENAME(@CurrentSchemaName) + '.' + QUOTENAME(@CurrentObjectName) + ' is locked. The rows and modification_counter could not be checked.' ELSE '' END
+              SET @Severity = CASE WHEN ERROR_NUMBER() IN(1205,1222) THEN @LockMessageSeverity ELSE 16 END
+              RAISERROR('%s',@Severity,1,@ErrorMessage) WITH NOWAIT
+              RAISERROR(@EmptyLine,10,1) WITH NOWAIT
+
+              IF NOT (ERROR_NUMBER() IN(1205,1222) AND @LockMessageSeverity = 10)
+              BEGIN
+                SET @ReturnCode = ERROR_NUMBER()
+              END
+
+              GOTO NoAction
+            END CATCH
+          END
+
+          -- Check incremental statistics properties
+          IF NOT (@OnlyModifiedStatistics = 'N' AND @StatisticsModificationLevel IS NULL) AND @PartitionLevel = 'Y' AND @CurrentIsIncremental = 1
+          AND NOT EXISTS (SELECT * FROM @IncrementalStatsProperties WHERE ObjectID = @CurrentObjectID AND StatisticsID = @CurrentStatisticsID)
+          BEGIN
+            SET @CurrentCommand = ''
+
+            IF @LockTimeout IS NOT NULL SET @CurrentCommand = 'SET LOCK_TIMEOUT ' + CAST(@LockTimeout * 1000 AS nvarchar(max)) + '; '
+
+            BEGIN
+              SET @CurrentCommand += 'SELECT object_id, stats_id, partition_number, [rows], modification_counter FROM sys.dm_db_incremental_stats_properties (@ParamObjectID, @ParamStatisticsID)'
+            END
+
+            BEGIN TRY
+              INSERT INTO @IncrementalStatsProperties (ObjectID, StatisticsID, PartitionNumber, [Rows], ModificationCounter)
+              EXECUTE @CurrentDatabase_sp_executesql @stmt = @CurrentCommand, @params = N'@ParamObjectID int, @ParamStatisticsID int', @ParamObjectID = @CurrentObjectID, @ParamStatisticsID = @CurrentStatisticsID
+            END TRY
+            BEGIN CATCH
+              SET @ErrorMessage = 'Msg ' + CAST(ERROR_NUMBER() AS nvarchar(max)) + ', ' + ISNULL(ERROR_MESSAGE(),'') + CASE WHEN ERROR_NUMBER() = 1222 THEN ' The statistics ' + QUOTENAME(@CurrentStatisticsName) + ' on the object ' + QUOTENAME(@CurrentDatabaseName) + '.' + QUOTENAME(@CurrentSchemaName) + '.' + QUOTENAME(@CurrentObjectName) + ' is locked. The rows and modification_counter could not be checked.' ELSE '' END
+              SET @Severity = CASE WHEN ERROR_NUMBER() IN(1205,1222) THEN @LockMessageSeverity ELSE 16 END
+              RAISERROR('%s',@Severity,1,@ErrorMessage) WITH NOWAIT
+              RAISERROR(@EmptyLine,10,1) WITH NOWAIT
+
+              IF NOT (ERROR_NUMBER() IN(1205,1222) AND @LockMessageSeverity = 10)
+              BEGIN
+                SET @ReturnCode = ERROR_NUMBER()
+              END
+
+              GOTO NoAction
+            END CATCH
+          END
+
+          SELECT @CurrentRowCount = [Rows],
+                 @CurrentModificationCounter = [ModificationCounter]
+          FROM @IncrementalStatsProperties
+          WHERE ObjectID = @CurrentObjectID
+          AND StatisticsID = @CurrentStatisticsID
+          AND PartitionNumber = @CurrentPartitionNumber
+
+          -- Check partition statistics
+          IF NOT (@OnlyModifiedStatistics = 'N' AND @StatisticsModificationLevel IS NULL) AND @CurrentModificationCounter IS NULL
           BEGIN
             SET @CurrentCommand = ''
             IF @LockTimeout IS NOT NULL SET @CurrentCommand = 'SET LOCK_TIMEOUT ' + CAST(@LockTimeout * 1000 AS nvarchar(max)) + '; '
@@ -2474,40 +2546,6 @@ BEGIN
               BEGIN
                 SET @ReturnCode = ERROR_NUMBER()
               END
-              GOTO NoAction
-            END CATCH
-          END
-
-          -- Has the data in the statistics been modified since the statistics was last updated?
-          IF NOT (@OnlyModifiedStatistics = 'N' AND @StatisticsModificationLevel IS NULL)
-          BEGIN
-            SET @CurrentCommand = ''
-
-            IF @LockTimeout IS NOT NULL SET @CurrentCommand = 'SET LOCK_TIMEOUT ' + CAST(@LockTimeout * 1000 AS nvarchar(max)) + '; '
-
-            IF @PartitionLevel = 'Y' AND @CurrentIsIncremental = 1
-            BEGIN
-              SET @CurrentCommand += 'SELECT @ParamRowCount = [rows], @ParamModificationCounter = modification_counter FROM sys.dm_db_incremental_stats_properties (@ParamObjectID, @ParamStatisticsID) WHERE partition_number = @ParamPartitionNumber'
-            END
-            ELSE
-            BEGIN
-              SET @CurrentCommand += 'SELECT @ParamRowCount = [rows], @ParamModificationCounter = modification_counter FROM sys.dm_db_stats_properties (@ParamObjectID, @ParamStatisticsID)'
-            END
-
-            BEGIN TRY
-              EXECUTE @CurrentDatabase_sp_executesql @stmt = @CurrentCommand, @params = N'@ParamObjectID int, @ParamStatisticsID int, @ParamPartitionNumber int, @ParamRowCount bigint OUTPUT, @ParamModificationCounter bigint OUTPUT', @ParamObjectID = @CurrentObjectID, @ParamStatisticsID = @CurrentStatisticsID, @ParamPartitionNumber = @CurrentPartitionNumber, @ParamRowCount = @CurrentRowCount OUTPUT, @ParamModificationCounter = @CurrentModificationCounter OUTPUT
-            END TRY
-            BEGIN CATCH
-              SET @ErrorMessage = 'Msg ' + CAST(ERROR_NUMBER() AS nvarchar(max)) + ', ' + ISNULL(ERROR_MESSAGE(),'') + CASE WHEN ERROR_NUMBER() = 1222 THEN ' The statistics ' + QUOTENAME(@CurrentStatisticsName) + ' on the object ' + QUOTENAME(@CurrentDatabaseName) + '.' + QUOTENAME(@CurrentSchemaName) + '.' + QUOTENAME(@CurrentObjectName) + ' is locked. The rows and modification_counter could not be checked.' ELSE '' END
-              SET @Severity = CASE WHEN ERROR_NUMBER() IN(1205,1222) THEN @LockMessageSeverity ELSE 16 END
-              RAISERROR('%s',@Severity,1,@ErrorMessage) WITH NOWAIT
-              RAISERROR(@EmptyLine,10,1) WITH NOWAIT
-
-              IF NOT (ERROR_NUMBER() IN(1205,1222) AND @LockMessageSeverity = 10)
-              BEGIN
-                SET @ReturnCode = ERROR_NUMBER()
-              END
-
               GOTO NoAction
             END CATCH
           END
@@ -2754,6 +2792,7 @@ BEGIN
     TRUNCATE TABLE #Indexes
     TRUNCATE TABLE #Stats
     DELETE FROM @tmpResumableOperations
+    DELETE FROM @IncrementalStatsProperties
 
   END -- End of database loop
 
