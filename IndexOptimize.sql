@@ -56,7 +56,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-07-15 22:27:18                                                               //--
+  --// Version: 2026-07-16 23:38:29                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -137,6 +137,7 @@ BEGIN
   DECLARE @CurrentPartitionID bigint
   DECLARE @CurrentPartitionNumber int
   DECLARE @CurrentPartitionCount int
+  DECLARE @CurrentInRowDataPageCount bigint
   DECLARE @CurrentIsPartition bit
   DECLARE @CurrentIndexExists bit
   DECLARE @CurrentStatisticsExists bit
@@ -214,11 +215,13 @@ BEGIN
                                        PartitionID bigint,
                                        PartitionNumber int,
                                        PartitionCount int,
+                                       InRowDataPageCount bigint,
                                        StartPosition int,
                                        [Order] int DEFAULT 0,
                                        Selected bit DEFAULT 0,
                                        Completed bit DEFAULT 0,
-                                       PRIMARY KEY (Selected, Completed, [Order], ID))
+                                       PRIMARY KEY (Selected, Completed, [Order], ID),
+                                       INDEX IX_ObjectID_StatisticsID_PartitionNumber NONCLUSTERED (ObjectID, StatisticsID, PartitionNumber))
 
   DROP TABLE IF EXISTS #SelectedIndexes
 
@@ -1821,6 +1824,7 @@ BEGIN
                               + CASE WHEN @UpdateStatistics IN('ALL','INDEX') THEN ', Stats.IsIncremental AS IsIncremental' ELSE ', NULL AS IsIncremental' END
                               + ', ' + CASE WHEN @PartitionLevel = 'Y' THEN 'partitions.partition_id AS PartitionID' WHEN @PartitionLevel = 'N' THEN 'NULL AS PartitionID' END
                               + ', ' + CASE WHEN @PartitionLevel = 'Y' THEN 'partitions.partition_number AS PartitionNumber' WHEN @PartitionLevel = 'N' THEN 'NULL AS PartitionNumber' END
+                              + ', ' + CASE WHEN @PartitionLevel = 'Y' AND (@MinNumberOfPages > 0 OR @MaxNumberOfPages IS NOT NULL) THEN 'dm_db_partition_stats.in_row_data_page_count AS InRowDataPageCount' ELSE 'NULL AS InRowDataPageCount' END
                               + ' FROM #Indexes Indexes'
                               + ' INNER JOIN #Objects Objects ON Indexes.ObjectID = Objects.ObjectID'
                               + CASE WHEN @UpdateStatistics IN('ALL','INDEX') THEN ' INNER JOIN #Stats Stats ON Indexes.ObjectID = Stats.ObjectID AND Indexes.IndexID = Stats.StatisticsID' ELSE '' END
@@ -1828,17 +1832,17 @@ BEGIN
           BEGIN
             SET @CurrentCommand += ' INNER JOIN sys.partitions partitions ON Indexes.ObjectID = partitions.[object_id] AND Indexes.IndexID = partitions.index_id'
           END
-          IF @PartitionLevel = 'Y' AND (@UpdateStatistics = 'COLUMNS' OR @UpdateStatistics IS NULL) AND (@MinNumberOfPages > 0 OR @MaxNumberOfPages IS NOT NULL)
+          IF @PartitionLevel = 'Y' AND (@MinNumberOfPages > 0 OR @MaxNumberOfPages IS NOT NULL)
           BEGIN
-            SET @CurrentCommand += ' INNER JOIN sys.dm_db_partition_stats dm_db_partition_stats ON partitions.partition_id = dm_db_partition_stats.partition_id'
+            SET @CurrentCommand += ' INNER JOIN sys.dm_db_partition_stats dm_db_partition_stats ON partitions.object_id = dm_db_partition_stats.object_id AND partitions.index_id = dm_db_partition_stats.index_id AND partitions.partition_number = dm_db_partition_stats.partition_number'
           END
           SET @CurrentCommand += ' WHERE Objects.ObjectType IN(''U'',''V'')'
                                + ' AND Indexes.IndexType IN(1,2,7)'
-                               + CASE WHEN @PartitionLevel = 'Y' AND (@UpdateStatistics = 'COLUMNS' OR @UpdateStatistics IS NULL) AND @MinNumberOfPages > 0 THEN ' AND dm_db_partition_stats.in_row_data_page_count >= ' + CAST(@MinNumberOfPages AS nvarchar(max)) ELSE '' END
-                               + CASE WHEN @PartitionLevel = 'Y' AND (@UpdateStatistics = 'COLUMNS' OR @UpdateStatistics IS NULL) AND @MaxNumberOfPages IS NOT NULL THEN ' AND dm_db_partition_stats.in_row_data_page_count <= ' + CAST(@MaxNumberOfPages AS nvarchar(max)) ELSE '' END
+                               + CASE WHEN @PartitionLevel = 'Y' AND (@UpdateStatistics = 'COLUMNS' OR @UpdateStatistics IS NULL) AND @MinNumberOfPages > 0 THEN ' AND dm_db_partition_stats.in_row_data_page_count >= @ParamMinNumberOfPages' ELSE '' END
+                               + CASE WHEN @PartitionLevel = 'Y' AND (@UpdateStatistics = 'COLUMNS' OR @UpdateStatistics IS NULL) AND @MaxNumberOfPages IS NOT NULL THEN ' AND dm_db_partition_stats.in_row_data_page_count <= @ParamMaxNumberOfPages' ELSE '' END
 
-          INSERT INTO @tmpIndexesStatistics (SchemaID, SchemaName, ObjectID, ObjectName, ObjectType, IsMemoryOptimized, IndexID, IndexName, IndexType, AllowPageLocks, HasFilter, IsImageText, IsFileStream, HasClusteredColumnstore, IsColumnstoreOrdered, IsComputed, IsClusteredIndexComputed, IsTimestamp, OnReadOnlyFileGroup, ResumableIndexOperation, StatisticsID, StatisticsName, [NoRecompute], IsIncremental, PartitionID, PartitionNumber)
-          EXECUTE @CurrentDatabase_sp_executesql @stmt = @CurrentCommand
+          INSERT INTO @tmpIndexesStatistics (SchemaID, SchemaName, ObjectID, ObjectName, ObjectType, IsMemoryOptimized, IndexID, IndexName, IndexType, AllowPageLocks, HasFilter, IsImageText, IsFileStream, HasClusteredColumnstore, IsColumnstoreOrdered, IsComputed, IsClusteredIndexComputed, IsTimestamp, OnReadOnlyFileGroup, ResumableIndexOperation, StatisticsID, StatisticsName, [NoRecompute], IsIncremental, PartitionID, PartitionNumber, InRowDataPageCount)
+          EXECUTE @CurrentDatabase_sp_executesql @stmt = @CurrentCommand, @params = N'@ParamMinNumberOfPages int, @ParamMaxNumberOfPages int', @ParamMinNumberOfPages = @MinNumberOfPages, @ParamMaxNumberOfPages = @MaxNumberOfPages
           SET @Error = @@ERROR
           IF @Error <> 0
           BEGIN
@@ -1911,23 +1915,24 @@ BEGIN
                               + ', NULL AS IsIncremental'
                               + ', ' + CASE WHEN @PartitionLevel = 'Y' THEN 'partitions.partition_id AS PartitionID' WHEN @PartitionLevel = 'N' THEN 'NULL AS PartitionID' END
                               + ', ' + CASE WHEN @PartitionLevel = 'Y' THEN 'partitions.partition_number AS PartitionNumber' WHEN @PartitionLevel = 'N' THEN 'NULL AS PartitionNumber' END
+                              + ', ' + CASE WHEN @PartitionLevel = 'Y' AND (@MinNumberOfPages > 0 OR @MaxNumberOfPages IS NOT NULL) THEN 'dm_db_partition_stats.in_row_data_page_count AS InRowDataPageCount' ELSE 'NULL AS InRowDataPageCount' END
                               + ' FROM #Indexes Indexes'
                               + ' INNER JOIN #Objects Objects ON Indexes.ObjectID = Objects.ObjectID'
           IF @PartitionLevel = 'Y'
           BEGIN
             SET @CurrentCommand += ' INNER JOIN sys.partitions partitions ON Indexes.ObjectID = partitions.[object_id] AND Indexes.IndexID = partitions.index_id'
           END
-          IF @PartitionLevel = 'Y' AND (@UpdateStatistics = 'COLUMNS' OR @UpdateStatistics IS NULL) AND (@MinNumberOfPages > 0 OR @MaxNumberOfPages IS NOT NULL)
+          IF @PartitionLevel = 'Y' AND (@MinNumberOfPages > 0 OR @MaxNumberOfPages IS NOT NULL)
           BEGIN
-            SET @CurrentCommand += ' INNER JOIN sys.dm_db_partition_stats dm_db_partition_stats ON partitions.partition_id = dm_db_partition_stats.partition_id'
+            SET @CurrentCommand += ' INNER JOIN sys.dm_db_partition_stats dm_db_partition_stats ON partitions.object_id = dm_db_partition_stats.object_id AND partitions.index_id = dm_db_partition_stats.index_id AND partitions.partition_number = dm_db_partition_stats.partition_number'
           END
           SET @CurrentCommand += ' WHERE Objects.ObjectType = ''U'''
                                + ' AND Indexes.IndexType IN(5,6)'
-                               + CASE WHEN @PartitionLevel = 'Y' AND (@UpdateStatistics = 'COLUMNS' OR @UpdateStatistics IS NULL) AND @MinNumberOfPages > 0 THEN ' AND dm_db_partition_stats.in_row_data_page_count >= ' + CAST(@MinNumberOfPages AS nvarchar(max)) ELSE '' END
-                               + CASE WHEN @PartitionLevel = 'Y' AND (@UpdateStatistics = 'COLUMNS' OR @UpdateStatistics IS NULL) AND @MaxNumberOfPages IS NOT NULL THEN ' AND dm_db_partition_stats.in_row_data_page_count <= ' + CAST(@MaxNumberOfPages AS nvarchar(max)) ELSE '' END
+                               + CASE WHEN @PartitionLevel = 'Y' AND (@UpdateStatistics = 'COLUMNS' OR @UpdateStatistics IS NULL) AND @MinNumberOfPages > 0 THEN ' AND dm_db_partition_stats.in_row_data_page_count >= @ParamMinNumberOfPages' ELSE '' END
+                               + CASE WHEN @PartitionLevel = 'Y' AND (@UpdateStatistics = 'COLUMNS' OR @UpdateStatistics IS NULL) AND @MaxNumberOfPages IS NOT NULL THEN ' AND dm_db_partition_stats.in_row_data_page_count <= @ParamMaxNumberOfPages' ELSE '' END
 
-          INSERT INTO @tmpIndexesStatistics (SchemaID, SchemaName, ObjectID, ObjectName, ObjectType, IsMemoryOptimized, IndexID, IndexName, IndexType, AllowPageLocks, HasFilter, IsImageText, IsFileStream, HasClusteredColumnstore, IsColumnstoreOrdered, IsComputed, IsClusteredIndexComputed, IsTimestamp, OnReadOnlyFileGroup, ResumableIndexOperation, StatisticsID, StatisticsName, [NoRecompute], IsIncremental, PartitionID, PartitionNumber)
-          EXECUTE @CurrentDatabase_sp_executesql @stmt = @CurrentCommand
+          INSERT INTO @tmpIndexesStatistics (SchemaID, SchemaName, ObjectID, ObjectName, ObjectType, IsMemoryOptimized, IndexID, IndexName, IndexType, AllowPageLocks, HasFilter, IsImageText, IsFileStream, HasClusteredColumnstore, IsColumnstoreOrdered, IsComputed, IsClusteredIndexComputed, IsTimestamp, OnReadOnlyFileGroup, ResumableIndexOperation, StatisticsID, StatisticsName, [NoRecompute], IsIncremental, PartitionID, PartitionNumber, InRowDataPageCount)
+          EXECUTE @CurrentDatabase_sp_executesql @stmt = @CurrentCommand, @params = N'@ParamMinNumberOfPages int, @ParamMaxNumberOfPages int', @ParamMinNumberOfPages = @MinNumberOfPages, @ParamMaxNumberOfPages = @MaxNumberOfPages
           SET @Error = @@ERROR
           IF @Error <> 0
           BEGIN
@@ -2121,7 +2126,8 @@ BEGIN
                      @CurrentIsIncremental = IsIncremental,
                      @CurrentPartitionID = PartitionID,
                      @CurrentPartitionNumber = PartitionNumber,
-                     @CurrentPartitionCount = PartitionCount
+                     @CurrentPartitionCount = PartitionCount,
+                     @CurrentInRowDataPageCount = InRowDataPageCount
         FROM @tmpIndexesStatistics
         WHERE Selected = 1
         AND Completed = 0
@@ -2135,150 +2141,162 @@ BEGIN
         -- Is the index a partition?
         IF @CurrentPartitionNumber IS NULL OR @CurrentPartitionCount = 1 BEGIN SET @CurrentIsPartition = 0 END ELSE BEGIN SET @CurrentIsPartition = 1 END
 
-        -- Does the index exist?
-        IF @CurrentIndexID IS NOT NULL AND EXISTS(SELECT * FROM @ActionsPreferred)
+        IF ((@CurrentInRowDataPageCount >= @MinNumberOfPages OR @MinNumberOfPages = 0) AND (@CurrentInRowDataPageCount <= @MaxNumberOfPages OR @MaxNumberOfPages IS NULL)) OR @CurrentInRowDataPageCount IS NULL
         BEGIN
-          SET @CurrentCommand = ''
 
-          IF @LockTimeout IS NOT NULL SET @CurrentCommand = 'SET LOCK_TIMEOUT ' + CAST(@LockTimeout * 1000 AS nvarchar(max)) + '; '
+          -- Does the index exist?
+          IF @CurrentIndexID IS NOT NULL AND EXISTS(SELECT * FROM @ActionsPreferred)
+          BEGIN
+            SET @CurrentCommand = ''
 
-          IF @CurrentIsPartition = 0 SET @CurrentCommand += 'IF EXISTS(SELECT * FROM sys.indexes indexes INNER JOIN sys.objects objects ON indexes.[object_id] = objects.[object_id] INNER JOIN sys.schemas schemas ON objects.[schema_id] = schemas.[schema_id] WHERE objects.[type] IN(''U'',''V'') AND indexes.[type] IN(1,2,3,4,5,6,7) AND indexes.is_disabled = 0 AND indexes.is_hypothetical = 0 AND schemas.[schema_id] = @ParamSchemaID AND schemas.[name] = @ParamSchemaName AND objects.[object_id] = @ParamObjectID AND objects.[name] = @ParamObjectName AND objects.[type] = @ParamObjectType AND indexes.index_id = @ParamIndexID AND indexes.[name] = @ParamIndexName AND indexes.[type] = @ParamIndexType) BEGIN SET @ParamIndexExists = 1 END'
-          IF @CurrentIsPartition = 1 SET @CurrentCommand += 'IF EXISTS(SELECT * FROM sys.indexes indexes INNER JOIN sys.objects objects ON indexes.[object_id] = objects.[object_id] INNER JOIN sys.schemas schemas ON objects.[schema_id] = schemas.[schema_id] INNER JOIN sys.partitions partitions ON indexes.[object_id] = partitions.[object_id] AND indexes.index_id = partitions.index_id WHERE objects.[type] IN(''U'',''V'') AND indexes.[type] IN(1,2,3,4,5,6,7) AND indexes.is_disabled = 0 AND indexes.is_hypothetical = 0 AND schemas.[schema_id] = @ParamSchemaID AND schemas.[name] = @ParamSchemaName AND objects.[object_id] = @ParamObjectID AND objects.[name] = @ParamObjectName AND objects.[type] = @ParamObjectType AND indexes.index_id = @ParamIndexID AND indexes.[name] = @ParamIndexName AND indexes.[type] = @ParamIndexType AND partitions.partition_id = @ParamPartitionID AND partitions.partition_number = @ParamPartitionNumber) BEGIN SET @ParamIndexExists = 1 END'
+            IF @LockTimeout IS NOT NULL SET @CurrentCommand = 'SET LOCK_TIMEOUT ' + CAST(@LockTimeout * 1000 AS nvarchar(max)) + '; '
 
-          BEGIN TRY
-            EXECUTE @CurrentDatabase_sp_executesql @stmt = @CurrentCommand, @params = N'@ParamSchemaID int, @ParamSchemaName sysname, @ParamObjectID int, @ParamObjectName sysname, @ParamObjectType sysname, @ParamIndexID int, @ParamIndexName sysname, @ParamIndexType int, @ParamPartitionID bigint, @ParamPartitionNumber int, @ParamIndexExists bit OUTPUT', @ParamSchemaID = @CurrentSchemaID, @ParamSchemaName = @CurrentSchemaName, @ParamObjectID = @CurrentObjectID, @ParamObjectName = @CurrentObjectName, @ParamObjectType = @CurrentObjectType, @ParamIndexID = @CurrentIndexID, @ParamIndexName = @CurrentIndexName, @ParamIndexType = @CurrentIndexType, @ParamPartitionID = @CurrentPartitionID, @ParamPartitionNumber = @CurrentPartitionNumber, @ParamIndexExists = @CurrentIndexExists OUTPUT
+            IF @CurrentIsPartition = 0 SET @CurrentCommand += 'IF EXISTS(SELECT * FROM sys.indexes indexes INNER JOIN sys.objects objects ON indexes.[object_id] = objects.[object_id] INNER JOIN sys.schemas schemas ON objects.[schema_id] = schemas.[schema_id] WHERE objects.[type] IN(''U'',''V'') AND indexes.[type] IN(1,2,3,4,5,6,7) AND indexes.is_disabled = 0 AND indexes.is_hypothetical = 0 AND schemas.[schema_id] = @ParamSchemaID AND schemas.[name] = @ParamSchemaName AND objects.[object_id] = @ParamObjectID AND objects.[name] = @ParamObjectName AND objects.[type] = @ParamObjectType AND indexes.index_id = @ParamIndexID AND indexes.[name] = @ParamIndexName AND indexes.[type] = @ParamIndexType) BEGIN SET @ParamIndexExists = 1 END'
+            IF @CurrentIsPartition = 1 SET @CurrentCommand += 'IF EXISTS(SELECT * FROM sys.indexes indexes INNER JOIN sys.objects objects ON indexes.[object_id] = objects.[object_id] INNER JOIN sys.schemas schemas ON objects.[schema_id] = schemas.[schema_id] INNER JOIN sys.partitions partitions ON indexes.[object_id] = partitions.[object_id] AND indexes.index_id = partitions.index_id WHERE objects.[type] IN(''U'',''V'') AND indexes.[type] IN(1,2,3,4,5,6,7) AND indexes.is_disabled = 0 AND indexes.is_hypothetical = 0 AND schemas.[schema_id] = @ParamSchemaID AND schemas.[name] = @ParamSchemaName AND objects.[object_id] = @ParamObjectID AND objects.[name] = @ParamObjectName AND objects.[type] = @ParamObjectType AND indexes.index_id = @ParamIndexID AND indexes.[name] = @ParamIndexName AND indexes.[type] = @ParamIndexType AND partitions.partition_id = @ParamPartitionID AND partitions.partition_number = @ParamPartitionNumber) BEGIN SET @ParamIndexExists = 1 END'
 
-            IF @CurrentIndexExists IS NULL
-            BEGIN
-              SET @CurrentIndexExists = 0
+            BEGIN TRY
+              EXECUTE @CurrentDatabase_sp_executesql @stmt = @CurrentCommand, @params = N'@ParamSchemaID int, @ParamSchemaName sysname, @ParamObjectID int, @ParamObjectName sysname, @ParamObjectType sysname, @ParamIndexID int, @ParamIndexName sysname, @ParamIndexType int, @ParamPartitionID bigint, @ParamPartitionNumber int, @ParamIndexExists bit OUTPUT', @ParamSchemaID = @CurrentSchemaID, @ParamSchemaName = @CurrentSchemaName, @ParamObjectID = @CurrentObjectID, @ParamObjectName = @CurrentObjectName, @ParamObjectType = @CurrentObjectType, @ParamIndexID = @CurrentIndexID, @ParamIndexName = @CurrentIndexName, @ParamIndexType = @CurrentIndexType, @ParamPartitionID = @CurrentPartitionID, @ParamPartitionNumber = @CurrentPartitionNumber, @ParamIndexExists = @CurrentIndexExists OUTPUT
+
+              IF @CurrentIndexExists IS NULL
+              BEGIN
+                SET @CurrentIndexExists = 0
+                GOTO NoAction
+              END
+            END TRY
+            BEGIN CATCH
+              SET @ErrorMessage = 'Msg ' + CAST(ERROR_NUMBER() AS nvarchar(max)) + ', ' + ISNULL(ERROR_MESSAGE(),'') + CASE WHEN ERROR_NUMBER() = 1222 THEN ' The index ' + QUOTENAME(@CurrentIndexName) + ' on the object ' + QUOTENAME(@CurrentDatabaseName) + '.' + QUOTENAME(@CurrentSchemaName) + '.' + QUOTENAME(@CurrentObjectName) + ' is locked. It could not be checked if the index exists.' ELSE '' END
+              SET @Severity = CASE WHEN ERROR_NUMBER() IN(1205,1222) THEN @LockMessageSeverity ELSE 16 END
+              RAISERROR('%s',@Severity,1,@ErrorMessage) WITH NOWAIT
+              RAISERROR(@EmptyLine,10,1) WITH NOWAIT
+
+              IF NOT (ERROR_NUMBER() IN(1205,1222) AND @LockMessageSeverity = 10)
+              BEGIN
+                SET @ReturnCode = ERROR_NUMBER()
+              END
+
               GOTO NoAction
-            END
-          END TRY
-          BEGIN CATCH
-            SET @ErrorMessage = 'Msg ' + CAST(ERROR_NUMBER() AS nvarchar(max)) + ', ' + ISNULL(ERROR_MESSAGE(),'') + CASE WHEN ERROR_NUMBER() = 1222 THEN ' The index ' + QUOTENAME(@CurrentIndexName) + ' on the object ' + QUOTENAME(@CurrentDatabaseName) + '.' + QUOTENAME(@CurrentSchemaName) + '.' + QUOTENAME(@CurrentObjectName) + ' is locked. It could not be checked if the index exists.' ELSE '' END
-            SET @Severity = CASE WHEN ERROR_NUMBER() IN(1205,1222) THEN @LockMessageSeverity ELSE 16 END
-            RAISERROR('%s',@Severity,1,@ErrorMessage) WITH NOWAIT
-            RAISERROR(@EmptyLine,10,1) WITH NOWAIT
+            END CATCH
+          END
 
-            IF NOT (ERROR_NUMBER() IN(1205,1222) AND @LockMessageSeverity = 10)
+          -- Is the index fragmented?
+          IF @CurrentIndexID IS NOT NULL
+          AND @CurrentOnReadOnlyFileGroup = 0
+          AND EXISTS(SELECT * FROM @ActionsPreferred)
+          AND (EXISTS(SELECT [Priority], [Action], COUNT(*) FROM @ActionsPreferred GROUP BY [Priority], [Action] HAVING COUNT(*) <> 3) OR @MinNumberOfPages > 0 OR @MaxNumberOfPages IS NOT NULL)
+          BEGIN
+            SET @CurrentCommand = ''
+
+            IF @LockTimeout IS NOT NULL SET @CurrentCommand = 'SET LOCK_TIMEOUT ' + CAST(@LockTimeout * 1000 AS nvarchar(max)) + '; '
+
+            IF @CurrentPartitionNumber IS NULL
             BEGIN
-              SET @ReturnCode = ERROR_NUMBER()
+              SET @CurrentCommand += 'SELECT @ParamFragmentationLevel = MAX(avg_fragmentation_in_percent), @ParamPageCount = SUM(page_count) FROM sys.dm_db_index_physical_stats(DB_ID(@ParamDatabaseName), @ParamObjectID, @ParamIndexID, NULL, ''LIMITED'') WHERE alloc_unit_type_desc = ''IN_ROW_DATA'' AND index_level = 0'
             END
-
-            GOTO NoAction
-          END CATCH
-        END
-
-        -- Is the index fragmented?
-        IF @CurrentIndexID IS NOT NULL
-        AND @CurrentOnReadOnlyFileGroup = 0
-        AND EXISTS(SELECT * FROM @ActionsPreferred)
-        AND (EXISTS(SELECT [Priority], [Action], COUNT(*) FROM @ActionsPreferred GROUP BY [Priority], [Action] HAVING COUNT(*) <> 3) OR @MinNumberOfPages > 0 OR @MaxNumberOfPages IS NOT NULL)
-        BEGIN
-          SET @CurrentCommand = ''
-
-          IF @LockTimeout IS NOT NULL SET @CurrentCommand = 'SET LOCK_TIMEOUT ' + CAST(@LockTimeout * 1000 AS nvarchar(max)) + '; '
-
-          SET @CurrentCommand += 'SELECT @ParamFragmentationLevel = MAX(avg_fragmentation_in_percent), @ParamPageCount = SUM(page_count) FROM sys.dm_db_index_physical_stats(DB_ID(@ParamDatabaseName), @ParamObjectID, @ParamIndexID, @ParamPartitionNumber, ''LIMITED'') WHERE alloc_unit_type_desc = ''IN_ROW_DATA'' AND index_level = 0'
-
-          BEGIN TRY
-            EXECUTE sp_executesql @stmt = @CurrentCommand, @params = N'@ParamDatabaseName nvarchar(max), @ParamObjectID int, @ParamIndexID int, @ParamPartitionNumber int, @ParamFragmentationLevel float OUTPUT, @ParamPageCount bigint OUTPUT', @ParamDatabaseName = @CurrentDatabaseName, @ParamObjectID = @CurrentObjectID, @ParamIndexID = @CurrentIndexID, @ParamPartitionNumber = @CurrentPartitionNumber, @ParamFragmentationLevel = @CurrentFragmentationLevel OUTPUT, @ParamPageCount = @CurrentPageCount OUTPUT
-          END TRY
-          BEGIN CATCH
-            SET @ErrorMessage = 'Msg ' + CAST(ERROR_NUMBER() AS nvarchar(max)) + ', ' + ISNULL(ERROR_MESSAGE(),'') + CASE WHEN ERROR_NUMBER() = 1222 THEN ' The index ' + QUOTENAME(@CurrentIndexName) + ' on the object ' + QUOTENAME(@CurrentDatabaseName) + '.' + QUOTENAME(@CurrentSchemaName) + '.' + QUOTENAME(@CurrentObjectName) + ' is locked. The page_count and avg_fragmentation_in_percent could not be checked.' ELSE '' END
-            SET @Severity = CASE WHEN ERROR_NUMBER() IN(1205,1222) THEN @LockMessageSeverity ELSE 16 END
-            RAISERROR('%s',@Severity,1,@ErrorMessage) WITH NOWAIT
-            RAISERROR(@EmptyLine,10,1) WITH NOWAIT
-
-            IF NOT (ERROR_NUMBER() IN(1205,1222) AND @LockMessageSeverity = 10)
+            ELSE
             BEGIN
-              SET @ReturnCode = ERROR_NUMBER()
+              SET @CurrentCommand += 'SELECT @ParamFragmentationLevel = avg_fragmentation_in_percent, @ParamPageCount = page_count FROM sys.dm_db_index_physical_stats(DB_ID(@ParamDatabaseName), @ParamObjectID, @ParamIndexID, @ParamPartitionNumber, ''LIMITED'') WHERE alloc_unit_type_desc = ''IN_ROW_DATA'' AND index_level = 0'
             END
 
-            GOTO NoAction
-          END CATCH
-        END
+            BEGIN TRY
+              EXECUTE sp_executesql @stmt = @CurrentCommand, @params = N'@ParamDatabaseName nvarchar(max), @ParamObjectID int, @ParamIndexID int, @ParamPartitionNumber int, @ParamFragmentationLevel float OUTPUT, @ParamPageCount bigint OUTPUT', @ParamDatabaseName = @CurrentDatabaseName, @ParamObjectID = @CurrentObjectID, @ParamIndexID = @CurrentIndexID, @ParamPartitionNumber = @CurrentPartitionNumber, @ParamFragmentationLevel = @CurrentFragmentationLevel OUTPUT, @ParamPageCount = @CurrentPageCount OUTPUT
+            END TRY
+            BEGIN CATCH
+              SET @ErrorMessage = 'Msg ' + CAST(ERROR_NUMBER() AS nvarchar(max)) + ', ' + ISNULL(ERROR_MESSAGE(),'') + CASE WHEN ERROR_NUMBER() = 1222 THEN ' The index ' + QUOTENAME(@CurrentIndexName) + ' on the object ' + QUOTENAME(@CurrentDatabaseName) + '.' + QUOTENAME(@CurrentSchemaName) + '.' + QUOTENAME(@CurrentObjectName) + ' is locked. The page_count and avg_fragmentation_in_percent could not be checked.' ELSE '' END
+              SET @Severity = CASE WHEN ERROR_NUMBER() IN(1205,1222) THEN @LockMessageSeverity ELSE 16 END
+              RAISERROR('%s',@Severity,1,@ErrorMessage) WITH NOWAIT
+              RAISERROR(@EmptyLine,10,1) WITH NOWAIT
 
-        -- Select fragmentation group
-        IF @CurrentIndexID IS NOT NULL AND @CurrentOnReadOnlyFileGroup = 0 AND EXISTS(SELECT * FROM @ActionsPreferred)
-        BEGIN
-          SET @CurrentFragmentationGroup = CASE
-          WHEN @CurrentFragmentationLevel >= @FragmentationLevel2 THEN 'High'
-          WHEN @CurrentFragmentationLevel >= @FragmentationLevel1 AND @CurrentFragmentationLevel < @FragmentationLevel2 THEN 'Medium'
-          WHEN @CurrentFragmentationLevel < @FragmentationLevel1 THEN 'Low'
-          END
-        END
+              IF NOT (ERROR_NUMBER() IN(1205,1222) AND @LockMessageSeverity = 10)
+              BEGIN
+                SET @ReturnCode = ERROR_NUMBER()
+              END
 
-        -- Which actions are allowed?
-        IF @CurrentIndexID IS NOT NULL AND EXISTS(SELECT * FROM @ActionsPreferred)
-        BEGIN
-          IF NOT (@CurrentOnReadOnlyFileGroup = 1)
-          AND NOT (@CurrentIsMemoryOptimized = 1)
-          AND NOT (@CurrentAllowPageLocks = 0)
-          BEGIN
-            INSERT INTO @CurrentActionsAllowed ([Action])
-            VALUES ('INDEX_REORGANIZE')
+              GOTO NoAction
+            END CATCH
           END
-          IF NOT (@CurrentOnReadOnlyFileGroup = 1)
-          AND NOT (@CurrentIsMemoryOptimized = 1)
-          BEGIN
-            INSERT INTO @CurrentActionsAllowed ([Action])
-            VALUES ('INDEX_REBUILD_OFFLINE')
-          END
-          IF @EngineEdition IN (3, 5, 8)
-          AND NOT (@CurrentOnReadOnlyFileGroup = 1)
-          AND NOT (@CurrentIsMemoryOptimized = 1)
-          AND NOT (@CurrentIndexType = 1 AND @CurrentIsImageText = 1 AND @CurrentIsImageText IS NOT NULL)
-          AND NOT (@CurrentIndexType = 1 AND @CurrentIsFileStream = 1 AND @CurrentIsFileStream IS NOT NULL)
-          AND NOT (@CurrentIndexType = 3)
-          AND NOT (@CurrentIndexType = 4)
-          AND NOT (@CurrentIndexType = 5 AND NOT (@Version >= 15 OR @EngineEdition = 5 OR (@EngineEdition = 8 AND @ProductUpdateType = 'Continuous')))
-          AND NOT (@CurrentIndexType = 2 AND @CurrentHasClusteredColumnstore = 1 AND @CurrentHasClusteredColumnstore IS NOT NULL AND NOT (@Version >= 15 OR @EngineEdition = 5 OR (@EngineEdition = 8 AND @ProductUpdateType = 'Continuous')))
-          AND NOT (@CurrentIndexType = 5 AND @CurrentIsColumnstoreOrdered = 1 AND @CurrentIsColumnstoreOrdered IS NOT NULL AND NOT (@Version >= 17 OR @EngineEdition = 5 OR (@EngineEdition = 8 AND @ProductUpdateType = 'Continuous')))
-          BEGIN
-            INSERT INTO @CurrentActionsAllowed ([Action])
-            VALUES ('INDEX_REBUILD_ONLINE')
-          END
-        END
 
-        -- Decide action
-        IF @CurrentIndexID IS NOT NULL
-        AND EXISTS(SELECT * FROM @ActionsPreferred)
-        AND (@CurrentPageCount >= @MinNumberOfPages OR @MinNumberOfPages = 0)
-        AND (@CurrentPageCount <= @MaxNumberOfPages OR @MaxNumberOfPages IS NULL)
-        AND @CurrentResumableIndexOperation = 0
-        BEGIN
-          IF EXISTS(SELECT [Priority], [Action], COUNT(*) FROM @ActionsPreferred GROUP BY [Priority], [Action] HAVING COUNT(*) <> 3)
+          -- Select fragmentation group
+          IF @CurrentIndexID IS NOT NULL AND @CurrentOnReadOnlyFileGroup = 0 AND EXISTS(SELECT * FROM @ActionsPreferred)
           BEGIN
-            SELECT @CurrentAction = [Action]
-            FROM @ActionsPreferred
-            WHERE FragmentationGroup = @CurrentFragmentationGroup
-            AND [Priority] = (SELECT MIN([Priority])
-                              FROM @ActionsPreferred
-                              WHERE FragmentationGroup = @CurrentFragmentationGroup
-                              AND [Action] IN (SELECT [Action] FROM @CurrentActionsAllowed))
+            SET @CurrentFragmentationGroup = CASE
+            WHEN @CurrentFragmentationLevel >= @FragmentationLevel2 THEN 'High'
+            WHEN @CurrentFragmentationLevel >= @FragmentationLevel1 AND @CurrentFragmentationLevel < @FragmentationLevel2 THEN 'Medium'
+            WHEN @CurrentFragmentationLevel < @FragmentationLevel1 THEN 'Low'
+            END
           END
-          ELSE
+
+          -- Which actions are allowed?
+          IF @CurrentIndexID IS NOT NULL AND EXISTS(SELECT * FROM @ActionsPreferred)
           BEGIN
-            SELECT @CurrentAction = [Action]
-            FROM @ActionsPreferred
-            WHERE [Priority] = (SELECT MIN([Priority])
+            IF NOT (@CurrentOnReadOnlyFileGroup = 1)
+            AND NOT (@CurrentIsMemoryOptimized = 1)
+            AND NOT (@CurrentAllowPageLocks = 0)
+            BEGIN
+              INSERT INTO @CurrentActionsAllowed ([Action])
+              VALUES ('INDEX_REORGANIZE')
+            END
+            IF NOT (@CurrentOnReadOnlyFileGroup = 1)
+            AND NOT (@CurrentIsMemoryOptimized = 1)
+            BEGIN
+              INSERT INTO @CurrentActionsAllowed ([Action])
+              VALUES ('INDEX_REBUILD_OFFLINE')
+            END
+            IF @EngineEdition IN (3, 5, 8)
+            AND NOT (@CurrentOnReadOnlyFileGroup = 1)
+            AND NOT (@CurrentIsMemoryOptimized = 1)
+            AND NOT (@CurrentIndexType = 1 AND @CurrentIsImageText = 1 AND @CurrentIsImageText IS NOT NULL)
+            AND NOT (@CurrentIndexType = 1 AND @CurrentIsFileStream = 1 AND @CurrentIsFileStream IS NOT NULL)
+            AND NOT (@CurrentIndexType = 3)
+            AND NOT (@CurrentIndexType = 4)
+            AND NOT (@CurrentIndexType = 5 AND NOT (@Version >= 15 OR @EngineEdition = 5 OR (@EngineEdition = 8 AND @ProductUpdateType = 'Continuous')))
+            AND NOT (@CurrentIndexType = 2 AND @CurrentHasClusteredColumnstore = 1 AND @CurrentHasClusteredColumnstore IS NOT NULL AND NOT (@Version >= 15 OR @EngineEdition = 5 OR (@EngineEdition = 8 AND @ProductUpdateType = 'Continuous')))
+            AND NOT (@CurrentIndexType = 5 AND @CurrentIsColumnstoreOrdered = 1 AND @CurrentIsColumnstoreOrdered IS NOT NULL AND NOT (@Version >= 17 OR @EngineEdition = 5 OR (@EngineEdition = 8 AND @ProductUpdateType = 'Continuous')))
+            BEGIN
+              INSERT INTO @CurrentActionsAllowed ([Action])
+              VALUES ('INDEX_REBUILD_ONLINE')
+            END
+          END
+
+          -- Decide action
+          IF @CurrentIndexID IS NOT NULL
+          AND EXISTS(SELECT * FROM @ActionsPreferred)
+          AND (@CurrentPageCount >= @MinNumberOfPages OR @MinNumberOfPages = 0)
+          AND (@CurrentPageCount <= @MaxNumberOfPages OR @MaxNumberOfPages IS NULL)
+          AND @CurrentResumableIndexOperation = 0
+          BEGIN
+            IF EXISTS(SELECT [Priority], [Action], COUNT(*) FROM @ActionsPreferred GROUP BY [Priority], [Action] HAVING COUNT(*) <> 3)
+            BEGIN
+              SELECT @CurrentAction = [Action]
+              FROM @ActionsPreferred
+              WHERE FragmentationGroup = @CurrentFragmentationGroup
+              AND [Priority] = (SELECT MIN([Priority])
                                 FROM @ActionsPreferred
-                                WHERE [Action] IN (SELECT [Action] FROM @CurrentActionsAllowed))
+                                WHERE FragmentationGroup = @CurrentFragmentationGroup
+                                AND [Action] IN (SELECT [Action] FROM @CurrentActionsAllowed))
+            END
+            ELSE
+            BEGIN
+              SELECT @CurrentAction = [Action]
+              FROM @ActionsPreferred
+              WHERE [Priority] = (SELECT MIN([Priority])
+                                  FROM @ActionsPreferred
+                                  WHERE [Action] IN (SELECT [Action] FROM @CurrentActionsAllowed))
+            END
           END
-        END
 
-        IF @CurrentResumableIndexOperation = 1
-        BEGIN
-          SET @CurrentAction = 'INDEX_REBUILD_ONLINE'
-        END
+          IF @CurrentResumableIndexOperation = 1
+          BEGIN
+            SET @CurrentAction = 'INDEX_REBUILD_ONLINE'
+          END
 
-        SET @CurrentMaxDOP = @MaxDOP
+          SET @CurrentMaxDOP = @MaxDOP
 
-        -- Workaround for limitation in SQL Server, http://support.microsoft.com/kb/2292737
-        IF @CurrentAction = 'INDEX_REBUILD_ONLINE' AND @CurrentIndexType IN (1, 2) AND @CurrentAllowPageLocks = 0
-        BEGIN
-          SET @CurrentMaxDOP = 1
+          -- Workaround for limitation in SQL Server, http://support.microsoft.com/kb/2292737
+          IF @CurrentAction = 'INDEX_REBUILD_ONLINE' AND @CurrentIndexType IN (1, 2) AND @CurrentAllowPageLocks = 0
+          BEGIN
+            SET @CurrentMaxDOP = 1
+          END
+
         END
 
         -- Create index comment
@@ -2672,6 +2690,22 @@ BEGIN
         AND [Order] = @CurrentIxOrder
         AND ID = @CurrentIxID
 
+        -- Update that statistics on remaining partitions are completed where no update is needed
+        IF (NOT EXISTS(SELECT * FROM @ActionsPreferred) OR @CurrentIndexID IS NULL) AND NOT (@OnlyModifiedStatistics = 'N' AND @StatisticsModificationLevel IS NULL) AND @CurrentStatisticsID IS NOT NULL
+        BEGIN
+          UPDATE tmpIndexesStatistics
+          SET Completed = 1
+          FROM @tmpIndexesStatistics tmpIndexesStatistics
+          INNER JOIN @IncrementalStatsProperties IncrementalStatsProperties ON tmpIndexesStatistics.ObjectID = IncrementalStatsProperties.ObjectID AND tmpIndexesStatistics.StatisticsID = IncrementalStatsProperties.StatisticsID AND tmpIndexesStatistics.PartitionNumber = IncrementalStatsProperties.PartitionNumber
+          WHERE tmpIndexesStatistics.ObjectID = @CurrentObjectID
+          AND tmpIndexesStatistics.StatisticsID = @CurrentStatisticsID
+          AND tmpIndexesStatistics.Selected = 1
+          AND tmpIndexesStatistics.Completed = 0
+          AND IncrementalStatsProperties.ModificationCounter IS NOT NULL
+          AND ((@OnlyModifiedStatistics = 'Y' AND NOT (IncrementalStatsProperties.ModificationCounter > 0))
+          OR (@StatisticsModificationLevel IS NOT NULL AND NOT ((IncrementalStatsProperties.ModificationCounter * 1. / NULLIF(IncrementalStatsProperties.[Rows],0)) * 100 >= @StatisticsModificationLevel OR (IncrementalStatsProperties.ModificationCounter > 0 AND IncrementalStatsProperties.ModificationCounter >= SQRT(IncrementalStatsProperties.[Rows] * 1000)))))
+        END
+
         -- Clear variables
         SET @CurrentDatabaseContext = NULL
 
@@ -2697,6 +2731,7 @@ BEGIN
         SET @CurrentPartitionID = NULL
         SET @CurrentPartitionNumber = NULL
         SET @CurrentPartitionCount = NULL
+        SET @CurrentInRowDataPageCount = NULL
         SET @CurrentIsPartition = NULL
         SET @CurrentIndexExists = NULL
         SET @CurrentStatisticsExists = NULL
