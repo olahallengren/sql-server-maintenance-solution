@@ -94,7 +94,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-07-16 23:38:29                                                               //--
+  --// Version: 2026-07-18 00:13:04                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -148,6 +148,7 @@ BEGIN
   DECLARE @CurrentDifferentialBaseLSN numeric(25,0)
   DECLARE @CurrentDifferentialBaseIsSnapshot bit
   DECLARE @CurrentLogLSN numeric(25,0)
+  DECLARE @BackupInProgress bit
   DECLARE @CurrentLatestBackup datetime2
   DECLARE @CurrentDatabaseNameFS nvarchar(max)
   DECLARE @CurrentDirectoryStructure nvarchar(max)
@@ -1616,12 +1617,24 @@ BEGIN
     SELECT 'The value for the parameter @Description is not supported.', 16, 3
   END
 
+  IF @BackupSoftware = 'DATA_DOMAIN_BOOST' AND @Description LIKE '%"%'
+  BEGIN
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'The value for the parameter @Description is not supported.', 16, 4
+  END
+
   ----------------------------------------------------------------------------------------------------
 
   IF LEN(@BackupSetName) > 128
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
     SELECT 'The value for the parameter @BackupSetName is not supported.', 16, 1
+  END
+
+  IF @BackupSoftware = 'DATA_DOMAIN_BOOST' AND @BackupSetName LIKE '%"%'
+  BEGIN
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'The value for the parameter @BackupSetName is not supported.', 16, 2
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -2018,6 +2031,12 @@ BEGIN
     SELECT 'The value for the parameter @DataDomainBoostHost is not supported.', 16, 2
   END
 
+  IF @DataDomainBoostHost LIKE '%"%'
+  BEGIN
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'The value for the parameter @DataDomainBoostHost is not supported.', 16, 3
+  END
+
   ----------------------------------------------------------------------------------------------------
 
   IF @DataDomainBoostUser IS NOT NULL AND (@BackupSoftware <> 'DATA_DOMAIN_BOOST' OR @BackupSoftware IS NULL)
@@ -2030,6 +2049,12 @@ BEGIN
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
     SELECT 'The value for the parameter @DataDomainBoostUser is not supported.', 16, 2
+  END
+
+  IF @DataDomainBoostUser LIKE '%"%'
+  BEGIN
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'The value for the parameter @DataDomainBoostUser is not supported.', 16, 3
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -2046,12 +2071,24 @@ BEGIN
     SELECT 'The value for the parameter @DataDomainBoostDevicePath is not supported.', 16, 2
   END
 
+  IF @DataDomainBoostDevicePath LIKE '%"%'
+  BEGIN
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'The value for the parameter @DataDomainBoostDevicePath is not supported.', 16, 3
+  END
+
   ----------------------------------------------------------------------------------------------------
 
   IF @DataDomainBoostLockboxPath IS NOT NULL AND (@BackupSoftware <> 'DATA_DOMAIN_BOOST' OR @BackupSoftware IS NULL)
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
     SELECT 'The value for the parameter @DataDomainBoostLockboxPath is not supported.', 16, 1
+  END
+
+  IF @DataDomainBoostLockboxPath LIKE '%"%'
+  BEGIN
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'The value for the parameter @DataDomainBoostLockboxPath is not supported.', 16, 2
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -2896,11 +2933,16 @@ BEGIN
       EXECUTE @CurrentDatabase_sp_executesql @stmt = @CurrentCommand, @params = N'@ParamAllocatedExtentPageCount bigint OUTPUT, @ParamModifiedExtentPageCount bigint OUTPUT', @ParamAllocatedExtentPageCount = @CurrentAllocatedExtentPageCount OUTPUT, @ParamModifiedExtentPageCount = @CurrentModifiedExtentPageCount OUTPUT
     END
 
+    IF (@Version >= 16.04265 AND @Version < 17) OR @Version >= 17.04065 OR (@EngineEdition = 8 AND @ProductUpdateType = 'Continuous')
+    BEGIN
+      SET @BackupInProgress = CASE WHEN EXISTS(SELECT * FROM sys.dm_exec_requests WHERE database_id = DB_ID(@CurrentDatabaseName) AND command = 'BACKUP DATABASE') THEN 1 ELSE 0 END
+    END
+
     SET @CurrentBackupType = @BackupType
 
     IF @ChangeBackupType = 'Y'
     BEGIN
-      IF @CurrentBackupType = 'LOG' AND @CurrentRecoveryModel IN('FULL','BULK_LOGGED') AND @CurrentLogLSN IS NULL AND NOT (@CurrentDatabaseName = 'master' AND @ContainedAvailabilityGroupListenerConnection = 0)
+      IF @CurrentBackupType = 'LOG' AND @CurrentRecoveryModel IN('FULL','BULK_LOGGED') AND @CurrentLogLSN IS NULL AND NOT (@CurrentDatabaseName = 'master' AND @ContainedAvailabilityGroupListenerConnection = 0) AND (@BackupInProgress = 0 OR @BackupInProgress IS NULL)
       BEGIN
         SET @CurrentBackupType = 'DIFF'
       END
@@ -3058,6 +3100,12 @@ BEGIN
 
     SET @DatabaseMessage = 'Last log backup LSN: ' + ISNULL(CAST(@CurrentLogLSN AS nvarchar(max)),'N/A')
     RAISERROR('%s',10,1,@DatabaseMessage) WITH NOWAIT
+
+    IF @CurrentBackupType = 'LOG' AND @ChangeBackupType = 'Y'
+    BEGIN
+      SET @DatabaseMessage = 'Full or differential backup in progress: ' + CASE WHEN @BackupInProgress = 1 THEN 'Yes' WHEN @BackupInProgress = 0 THEN 'No' ELSE 'N/A' END
+      RAISERROR('%s',10,1,@DatabaseMessage) WITH NOWAIT
+    END
 
     IF @CurrentBackupType IN('DIFF','FULL')
     BEGIN
@@ -4370,6 +4418,7 @@ BEGIN
     SET @CurrentDifferentialBaseLSN = NULL
     SET @CurrentDifferentialBaseIsSnapshot = NULL
     SET @CurrentLogLSN = NULL
+    SET @BackupInProgress = NULL
     SET @CurrentLatestBackup = NULL
     SET @CurrentDatabaseNameFS = NULL
     SET @CurrentDirectoryStructure = NULL
