@@ -10,7 +10,7 @@ License: https://ola.hallengren.com/license.html
 
 GitHub: https://github.com/olahallengren/sql-server-maintenance-solution
 
-Version: 2026-07-18 00:13:04
+Version: 2026-07-18 10:57:42
 
 You can contact me by e-mail at ola@hallengren.com.
 
@@ -133,7 +133,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-07-18 00:13:04                                                               //--
+  --// Version: 2026-07-18 10:57:42                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -493,7 +493,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-07-18 00:13:04                                                               //--
+  --// Version: 2026-07-18 10:57:42                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -4922,7 +4922,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-07-18 00:13:04                                                               //--
+  --// Version: 2026-07-18 10:57:42                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -6891,7 +6891,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-07-18 00:13:04                                                               //--
+  --// Version: 2026-07-18 10:57:42                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -7105,6 +7105,17 @@ BEGIN
                        IsIncremental bit,
                        IsIndex bit,
                        PRIMARY KEY (ObjectID, StatisticsID))
+
+  DROP TABLE IF EXISTS #ExistingObjects
+
+  CREATE TABLE #ExistingObjects (SchemaName nvarchar(max) COLLATE DATABASE_DEFAULT,
+                                 ObjectName nvarchar(max) COLLATE DATABASE_DEFAULT)
+
+  DROP TABLE IF EXISTS #ExistingIndexes
+
+  CREATE TABLE #ExistingIndexes (SchemaName nvarchar(max) COLLATE DATABASE_DEFAULT,
+                                 ObjectName nvarchar(max) COLLATE DATABASE_DEFAULT,
+                                 IndexName nvarchar(max) COLLATE DATABASE_DEFAULT)
 
   DECLARE @tmpResumableOperations TABLE (ObjectID int NOT NULL,
                                          IndexID int NOT NULL,
@@ -8546,6 +8557,11 @@ BEGIN
           SET @CurrentCommand += ' AND EXISTS(SELECT * FROM #SelectedIndexes SelectedIndexes WHERE @ParamDatabaseName LIKE REPLACE(REPLACE(SelectedIndexes.DatabaseName,''['',''[[]''),''_'',''[_]'') COLLATE ' + @Collation + ' AND schemas.[name] LIKE REPLACE(REPLACE(SelectedIndexes.SchemaName,''['',''[[]''),''_'',''[_]'') COLLATE ' + @Collation + ' AND objects.[name] LIKE REPLACE(REPLACE(SelectedIndexes.ObjectName,''['',''[[]''),''_'',''[_]'') COLLATE ' + @Collation + ' AND SelectedIndexes.Selected = 1)'
         END
 
+        IF @Indexes IS NOT NULL AND EXISTS(SELECT * FROM @SelectedIndexes WHERE Selected = 0 AND IndexName = '%')
+        BEGIN
+          SET @CurrentCommand += ' AND NOT EXISTS(SELECT * FROM #SelectedIndexes SelectedIndexes WHERE @ParamDatabaseName LIKE REPLACE(REPLACE(SelectedIndexes.DatabaseName,''['',''[[]''),''_'',''[_]'') COLLATE ' + @Collation + ' AND schemas.[name] LIKE REPLACE(REPLACE(SelectedIndexes.SchemaName,''['',''[[]''),''_'',''[_]'') COLLATE ' + @Collation + ' AND objects.[name] LIKE REPLACE(REPLACE(SelectedIndexes.ObjectName,''['',''[[]''),''_'',''[_]'') COLLATE ' + @Collation + ' AND SelectedIndexes.IndexName = ''%'' AND SelectedIndexes.Selected = 0)'
+        END
+
         INSERT INTO #Objects (ObjectID, SchemaID, SchemaName, ObjectName, ObjectType, IsMemoryOptimized, HasClusteredColumnstore, IsClusteredIndexComputed, IsClusteredIndexDisabled)
         EXECUTE @CurrentDatabase_sp_executesql @stmt = @CurrentCommand, @params = N'@ParamDatabaseName nvarchar(max)', @ParamDatabaseName = @CurrentDatabaseName
         SET @Error = @@ERROR
@@ -8898,6 +8914,38 @@ BEGIN
         UPDATE tmpIndexesStatistics
         SET [Order] = RowNumber
 
+        SET @CurrentCommand = 'SELECT schemas.[name] AS SchemaName, objects.[name] AS ObjectName'
+                            + ' FROM sys.objects objects'
+                            + ' INNER JOIN sys.schemas schemas ON objects.[schema_id] = schemas.[schema_id]'
+                            + ' WHERE objects.[type] IN(''U'',''V'')'
+                            + ' AND EXISTS(SELECT * FROM #SelectedIndexes SelectedIndexes'
+                            + ' WHERE SelectedIndexes.DatabaseName = @ParamDatabaseName'
+                            + ' AND SelectedIndexes.SchemaName NOT LIKE ''%[%]%'''
+                            + ' AND SelectedIndexes.ObjectName NOT LIKE ''%[%]%'''
+                            + ' AND schemas.[name] = SelectedIndexes.SchemaName COLLATE ' + @Collation
+                            + ' AND objects.[name] = SelectedIndexes.ObjectName COLLATE ' + @Collation + ')'
+
+        INSERT INTO #ExistingObjects (SchemaName, ObjectName)
+        EXECUTE @CurrentDatabase_sp_executesql @stmt = @CurrentCommand, @params = N'@ParamDatabaseName nvarchar(max)', @ParamDatabaseName = @CurrentDatabaseName
+
+        SET @CurrentCommand = 'SELECT schemas.[name] AS SchemaName, objects.[name] AS ObjectName, [Names].[name] AS IndexName'
+                            + ' FROM sys.objects objects'
+                            + ' INNER JOIN sys.schemas schemas ON objects.[schema_id] = schemas.[schema_id]'
+                            + ' CROSS APPLY (SELECT indexes.[name] FROM sys.indexes indexes WHERE indexes.[object_id] = objects.[object_id] AND indexes.[type] <> 0'
+                            + ' UNION SELECT stats.[name] FROM sys.stats stats WHERE stats.[object_id] = objects.[object_id]) [Names]'
+                            + ' WHERE objects.[type] IN(''U'',''V'')'
+                            + ' AND EXISTS(SELECT * FROM #SelectedIndexes SelectedIndexes'
+                            + ' WHERE SelectedIndexes.DatabaseName = @ParamDatabaseName'
+                            + ' AND SelectedIndexes.SchemaName NOT LIKE ''%[%]%'''
+                            + ' AND SelectedIndexes.ObjectName NOT LIKE ''%[%]%'''
+                            + ' AND SelectedIndexes.IndexName NOT LIKE ''%[%]%'''
+                            + ' AND schemas.[name] = SelectedIndexes.SchemaName COLLATE ' + @Collation
+                            + ' AND objects.[name] = SelectedIndexes.ObjectName COLLATE ' + @Collation
+                            + ' AND [Names].[name] = SelectedIndexes.IndexName COLLATE ' + @Collation + ')'
+
+        INSERT INTO #ExistingIndexes (SchemaName, ObjectName, IndexName)
+        EXECUTE @CurrentDatabase_sp_executesql @stmt = @CurrentCommand, @params = N'@ParamDatabaseName nvarchar(max)', @ParamDatabaseName = @CurrentDatabaseName
+
         SELECT @ErrorMessage = STRING_AGG(CAST(QUOTENAME(DatabaseName) AS nvarchar(max)) + '.' + QUOTENAME(SchemaName) + '.' + QUOTENAME(ObjectName), ', ')
                                WITHIN GROUP (ORDER BY DatabaseName ASC, SchemaName ASC, ObjectName ASC)
         FROM @SelectedIndexes SelectedIndexes
@@ -8905,7 +8953,7 @@ BEGIN
         AND SchemaName NOT LIKE '%[%]%'
         AND ObjectName NOT LIKE '%[%]%'
         AND IndexName LIKE '%[%]%'
-        AND NOT EXISTS (SELECT * FROM #Objects WHERE SchemaName = SelectedIndexes.SchemaName AND ObjectName = SelectedIndexes.ObjectName)
+        AND NOT EXISTS (SELECT * FROM #ExistingObjects WHERE SchemaName = SelectedIndexes.SchemaName AND ObjectName = SelectedIndexes.ObjectName)
 
         IF @ErrorMessage IS NOT NULL
         BEGIN
@@ -8921,7 +8969,7 @@ BEGIN
         AND SchemaName NOT LIKE '%[%]%'
         AND ObjectName NOT LIKE '%[%]%'
         AND IndexName NOT LIKE '%[%]%'
-        AND NOT EXISTS (SELECT * FROM #Indexes Indexes INNER JOIN #Objects Objects ON Indexes.ObjectID = Objects.ObjectID WHERE Objects.SchemaName = SelectedIndexes.SchemaName AND Objects.ObjectName = SelectedIndexes.ObjectName AND Indexes.IndexName = SelectedIndexes.IndexName)
+        AND NOT EXISTS (SELECT * FROM #ExistingIndexes WHERE SchemaName = SelectedIndexes.SchemaName AND ObjectName = SelectedIndexes.ObjectName AND IndexName = SelectedIndexes.IndexName)
 
         IF @ErrorMessage IS NOT NULL
         BEGIN
@@ -9661,6 +9709,8 @@ BEGIN
     TRUNCATE TABLE #Objects
     TRUNCATE TABLE #Indexes
     TRUNCATE TABLE #Stats
+    TRUNCATE TABLE #ExistingObjects
+    TRUNCATE TABLE #ExistingIndexes
     DELETE FROM @tmpResumableOperations
     DELETE FROM @IncrementalStatsProperties
 
