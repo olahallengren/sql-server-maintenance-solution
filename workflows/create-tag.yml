@@ -1,0 +1,56 @@
+name: Create tag from version header
+
+# Runs every time you push/merge a commit to main. It reads the version
+# timestamp out of the script header and creates a matching, immutable Git tag.
+# Because your header timestamp includes the time down to the second, every
+# release gets a unique tag - even several releases on the same day - and a
+# quiet stretch with no commits simply produces no tags.
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - MaintenanceSolution.sql   # only run when this file actually changes
+
+permissions:
+  contents: write        # allow the workflow to create and push a tag
+
+jobs:
+  tag:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0     # full history so existing tags are visible
+
+      - name: Read version from header and create tag
+        run: |
+          set -euo pipefail
+
+          # 1. Pull the "YYYY-MM-DD HH:MM:SS" timestamp out of the header.
+          VERSION=$(grep -m1 -oP '(?<=--// Version: )\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}' MaintenanceSolution.sql || true)
+
+          if [ -z "$VERSION" ]; then
+            echo "No version line found in MaintenanceSolution.sql - nothing to tag."
+            exit 0
+          fi
+
+          # 2. Turn it into a valid tag name.
+          #    Tags cannot contain spaces or colons, so strip the separators:
+          #    "2026-07-16 23:38:29"  ->  "20260716_233829"
+          TAG=$(echo "$VERSION" | sed 's/[-:]//g; s/ /_/')
+          echo "Version in header : $VERSION"
+          echo "Tag name          : $TAG"
+
+          # 3. If that tag already exists, do nothing (safe to re-run).
+          if git ls-remote --exit-code --tags origin "refs/tags/$TAG" >/dev/null 2>&1; then
+            echo "Tag $TAG already exists - skipping."
+            exit 0
+          fi
+
+          # 4. Create the tag on this commit and push it.
+          git tag "$TAG"
+          git push origin "refs/tags/$TAG"
+          echo "Created tag $TAG"
