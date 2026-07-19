@@ -31,16 +31,10 @@ jobs:
         run: |
           set -u
 
-          # Upload order: components first, MaintenanceSolution.sql last,
-          # so the most-downloaded file only changes once everything else
-          # is already current.
+          # Upload order: components first, MaintenanceSolution.sql last, so the most-downloaded file only changes once everything else is already current.
           FILES="CommandLog.sql Queue.sql QueueDatabase.sql CommandExecute.sql DatabaseBackup.sql DatabaseIntegrityCheck.sql IndexOptimize.sql MaintenanceSolution.sql"
 
-          # Explicit FTPS (AUTH TLS) on port 21 - the same protocol settings
-          # as in your FTP client. verify-certificate is off because the
-          # server is addressed by IP (185.116.236.159): certificates are
-          # issued for host names, so the name check cannot succeed against
-          # an IP. The connection itself is still fully encrypted.
+          # Explicit FTPS (AUTH TLS) on port 21
           SETTINGS="set ftp:ssl-force true; set ftp:ssl-protect-data true; set ssl:verify-certificate false; set net:max-retries 2; set net:timeout 60"
 
           run_lftp () {
