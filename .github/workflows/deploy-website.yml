@@ -42,8 +42,8 @@ jobs:
           }
 
           # Two-phase upload.
-          # Phase 1 uploads ALL files under temporary names - the slow, interruptible part - while the live site stays completely untouched.
-          # Phase 2 renames the temp files into place, in order.
+          # Phase 1 uploads ALL files under temporary names.
+          # Phase 2 renames the temp files into place.
           UPLOAD=""
           for f in $FILES; do
             UPLOAD="$UPLOAD put $f -o $REMOTE_DIR/$f.tmp;"
