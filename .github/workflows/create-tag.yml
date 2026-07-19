@@ -2,9 +2,6 @@ name: Create tag from version header
 
 # Runs every time you push/merge a commit to main. It reads the version
 # timestamp out of the script header and creates a matching, immutable Git tag.
-# Because your header timestamp includes the time down to the second, every
-# release gets a unique tag - even several releases on the same day - and a
-# quiet stretch with no commits simply produces no tags.
 
 on:
   push:
