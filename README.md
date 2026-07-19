@@ -47,7 +47,7 @@ A copy of the stored procedure documentation is also available in this repositor
 [SQL Server bug badge]:https://img.shields.io/github/issues/olahallengren/sql-server-maintenance-solution/SQL%20Server%20Bug.svg
 [feature request badge]:https://img.shields.io/github/issues/olahallengren/sql-server-maintenance-solution/Feature%20Request.svg
 
-[licence]:https://github.com/olahallengren/sql-server-maintenance-solution/blob/master/LICENSE
+[licence]:/LICENSE
 [stars]:https://github.com/olahallengren/sql-server-maintenance-solution/stargazers
 [forks]:https://github.com/olahallengren/sql-server-maintenance-solution/network
 [issues]:https://github.com/olahallengren/sql-server-maintenance-solution/issues
