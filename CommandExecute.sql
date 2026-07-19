@@ -38,7 +38,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-07-18 10:57:42                                                               //--
+  --// Version: 2026-07-19 16:57:12                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -81,19 +81,19 @@ BEGIN
   IF NOT (SELECT uses_ansi_nulls FROM sys.sql_modules WHERE [object_id] = @@PROCID) = 1
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'ANSI_NULLS has to be set to ON for the stored procedure.', 16, 1
+    VALUES('ANSI_NULLS has to be set to ON for the stored procedure.', 16, 1)
   END
 
   IF NOT (SELECT uses_quoted_identifier FROM sys.sql_modules WHERE [object_id] = @@PROCID) = 1
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'QUOTED_IDENTIFIER has to be set to ON for the stored procedure.', 16, 1
+    VALUES('QUOTED_IDENTIFIER has to be set to ON for the stored procedure.', 16, 1)
   END
 
   IF @LogToTable = 'Y' AND NOT EXISTS (SELECT * FROM sys.objects objects INNER JOIN sys.schemas schemas ON objects.[schema_id] = schemas.[schema_id] WHERE objects.[type] = 'U' AND schemas.[name] = 'dbo' AND objects.[name] = 'CommandLog')
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The table CommandLog is missing. Download https://ola.hallengren.com/scripts/CommandLog.sql.', 16, 1
+    VALUES('The table CommandLog is missing. Download https://ola.hallengren.com/scripts/CommandLog.sql.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -103,55 +103,55 @@ BEGIN
   IF @DatabaseContext IS NULL OR NOT EXISTS (SELECT * FROM sys.databases WHERE name = @DatabaseContext)
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @DatabaseContext is not supported.', 16, 1
+    VALUES('The value for the parameter @DatabaseContext is not supported.', 16, 1)
   END
 
   IF @Command IS NULL OR @Command = ''
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @Command is not supported.', 16, 1
+    VALUES('The value for the parameter @Command is not supported.', 16, 1)
   END
 
   IF @CommandType IS NULL OR @CommandType = '' OR LEN(@CommandType) > 60
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @CommandType is not supported.', 16, 1
+    VALUES('The value for the parameter @CommandType is not supported.', 16, 1)
   END
 
   IF @Mode NOT IN(1,2) OR @Mode IS NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @Mode is not supported.', 16, 1
+    VALUES('The value for the parameter @Mode is not supported.', 16, 1)
   END
 
   IF (@EncryptionKey IS NULL AND @EncryptionKeyPlaceholder IS NOT NULL) OR (@EncryptionKey IS NOT NULL AND @EncryptionKeyPlaceholder IS NULL)
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The parameters @EncryptionKey and @EncryptionKeyPlaceholder must be specified together.', 16, 1
+    VALUES('The parameters @EncryptionKey and @EncryptionKeyPlaceholder must be specified together.', 16, 1)
   END
 
   IF @LockMessageSeverity NOT IN(10,16) OR @LockMessageSeverity IS NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @LockMessageSeverity is not supported.', 16, 1
+    VALUES('The value for the parameter @LockMessageSeverity is not supported.', 16, 1)
   END
 
   IF LEN(@ExecuteAsUser) > 128
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @ExecuteAsUser is not supported.', 16, 1
+    VALUES('The value for the parameter @ExecuteAsUser is not supported.', 16, 1)
   END
 
   IF @LogToTable NOT IN('Y','N') OR @LogToTable IS NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @LogToTable is not supported.', 16, 1
+    VALUES('The value for the parameter @LogToTable is not supported.', 16, 1)
   END
 
   IF @Execute NOT IN('Y','N') OR @Execute IS NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @Execute is not supported.', 16, 1
+    VALUES('The value for the parameter @Execute is not supported.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------

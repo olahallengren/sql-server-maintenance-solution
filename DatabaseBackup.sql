@@ -94,7 +94,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-07-18 10:57:42                                                               //--
+  --// Version: 2026-07-19 16:57:12                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -108,7 +108,20 @@ BEGIN
   DECLARE @SchemaName nvarchar(max) = OBJECT_SCHEMA_NAME(@@PROCID)
   DECLARE @ObjectName nvarchar(max) = OBJECT_NAME(@@PROCID)
   DECLARE @VersionTimestamp nvarchar(max) = SUBSTRING(OBJECT_DEFINITION(@@PROCID),CHARINDEX('--// Version: ',OBJECT_DEFINITION(@@PROCID)) + LEN('--// Version: ') + 1, 19)
-  DECLARE @Parameters nvarchar(max)
+
+  DECLARE @Parameters TABLE (ID int IDENTITY PRIMARY KEY,
+                             [Name] nvarchar(max) NOT NULL,
+                             ValueNvarchar nvarchar(max),
+                             ValueInt int,
+                             ValueDatetime datetime2)
+
+  DECLARE @ParametersString nvarchar(max)
+  DECLARE @CurrentParameterName nvarchar(max)
+  DECLARE @CurrentParameterValueNvarchar nvarchar(max)
+  DECLARE @CurrentParameterValueInt int
+  DECLARE @CurrentParameterValueDatetime datetime2
+  DECLARE @CurrentParameterDelimiter nvarchar(max)
+  DECLARE @CurrentParameterMessage nvarchar(max)
 
   DECLARE @HostPlatform nvarchar(max)
   DECLARE @ContainedAvailabilityGroupListenerConnection bit = 0
@@ -324,82 +337,85 @@ BEGIN
   --// Log initial information                                                                    //--
   ----------------------------------------------------------------------------------------------------
 
-  SET @Parameters = '@Databases = ' + ISNULL('''' + REPLACE(@Databases,'''','''''') + '''','NULL')
-  SET @Parameters += ', @Directory = ' + ISNULL('''' + REPLACE(@Directory,'''','''''') + '''','NULL')
-  SET @Parameters += ', @BackupType = ' + ISNULL('''' + REPLACE(@BackupType,'''','''''') + '''','NULL')
-  SET @Parameters += ', @Verify = ' + ISNULL('''' + REPLACE(@Verify,'''','''''') + '''','NULL')
-  SET @Parameters += ', @CleanupTime = ' + ISNULL(CAST(@CleanupTime AS nvarchar(max)),'NULL')
-  SET @Parameters += ', @CleanupMode = ' + ISNULL('''' + REPLACE(@CleanupMode,'''','''''') + '''','NULL')
-  SET @Parameters += ', @Compress = ' + ISNULL('''' + REPLACE(@Compress,'''','''''') + '''','NULL')
-  SET @Parameters += ', @CompressionAlgorithm = ' + ISNULL('''' + REPLACE(@CompressionAlgorithm,'''','''''') + '''','NULL')
-  SET @Parameters += ', @CompressionLevel = ' + ISNULL('''' + REPLACE(@CompressionLevel,'''','''''') + '''','NULL')
-  SET @Parameters += ', @CopyOnly = ' + ISNULL('''' + REPLACE(@CopyOnly,'''','''''') + '''','NULL')
-  SET @Parameters += ', @ChangeBackupType = ' + ISNULL('''' + REPLACE(@ChangeBackupType,'''','''''') + '''','NULL')
-  SET @Parameters += ', @BackupSoftware = ' + ISNULL('''' + REPLACE(@BackupSoftware,'''','''''') + '''','NULL')
-  SET @Parameters += ', @Checksum = ' + ISNULL('''' + REPLACE(@Checksum,'''','''''') + '''','NULL')
-  SET @Parameters += ', @BlockSize = ' + ISNULL(CAST(@BlockSize AS nvarchar(max)),'NULL')
-  SET @Parameters += ', @BufferCount = ' + ISNULL(CAST(@BufferCount AS nvarchar(max)),'NULL')
-  SET @Parameters += ', @MaxTransferSize = ' + ISNULL(CAST(@MaxTransferSize AS nvarchar(max)),'NULL')
-  SET @Parameters += ', @NumberOfFiles = ' + ISNULL(CAST(@NumberOfFiles AS nvarchar(max)),'NULL')
-  SET @Parameters += ', @MinBackupSizeForMultipleFiles = ' + ISNULL(CAST(@MinBackupSizeForMultipleFiles AS nvarchar(max)),'NULL')
-  SET @Parameters += ', @MaxFileSize = ' + ISNULL(CAST(@MaxFileSize AS nvarchar(max)),'NULL')
-  SET @Parameters += ', @CompressionLevelNumeric = ' + ISNULL(CAST(@CompressionLevelNumeric AS nvarchar(max)),'NULL')
-  SET @Parameters += ', @Description = ' + ISNULL('''' + REPLACE(@Description,'''','''''') + '''','NULL')
-  SET @Parameters += ', @BackupSetName = ' + ISNULL('''' + REPLACE(@BackupSetName,'''','''''') + '''','NULL')
-  SET @Parameters += ', @Threads = ' + ISNULL(CAST(@Threads AS nvarchar(max)),'NULL')
-  SET @Parameters += ', @Throttle = ' + ISNULL(CAST(@Throttle AS nvarchar(max)),'NULL')
-  SET @Parameters += ', @Encrypt = ' + ISNULL('''' + REPLACE(@Encrypt,'''','''''') + '''','NULL')
-  SET @Parameters += ', @EncryptionAlgorithm = ' + ISNULL('''' + REPLACE(@EncryptionAlgorithm,'''','''''') + '''','NULL')
-  SET @Parameters += ', @ServerCertificate = ' + ISNULL('''' + REPLACE(@ServerCertificate,'''','''''') + '''','NULL')
-  SET @Parameters += ', @ServerAsymmetricKey = ' + ISNULL('''' + REPLACE(@ServerAsymmetricKey,'''','''''') + '''','NULL')
-  SET @Parameters += ', @EncryptionKey = ' + ISNULL('''' + @EncryptionKeyMasked + '''','NULL')
-  SET @Parameters += ', @ReadWriteFileGroups = ' + ISNULL('''' + REPLACE(@ReadWriteFileGroups,'''','''''') + '''','NULL')
-  SET @Parameters += ', @OverrideBackupPreference = ' + ISNULL('''' + REPLACE(@OverrideBackupPreference,'''','''''') + '''','NULL')
-  SET @Parameters += ', @NoRecovery = ' + ISNULL('''' + REPLACE(@NoRecovery,'''','''''') + '''','NULL')
-  SET @Parameters += ', @URL = ' + ISNULL('''' + REPLACE(@URL,'''','''''') + '''','NULL')
-  SET @Parameters += ', @Credential = ' + ISNULL('''' + REPLACE(@Credential,'''','''''') + '''','NULL')
-  SET @Parameters += ', @MirrorDirectory = ' + ISNULL('''' + REPLACE(@MirrorDirectory,'''','''''') + '''','NULL')
-  SET @Parameters += ', @MirrorCleanupTime = ' + ISNULL(CAST(@MirrorCleanupTime AS nvarchar(max)),'NULL')
-  SET @Parameters += ', @MirrorCleanupMode = ' + ISNULL('''' + REPLACE(@MirrorCleanupMode,'''','''''') + '''','NULL')
-  SET @Parameters += ', @MirrorURL = ' + ISNULL('''' + REPLACE(@MirrorURL,'''','''''') + '''','NULL')
-  SET @Parameters += ', @AvailabilityGroups = ' + ISNULL('''' + REPLACE(@AvailabilityGroups,'''','''''') + '''','NULL')
-  SET @Parameters += ', @Updateability = ' + ISNULL('''' + REPLACE(@Updateability,'''','''''') + '''','NULL')
-  SET @Parameters += ', @AdaptiveCompression = ' + ISNULL('''' + REPLACE(@AdaptiveCompression,'''','''''') + '''','NULL')
-  SET @Parameters += ', @MinModificationLevel = ' + ISNULL(CAST(@MinModificationLevel AS nvarchar(max)),'NULL')
-  SET @Parameters += ', @MinDatabaseSizeForDifferentialBackup = ' + ISNULL(CAST(@MinDatabaseSizeForDifferentialBackup AS nvarchar(max)),'NULL')
-  SET @Parameters += ', @MinLogSizeSinceLastLogBackup = ' + ISNULL(CAST(@MinLogSizeSinceLastLogBackup AS nvarchar(max)),'NULL')
-  SET @Parameters += ', @MinTimeSinceLastLogBackup = ' + ISNULL(CAST(@MinTimeSinceLastLogBackup AS nvarchar(max)),'NULL')
-  SET @Parameters += ', @DataDomainBoostHost = ' + ISNULL('''' + REPLACE(@DataDomainBoostHost,'''','''''') + '''','NULL')
-  SET @Parameters += ', @DataDomainBoostUser = ' + ISNULL('''' + REPLACE(@DataDomainBoostUser,'''','''''') + '''','NULL')
-  SET @Parameters += ', @DataDomainBoostDevicePath = ' + ISNULL('''' + REPLACE(@DataDomainBoostDevicePath,'''','''''') + '''','NULL')
-  SET @Parameters += ', @DataDomainBoostLockboxPath = ' + ISNULL('''' + REPLACE(@DataDomainBoostLockboxPath,'''','''''') + '''','NULL')
-  SET @Parameters += ', @DataDomainBoostNoOutputTable = ' + ISNULL('''' + REPLACE(@DataDomainBoostNoOutputTable,'''','''''') + '''','NULL')
-  SET @Parameters += ', @DirectoryStructure = ' + ISNULL('''' + REPLACE(@DirectoryStructure,'''','''''') + '''','NULL')
-  SET @Parameters += ', @AvailabilityGroupDirectoryStructure = ' + ISNULL('''' + REPLACE(@AvailabilityGroupDirectoryStructure,'''','''''') + '''','NULL')
-  SET @Parameters += ', @DirectoryStructureCase = ' + ISNULL('''' + REPLACE(@DirectoryStructureCase,'''','''''') + '''','NULL')
-  SET @Parameters += ', @FileName = ' + ISNULL('''' + REPLACE(@FileName,'''','''''') + '''','NULL')
-  SET @Parameters += ', @AvailabilityGroupFileName = ' + ISNULL('''' + REPLACE(@AvailabilityGroupFileName,'''','''''') + '''','NULL')
-  SET @Parameters += ', @FileNameCase = ' + ISNULL('''' + REPLACE(@FileNameCase,'''','''''') + '''','NULL')
-  SET @Parameters += ', @TokenTimezone = ' + ISNULL('''' + REPLACE(@TokenTimezone,'''','''''') + '''','NULL')
-  SET @Parameters += ', @FileExtensionFull = ' + ISNULL('''' + REPLACE(@FileExtensionFull,'''','''''') + '''','NULL')
-  SET @Parameters += ', @FileExtensionDiff = ' + ISNULL('''' + REPLACE(@FileExtensionDiff,'''','''''') + '''','NULL')
-  SET @Parameters += ', @FileExtensionLog = ' + ISNULL('''' + REPLACE(@FileExtensionLog,'''','''''') + '''','NULL')
-  SET @Parameters += ', @Init = ' + ISNULL('''' + REPLACE(@Init,'''','''''') + '''','NULL')
-  SET @Parameters += ', @Format = ' + ISNULL('''' + REPLACE(@Format,'''','''''') + '''','NULL')
-  SET @Parameters += ', @ObjectLevelRecoveryMap = ' + ISNULL('''' + REPLACE(@ObjectLevelRecoveryMap,'''','''''') + '''','NULL')
-  SET @Parameters += ', @ExcludeLogShippedFromLogBackup = ' + ISNULL('''' + REPLACE(@ExcludeLogShippedFromLogBackup,'''','''''') + '''','NULL')
-  SET @Parameters += ', @ExcludeSeedingFromLogBackup = ' + ISNULL('''' + REPLACE(@ExcludeSeedingFromLogBackup,'''','''''') + '''','NULL')
-  SET @Parameters += ', @DirectoryCheck = ' + ISNULL('''' + REPLACE(@DirectoryCheck,'''','''''') + '''','NULL')
-  SET @Parameters += ', @BackupOptions = ' + ISNULL('''' + REPLACE(@BackupOptions,'''','''''') + '''','NULL')
-  SET @Parameters += ', @Stats = ' + ISNULL(CAST(@Stats AS nvarchar(max)),'NULL')
-  SET @Parameters += ', @ExpireDate = ' + ISNULL('''' + CONVERT(nvarchar(max), @ExpireDate, 21) + '''','NULL')
-  SET @Parameters += ', @RetainDays = ' + ISNULL(CAST(@RetainDays AS nvarchar(max)),'NULL')
-  SET @Parameters += ', @AllowNonCopyOnlyBackupsOnForwarder = ' + ISNULL('''' + REPLACE(@AllowNonCopyOnlyBackupsOnForwarder,'''','''''') + '''','NULL')
-  SET @Parameters += ', @StringDelimiter = ' + ISNULL('''' + REPLACE(@StringDelimiter,'''','''''') + '''','NULL')
-  SET @Parameters += ', @DatabaseOrder = ' + ISNULL('''' + REPLACE(@DatabaseOrder,'''','''''') + '''','NULL')
-  SET @Parameters += ', @DatabasesInParallel = ' + ISNULL('''' + REPLACE(@DatabasesInParallel,'''','''''') + '''','NULL')
-  SET @Parameters += ', @LogToTable = ' + ISNULL('''' + REPLACE(@LogToTable,'''','''''') + '''','NULL')
-  SET @Parameters += ', @Execute = ' + ISNULL('''' + REPLACE(@Execute,'''','''''') + '''','NULL')
+  INSERT INTO @Parameters ([Name], ValueNvarchar) VALUES('@Databases', @Databases)
+  INSERT INTO @Parameters ([Name], ValueNvarchar) VALUES('@Directory', @Directory)
+  INSERT INTO @Parameters ([Name], ValueNvarchar) VALUES('@BackupType', @BackupType)
+  INSERT INTO @Parameters ([Name], ValueNvarchar) VALUES('@Verify', @Verify)
+  INSERT INTO @Parameters ([Name], ValueInt) VALUES('@CleanupTime', @CleanupTime)
+  INSERT INTO @Parameters ([Name], ValueNvarchar) VALUES('@CleanupMode', @CleanupMode)
+  INSERT INTO @Parameters ([Name], ValueNvarchar) VALUES('@Compress', @Compress)
+  INSERT INTO @Parameters ([Name], ValueNvarchar) VALUES('@CompressionAlgorithm', @CompressionAlgorithm)
+  INSERT INTO @Parameters ([Name], ValueNvarchar) VALUES('@CompressionLevel', @CompressionLevel)
+  INSERT INTO @Parameters ([Name], ValueNvarchar) VALUES('@CopyOnly', @CopyOnly)
+  INSERT INTO @Parameters ([Name], ValueNvarchar) VALUES('@ChangeBackupType', @ChangeBackupType)
+  INSERT INTO @Parameters ([Name], ValueNvarchar) VALUES('@BackupSoftware', @BackupSoftware)
+  INSERT INTO @Parameters ([Name], ValueNvarchar) VALUES('@Checksum', @Checksum)
+  INSERT INTO @Parameters ([Name], ValueInt) VALUES('@BlockSize', @BlockSize)
+  INSERT INTO @Parameters ([Name], ValueInt) VALUES('@BufferCount', @BufferCount)
+  INSERT INTO @Parameters ([Name], ValueInt) VALUES('@MaxTransferSize', @MaxTransferSize)
+  INSERT INTO @Parameters ([Name], ValueInt) VALUES('@NumberOfFiles', @NumberOfFiles)
+  INSERT INTO @Parameters ([Name], ValueInt) VALUES('@MinBackupSizeForMultipleFiles', @MinBackupSizeForMultipleFiles)
+  INSERT INTO @Parameters ([Name], ValueInt) VALUES('@MaxFileSize', @MaxFileSize)
+  INSERT INTO @Parameters ([Name], ValueInt) VALUES('@CompressionLevelNumeric', @CompressionLevelNumeric)
+  INSERT INTO @Parameters ([Name], ValueNvarchar) VALUES('@Description', @Description)
+  INSERT INTO @Parameters ([Name], ValueNvarchar) VALUES('@BackupSetName', @BackupSetName)
+  INSERT INTO @Parameters ([Name], ValueInt) VALUES('@Threads', @Threads)
+  INSERT INTO @Parameters ([Name], ValueInt) VALUES('@Throttle', @Throttle)
+  INSERT INTO @Parameters ([Name], ValueNvarchar) VALUES('@Encrypt', @Encrypt)
+  INSERT INTO @Parameters ([Name], ValueNvarchar) VALUES('@EncryptionAlgorithm', @EncryptionAlgorithm)
+  INSERT INTO @Parameters ([Name], ValueNvarchar) VALUES('@ServerCertificate', @ServerCertificate)
+  INSERT INTO @Parameters ([Name], ValueNvarchar) VALUES('@ServerAsymmetricKey', @ServerAsymmetricKey)
+  INSERT INTO @Parameters ([Name], ValueNvarchar) VALUES('@EncryptionKey', @EncryptionKeyMasked)
+  INSERT INTO @Parameters ([Name], ValueNvarchar) VALUES('@ReadWriteFileGroups', @ReadWriteFileGroups)
+  INSERT INTO @Parameters ([Name], ValueNvarchar) VALUES('@OverrideBackupPreference', @OverrideBackupPreference)
+  INSERT INTO @Parameters ([Name], ValueNvarchar) VALUES('@NoRecovery', @NoRecovery)
+  INSERT INTO @Parameters ([Name], ValueNvarchar) VALUES('@URL', @URL)
+  INSERT INTO @Parameters ([Name], ValueNvarchar) VALUES('@Credential', @Credential)
+  INSERT INTO @Parameters ([Name], ValueNvarchar) VALUES('@MirrorDirectory', @MirrorDirectory)
+  INSERT INTO @Parameters ([Name], ValueInt) VALUES('@MirrorCleanupTime', @MirrorCleanupTime)
+  INSERT INTO @Parameters ([Name], ValueNvarchar) VALUES('@MirrorCleanupMode', @MirrorCleanupMode)
+  INSERT INTO @Parameters ([Name], ValueNvarchar) VALUES('@MirrorURL', @MirrorURL)
+  INSERT INTO @Parameters ([Name], ValueNvarchar) VALUES('@AvailabilityGroups', @AvailabilityGroups)
+  INSERT INTO @Parameters ([Name], ValueNvarchar) VALUES('@Updateability', @Updateability)
+  INSERT INTO @Parameters ([Name], ValueNvarchar) VALUES('@AdaptiveCompression', @AdaptiveCompression)
+  INSERT INTO @Parameters ([Name], ValueInt) VALUES('@MinModificationLevel', @MinModificationLevel)
+  INSERT INTO @Parameters ([Name], ValueInt) VALUES('@MinDatabaseSizeForDifferentialBackup', @MinDatabaseSizeForDifferentialBackup)
+  INSERT INTO @Parameters ([Name], ValueInt) VALUES('@MinLogSizeSinceLastLogBackup', @MinLogSizeSinceLastLogBackup)
+  INSERT INTO @Parameters ([Name], ValueInt) VALUES('@MinTimeSinceLastLogBackup', @MinTimeSinceLastLogBackup)
+  INSERT INTO @Parameters ([Name], ValueNvarchar) VALUES('@DataDomainBoostHost', @DataDomainBoostHost)
+  INSERT INTO @Parameters ([Name], ValueNvarchar) VALUES('@DataDomainBoostUser', @DataDomainBoostUser)
+  INSERT INTO @Parameters ([Name], ValueNvarchar) VALUES('@DataDomainBoostDevicePath', @DataDomainBoostDevicePath)
+  INSERT INTO @Parameters ([Name], ValueNvarchar) VALUES('@DataDomainBoostLockboxPath', @DataDomainBoostLockboxPath)
+  INSERT INTO @Parameters ([Name], ValueNvarchar) VALUES('@DataDomainBoostNoOutputTable', @DataDomainBoostNoOutputTable)
+  INSERT INTO @Parameters ([Name], ValueNvarchar) VALUES('@DirectoryStructure', @DirectoryStructure)
+  INSERT INTO @Parameters ([Name], ValueNvarchar) VALUES('@AvailabilityGroupDirectoryStructure', @AvailabilityGroupDirectoryStructure)
+  INSERT INTO @Parameters ([Name], ValueNvarchar) VALUES('@DirectoryStructureCase', @DirectoryStructureCase)
+  INSERT INTO @Parameters ([Name], ValueNvarchar) VALUES('@FileName', @FileName)
+  INSERT INTO @Parameters ([Name], ValueNvarchar) VALUES('@AvailabilityGroupFileName', @AvailabilityGroupFileName)
+  INSERT INTO @Parameters ([Name], ValueNvarchar) VALUES('@FileNameCase', @FileNameCase)
+  INSERT INTO @Parameters ([Name], ValueNvarchar) VALUES('@TokenTimezone', @TokenTimezone)
+  INSERT INTO @Parameters ([Name], ValueNvarchar) VALUES('@FileExtensionFull', @FileExtensionFull)
+  INSERT INTO @Parameters ([Name], ValueNvarchar) VALUES('@FileExtensionDiff', @FileExtensionDiff)
+  INSERT INTO @Parameters ([Name], ValueNvarchar) VALUES('@FileExtensionLog', @FileExtensionLog)
+  INSERT INTO @Parameters ([Name], ValueNvarchar) VALUES('@Init', @Init)
+  INSERT INTO @Parameters ([Name], ValueNvarchar) VALUES('@Format', @Format)
+  INSERT INTO @Parameters ([Name], ValueNvarchar) VALUES('@ObjectLevelRecoveryMap', @ObjectLevelRecoveryMap)
+  INSERT INTO @Parameters ([Name], ValueNvarchar) VALUES('@ExcludeLogShippedFromLogBackup', @ExcludeLogShippedFromLogBackup)
+  INSERT INTO @Parameters ([Name], ValueNvarchar) VALUES('@ExcludeSeedingFromLogBackup', @ExcludeSeedingFromLogBackup)
+  INSERT INTO @Parameters ([Name], ValueNvarchar) VALUES('@DirectoryCheck', @DirectoryCheck)
+  INSERT INTO @Parameters ([Name], ValueNvarchar) VALUES('@BackupOptions', @BackupOptions)
+  INSERT INTO @Parameters ([Name], ValueInt) VALUES('@Stats', @Stats)
+  INSERT INTO @Parameters ([Name], ValueDatetime) VALUES('@ExpireDate', @ExpireDate)
+  INSERT INTO @Parameters ([Name], ValueInt) VALUES('@RetainDays', @RetainDays)
+  INSERT INTO @Parameters ([Name], ValueNvarchar) VALUES('@AllowNonCopyOnlyBackupsOnForwarder', @AllowNonCopyOnlyBackupsOnForwarder)
+  INSERT INTO @Parameters ([Name], ValueNvarchar) VALUES('@StringDelimiter', @StringDelimiter)
+  INSERT INTO @Parameters ([Name], ValueNvarchar) VALUES('@DatabaseOrder', @DatabaseOrder)
+  INSERT INTO @Parameters ([Name], ValueNvarchar) VALUES('@DatabasesInParallel', @DatabasesInParallel)
+  INSERT INTO @Parameters ([Name], ValueNvarchar) VALUES('@LogToTable', @LogToTable)
+  INSERT INTO @Parameters ([Name], ValueNvarchar) VALUES('@Execute', @Execute)
+
+  SELECT @ParametersString = STRING_AGG(CAST([Name] + ' = ' + CASE WHEN ValueNvarchar IS NOT NULL THEN '''' + REPLACE(ValueNvarchar,'''','''''') + '''' WHEN ValueInt IS NOT NULL THEN CAST(ValueInt AS nvarchar(max)) WHEN ValueDatetime IS NOT NULL THEN '''' + CONVERT(nvarchar(max), ValueDatetime, 21) + '''' ELSE 'NULL' END AS nvarchar(max)), ', ') WITHIN GROUP (ORDER BY [ID] ASC)
+  FROM @Parameters
 
   SET @StartMessage = 'Date and time: ' + CONVERT(nvarchar(max),@StartTime,120)
   RAISERROR('%s',10,1,@StartMessage) WITH NOWAIT
@@ -431,10 +447,10 @@ BEGIN
     RAISERROR('%s',10,1,@StartMessage) WITH NOWAIT
   END
 
-  SET @StartMessage = 'Procedure: ' + QUOTENAME(DB_NAME()) + '.' + QUOTENAME(@SchemaName) + '.' + QUOTENAME(@ObjectName)
+  SET @StartMessage = 'Database: ' + QUOTENAME(DB_NAME())
   RAISERROR('%s',10,1,@StartMessage) WITH NOWAIT
 
-  SET @StartMessage = 'Parameters: ' + @Parameters
+  SET @StartMessage = 'Procedure: ' + QUOTENAME(@SchemaName) + '.' + QUOTENAME(@ObjectName)
   RAISERROR('%s',10,1,@StartMessage) WITH NOWAIT
 
   SET @StartMessage = 'Version: ' + @VersionTimestamp
@@ -442,6 +458,32 @@ BEGIN
 
   SET @StartMessage = 'Source: https://ola.hallengren.com'
   RAISERROR('%s',10,1,@StartMessage) WITH NOWAIT
+  RAISERROR(@EmptyLine,10,1) WITH NOWAIT
+
+  SET @StartMessage = 'Command:'
+  RAISERROR('%s',10,1,@StartMessage) WITH NOWAIT
+
+  SET @StartMessage = 'EXECUTE ' + QUOTENAME(@SchemaName) + '.' + QUOTENAME(@ObjectName)
+  RAISERROR('%s',10,1,@StartMessage) WITH NOWAIT
+
+  DECLARE ParameterCursor CURSOR LOCAL FAST_FORWARD FOR SELECT [Name], ValueNvarchar, ValueInt, ValueDatetime, CASE WHEN [ID] = MAX([ID]) OVER() THEN '' ELSE ',' END FROM @Parameters ORDER BY [ID] ASC
+
+  OPEN ParameterCursor
+
+  FETCH ParameterCursor INTO @CurrentParameterName, @CurrentParameterValueNvarchar, @CurrentParameterValueInt, @CurrentParameterValueDatetime, @CurrentParameterDelimiter
+
+  WHILE @@FETCH_STATUS = 0
+  BEGIN
+    SET @CurrentParameterMessage = @CurrentParameterName + ' = ' + CASE WHEN @CurrentParameterValueNvarchar IS NOT NULL THEN '''' + REPLACE(@CurrentParameterValueNvarchar,'''','''''') + '''' WHEN @CurrentParameterValueInt IS NOT NULL THEN CAST(@CurrentParameterValueInt AS nvarchar(max)) WHEN @CurrentParameterValueDatetime IS NOT NULL THEN '''' + CONVERT(nvarchar(max), @CurrentParameterValueDatetime, 21) + '''' ELSE 'NULL' END + @CurrentParameterDelimiter
+
+    RAISERROR('%s',10,1,@CurrentParameterMessage) WITH NOWAIT
+
+    FETCH NEXT FROM ParameterCursor INTO @CurrentParameterName, @CurrentParameterValueNvarchar, @CurrentParameterValueInt, @CurrentParameterValueDatetime, @CurrentParameterDelimiter
+  END
+
+  CLOSE ParameterCursor
+
+  DEALLOCATE ParameterCursor
 
   RAISERROR(@EmptyLine,10,1) WITH NOWAIT
 
@@ -452,55 +494,55 @@ BEGIN
   IF NOT (SELECT uses_ansi_nulls FROM sys.sql_modules WHERE [object_id] = @@PROCID) = 1
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'ANSI_NULLS has to be set to ON for the stored procedure.', 16, 1
+    VALUES('ANSI_NULLS has to be set to ON for the stored procedure.', 16, 1)
   END
 
   IF NOT (SELECT uses_quoted_identifier FROM sys.sql_modules WHERE [object_id] = @@PROCID) = 1
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'QUOTED_IDENTIFIER has to be set to ON for the stored procedure.', 16, 1
+    VALUES('QUOTED_IDENTIFIER has to be set to ON for the stored procedure.', 16, 1)
   END
 
   IF NOT EXISTS (SELECT * FROM sys.objects objects INNER JOIN sys.schemas schemas ON objects.[schema_id] = schemas.[schema_id] WHERE objects.[type] = 'P' AND schemas.[name] = 'dbo' AND objects.[name] = 'CommandExecute')
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The stored procedure CommandExecute is missing. Download https://ola.hallengren.com/scripts/CommandExecute.sql.', 16, 1
+    VALUES('The stored procedure CommandExecute is missing. Download https://ola.hallengren.com/scripts/CommandExecute.sql.', 16, 1)
   END
 
   IF EXISTS (SELECT * FROM sys.objects objects INNER JOIN sys.schemas schemas ON objects.[schema_id] = schemas.[schema_id] WHERE objects.[type] = 'P' AND schemas.[name] = 'dbo' AND objects.[name] = 'CommandExecute' AND OBJECT_DEFINITION(objects.[object_id]) NOT LIKE '%@EncryptionKeyPlaceholder%')
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The stored procedure CommandExecute needs to be updated. Download https://ola.hallengren.com/scripts/CommandExecute.sql.', 16, 1
+    VALUES('The stored procedure CommandExecute needs to be updated. Download https://ola.hallengren.com/scripts/CommandExecute.sql.', 16, 1)
   END
 
   IF @LogToTable = 'Y' AND NOT EXISTS (SELECT * FROM sys.objects objects INNER JOIN sys.schemas schemas ON objects.[schema_id] = schemas.[schema_id] WHERE objects.[type] = 'U' AND schemas.[name] = 'dbo' AND objects.[name] = 'CommandLog')
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The table CommandLog is missing. Download https://ola.hallengren.com/scripts/CommandLog.sql.', 16, 1
+    VALUES('The table CommandLog is missing. Download https://ola.hallengren.com/scripts/CommandLog.sql.', 16, 1)
   END
 
   IF @DatabasesInParallel = 'Y' AND NOT EXISTS (SELECT * FROM sys.objects objects INNER JOIN sys.schemas schemas ON objects.[schema_id] = schemas.[schema_id] WHERE objects.[type] = 'U' AND schemas.[name] = 'dbo' AND objects.[name] = 'Queue')
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The table Queue is missing. Download https://ola.hallengren.com/scripts/Queue.sql.', 16, 1
+    VALUES('The table Queue is missing. Download https://ola.hallengren.com/scripts/Queue.sql.', 16, 1)
   END
 
   IF @DatabasesInParallel = 'Y' AND NOT EXISTS (SELECT * FROM sys.objects objects INNER JOIN sys.schemas schemas ON objects.[schema_id] = schemas.[schema_id] WHERE objects.[type] = 'U' AND schemas.[name] = 'dbo' AND objects.[name] = 'QueueDatabase')
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The table QueueDatabase is missing. Download https://ola.hallengren.com/scripts/QueueDatabase.sql.', 16, 1
+    VALUES('The table QueueDatabase is missing. Download https://ola.hallengren.com/scripts/QueueDatabase.sql.', 16, 1)
   END
 
   IF @@TRANCOUNT <> 0
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The transaction count is not 0.', 16, 1
+    VALUES('The transaction count is not 0.', 16, 1)
   END
 
   IF @AmazonRDS = 1
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The stored procedure DatabaseBackup is not supported on Amazon RDS.', 16, 1
+    VALUES('The stored procedure DatabaseBackup is not supported on Amazon RDS.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -624,7 +666,7 @@ BEGIN
   IF @Databases IS NOT NULL AND (NOT EXISTS(SELECT * FROM @SelectedDatabases) OR EXISTS(SELECT * FROM @SelectedDatabases WHERE DatabaseName IS NULL OR DATALENGTH(DatabaseName) = 0))
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @Databases is not supported.', 16, 1
+    VALUES('The value for the parameter @Databases is not supported.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -719,19 +761,19 @@ BEGIN
   IF @AvailabilityGroups IS NOT NULL AND (NOT EXISTS(SELECT * FROM @SelectedAvailabilityGroups) OR EXISTS(SELECT * FROM @SelectedAvailabilityGroups WHERE AvailabilityGroupName IS NULL OR AvailabilityGroupName = '') OR @IsHadrEnabled = 0)
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @AvailabilityGroups is not supported.', 16, 1
+    VALUES('The value for the parameter @AvailabilityGroups is not supported.', 16, 1)
   END
 
   IF (@Databases IS NULL AND @AvailabilityGroups IS NULL)
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'You need to specify one of the parameters @Databases and @AvailabilityGroups.', 16, 2
+    VALUES('You need to specify one of the parameters @Databases and @AvailabilityGroups.', 16, 2)
   END
 
   IF (@Databases IS NOT NULL AND @AvailabilityGroups IS NOT NULL)
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'You can only specify one of the parameters @Databases and @AvailabilityGroups.', 16, 3
+    VALUES('You can only specify one of the parameters @Databases and @AvailabilityGroups.', 16, 3)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -747,7 +789,7 @@ BEGIN
   IF @ErrorMessage IS NOT NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The names of the following databases are not supported: ' + @ErrorMessage + '.', 16, 1
+    VALUES('The names of the following databases are not supported: ' + @ErrorMessage + '.', 16, 1)
   END
 
   SELECT @ErrorMessage = STRING_AGG(CAST(QUOTENAME(DatabaseName) AS nvarchar(max)), ', ')
@@ -760,7 +802,7 @@ BEGIN
   IF @ErrorMessage IS NOT NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The names of the following databases are not unique in the file system: ' + @ErrorMessage + '.', 16, 1
+    VALUES('The names of the following databases are not unique in the file system: ' + @ErrorMessage + '.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -785,7 +827,7 @@ BEGIN
     ELSE
     BEGIN
       INSERT INTO @Directories (ID, DirectoryPath, Mirror, Completed)
-      SELECT 1, @DefaultDirectory, 0, 0
+      VALUES(1, @DefaultDirectory, 0, 0)
     END
   END
 
@@ -858,43 +900,43 @@ BEGIN
   IF EXISTS (SELECT * FROM @Directories WHERE Mirror = 0 AND (NOT (DirectoryPath LIKE '_:' OR DirectoryPath LIKE '_:\%' OR DirectoryPath LIKE '\\%\%' OR (DirectoryPath LIKE '/%' AND @HostPlatform = 'Linux') OR DirectoryPath = 'NUL') OR DirectoryPath IS NULL OR LEFT(DirectoryPath,1) = ' ' OR RIGHT(DirectoryPath,1) = ' '))
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @Directory is not supported.', 16, 1
+    VALUES('The value for the parameter @Directory is not supported.', 16, 1)
   END
 
   IF EXISTS (SELECT * FROM @Directories GROUP BY DirectoryPath HAVING COUNT(*) <> 1)
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The same directory has been specified multiple times in the parameters @Directory and @MirrorDirectory.', 16, 2
+    VALUES('The same directory has been specified multiple times in the parameters @Directory and @MirrorDirectory.', 16, 2)
   END
 
   IF (SELECT COUNT(*) FROM @Directories WHERE Mirror = 0) <> (SELECT COUNT(*) FROM @Directories WHERE Mirror = 1) AND (SELECT COUNT(*) FROM @Directories WHERE Mirror = 1) > 0
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The number of directories for the parameters @Directory and @MirrorDirectory has to be the same.', 16, 3
+    VALUES('The number of directories for the parameters @Directory and @MirrorDirectory has to be the same.', 16, 3)
   END
 
   IF (@Directory IS NOT NULL AND @EngineEdition = 8) OR (@Directory IS NOT NULL AND @BackupSoftware = 'DATA_DOMAIN_BOOST')
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @Directory is not supported.', 16, 4
+    VALUES('The value for the parameter @Directory is not supported.', 16, 4)
   END
 
   IF EXISTS (SELECT * FROM @Directories WHERE Mirror = 0 AND DirectoryPath = 'NUL') AND EXISTS(SELECT * FROM @Directories WHERE Mirror = 0 AND DirectoryPath <> 'NUL')
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @Directory is not supported.', 16, 5
+    VALUES('The value for the parameter @Directory is not supported.', 16, 5)
   END
 
   IF EXISTS (SELECT * FROM @Directories WHERE Mirror = 0 AND DirectoryPath = 'NUL') AND EXISTS(SELECT * FROM @Directories WHERE Mirror = 1)
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'Mirrored backup is not supported when backing up to NUL.', 16, 6
+    VALUES('Mirrored backup is not supported when backing up to NUL.', 16, 6)
   END
 
   IF EXISTS (SELECT * FROM @Directories WHERE Mirror = 0 AND DirectoryPath = 'NUL') AND @BackupSoftware IS NOT NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'Backup to NUL is only supported with SQL Server native backups.', 16, 7
+    VALUES('Backup to NUL is only supported with SQL Server native backups.', 16, 7)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -902,31 +944,31 @@ BEGIN
   IF EXISTS(SELECT * FROM @Directories WHERE Mirror = 1 AND (NOT (DirectoryPath LIKE '_:' OR DirectoryPath LIKE '_:\%' OR DirectoryPath LIKE '\\%\%' OR (DirectoryPath LIKE '/%' AND @HostPlatform = 'Linux')) OR DirectoryPath IS NULL OR LEFT(DirectoryPath,1) = ' ' OR RIGHT(DirectoryPath,1) = ' '))
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @MirrorDirectory is not supported.', 16, 1
+    VALUES('The value for the parameter @MirrorDirectory is not supported.', 16, 1)
   END
 
   IF @BackupSoftware IN('SQLBACKUP','SQLSAFE') AND (SELECT COUNT(*) FROM @Directories WHERE Mirror = 1) > 1
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @MirrorDirectory is not supported.', 16, 2
+    VALUES('The value for the parameter @MirrorDirectory is not supported.', 16, 2)
   END
 
   IF @MirrorDirectory IS NOT NULL AND @EngineEdition = 8
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @MirrorDirectory is not supported.', 16, 3
+    VALUES('The value for the parameter @MirrorDirectory is not supported.', 16, 3)
   END
 
   IF @MirrorDirectory IS NOT NULL AND @BackupSoftware = 'DATA_DOMAIN_BOOST'
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @MirrorDirectory is not supported.', 16, 4
+    VALUES('The value for the parameter @MirrorDirectory is not supported.', 16, 4)
   END
 
   IF (@BackupSoftware IS NULL AND EXISTS(SELECT * FROM @Directories WHERE Mirror = 1) AND @EngineEdition <> 3)
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @MirrorDirectory is not supported. Mirrored backup to disk is only available in Enterprise and Developer Edition.', 16, 5
+    VALUES('The value for the parameter @MirrorDirectory is not supported. Mirrored backup to disk is only available in Enterprise and Developer Edition.', 16, 5)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -956,7 +998,7 @@ BEGIN
       IF NOT EXISTS (SELECT * FROM @DirectoryInfo WHERE FileExists = 0 AND FileIsADirectory = 1 AND ParentDirectoryExists = 1)
       BEGIN
         INSERT INTO @Errors ([Message], Severity, [State])
-        SELECT 'The directory ' + @CurrentRootDirectoryPath + ' does not exist.', 16, 1
+        VALUES('The directory ' + @CurrentRootDirectoryPath + ' does not exist.', 16, 1)
       END
 
       UPDATE @Directories
@@ -1037,19 +1079,19 @@ BEGIN
   IF EXISTS(SELECT * FROM @URLs WHERE Mirror = 0 AND NOT (DirectoryPath LIKE 'https://%/%' OR DirectoryPath LIKE 's3://%/%'))
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @URL is not supported.', 16, 1
+    VALUES('The value for the parameter @URL is not supported.', 16, 1)
   END
 
   IF EXISTS (SELECT * FROM @URLs GROUP BY DirectoryPath HAVING COUNT(*) <> 1)
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The same URL has been specified multiple times in the parameters @URL and @MirrorURL.', 16, 2
+    VALUES('The same URL has been specified multiple times in the parameters @URL and @MirrorURL.', 16, 2)
   END
 
   IF (SELECT COUNT(*) FROM @URLs WHERE Mirror = 0) <> (SELECT COUNT(*) FROM @URLs WHERE Mirror = 1) AND (SELECT COUNT(*) FROM @URLs WHERE Mirror = 1) > 0
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The number of URLs for the parameters @URL and @MirrorURL has to be the same.', 16, 3
+    VALUES('The number of URLs for the parameters @URL and @MirrorURL has to be the same.', 16, 3)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -1057,7 +1099,7 @@ BEGIN
   IF EXISTS(SELECT * FROM @URLs WHERE Mirror = 1 AND NOT (DirectoryPath LIKE 'https://%/%' OR DirectoryPath LIKE 's3://%/%'))
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @MirrorURL is not supported.', 16, 1
+    VALUES('The value for the parameter @MirrorURL is not supported.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -1161,7 +1203,7 @@ BEGIN
   IF @BackupType NOT IN ('FULL','DIFF','LOG') OR @BackupType IS NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @BackupType is not supported.', 16, 1
+    VALUES('The value for the parameter @BackupType is not supported.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -1169,7 +1211,7 @@ BEGIN
   IF @EngineEdition = 8 AND NOT (@BackupType = 'FULL' AND @CopyOnly = 'Y')
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'SQL Database Managed Instance only supports COPY_ONLY full backups.', 16, 1
+    VALUES('SQL Database Managed Instance only supports COPY_ONLY full backups.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -1177,25 +1219,25 @@ BEGIN
   IF @Verify NOT IN ('Y','N') OR @Verify IS NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @Verify is not supported.', 16, 1
+    VALUES('The value for the parameter @Verify is not supported.', 16, 1)
   END
 
   IF @BackupSoftware = 'SQLSAFE' AND @Encrypt = 'Y' AND @Verify = 'Y'
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @Verify is not supported. Verify is not supported with encrypted backups with Idera SQL Safe Backup.', 16, 2
+    VALUES('The value for the parameter @Verify is not supported. Verify is not supported with encrypted backups with Idera SQL Safe Backup.', 16, 2)
   END
 
   IF @Verify = 'Y' AND @BackupSoftware = 'DATA_DOMAIN_BOOST'
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @Verify is not supported. Verify is not supported with Data Domain Boost.', 16, 3
+    VALUES('The value for the parameter @Verify is not supported. Verify is not supported with Data Domain Boost.', 16, 3)
   END
 
   IF @Verify = 'Y' AND EXISTS(SELECT * FROM @Directories WHERE DirectoryPath = 'NUL')
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @Verify is not supported. Verify is not supported when backing up to NUL.', 16, 4
+    VALUES('The value for the parameter @Verify is not supported. Verify is not supported when backing up to NUL.', 16, 4)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -1203,37 +1245,37 @@ BEGIN
   IF @CleanupTime < 0
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @CleanupTime is not supported.', 16, 1
+    VALUES('The value for the parameter @CleanupTime is not supported.', 16, 1)
   END
 
   IF @CleanupTime IS NOT NULL AND @URL IS NOT NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @CleanupTime is not supported. Cleanup is not supported on Azure Blob Storage.', 16, 2
+    VALUES('The value for the parameter @CleanupTime is not supported. Cleanup is not supported on Azure Blob Storage.', 16, 2)
   END
 
   IF @CleanupTime IS NOT NULL AND EXISTS(SELECT * FROM @Directories WHERE DirectoryPath = 'NUL')
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @CleanupTime is not supported. Cleanup is not supported when backing up to NUL.', 16, 3
+    VALUES('The value for the parameter @CleanupTime is not supported. Cleanup is not supported when backing up to NUL.', 16, 3)
   END
 
   IF @CleanupTime IS NOT NULL AND ((@DirectoryStructure NOT LIKE '%{DatabaseName}%' OR @DirectoryStructure IS NULL) OR (@IsHadrEnabled = 1 AND (@AvailabilityGroupDirectoryStructure NOT LIKE '%{DatabaseName}%' OR @AvailabilityGroupDirectoryStructure IS NULL)))
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @CleanupTime is not supported. Cleanup is not supported if the token {DatabaseName} is not part of the directory.', 16, 4
+    VALUES('The value for the parameter @CleanupTime is not supported. Cleanup is not supported if the token {DatabaseName} is not part of the directory.', 16, 4)
   END
 
   IF @CleanupTime IS NOT NULL AND ((@DirectoryStructure NOT LIKE '%{BackupType}%' OR @DirectoryStructure IS NULL) OR (@IsHadrEnabled = 1 AND (@AvailabilityGroupDirectoryStructure NOT LIKE '%{BackupType}%' OR @AvailabilityGroupDirectoryStructure IS NULL))) AND (SELECT COUNT(*) FROM (SELECT @FileExtensionFull AS FileExtension UNION SELECT @FileExtensionDiff UNION SELECT @FileExtensionLog) FileExtension) <> 3
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @CleanupTime is not supported. Cleanup is not supported if the token {BackupType} is not part of the directory and the file extensions are not unique.', 16, 5
+    VALUES('The value for the parameter @CleanupTime is not supported. Cleanup is not supported if the token {BackupType} is not part of the directory and the file extensions are not unique.', 16, 5)
   END
 
   IF @CleanupTime IS NOT NULL AND @CopyOnly = 'Y' AND ((@DirectoryStructure NOT LIKE '%{CopyOnly}%' OR @DirectoryStructure IS NULL) OR (@IsHadrEnabled = 1 AND (@AvailabilityGroupDirectoryStructure NOT LIKE '%{CopyOnly}%' OR @AvailabilityGroupDirectoryStructure IS NULL)))
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @CleanupTime is not supported. Cleanup is not supported if the token {CopyOnly} is not part of the directory.', 16, 6
+    VALUES('The value for the parameter @CleanupTime is not supported. Cleanup is not supported if the token {CopyOnly} is not part of the directory.', 16, 6)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -1241,7 +1283,7 @@ BEGIN
   IF @CleanupMode NOT IN('BEFORE_BACKUP','AFTER_BACKUP') OR @CleanupMode IS NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @CleanupMode is not supported.', 16, 1
+    VALUES('The value for the parameter @CleanupMode is not supported.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -1249,26 +1291,26 @@ BEGIN
   IF @Compress NOT IN ('Y','N') OR @Compress IS NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @Compress is not supported.', 16, 1
+    VALUES('The value for the parameter @Compress is not supported.', 16, 1)
   END
 
   IF @Compress = 'Y' AND @BackupSoftware IS NULL
   AND NOT (@EngineEdition IN (3, 8) OR @EditionID IN (-1534726760, -1785266663))
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @Compress is not supported. Backup compression is not supported in this edition of SQL Server.', 16, 2
+    VALUES('The value for the parameter @Compress is not supported. Backup compression is not supported in this edition of SQL Server.', 16, 2)
   END
 
   IF @Compress = 'N' AND @BackupSoftware IN ('LITESPEED','SQLBACKUP','SQLSAFE') AND (@CompressionLevelNumeric IS NULL OR @CompressionLevelNumeric >= 1)
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @Compress is not supported.', 16, 3
+    VALUES('The value for the parameter @Compress is not supported.', 16, 3)
   END
 
   IF @Compress = 'Y' AND @BackupSoftware IN ('LITESPEED','SQLBACKUP','SQLSAFE') AND @CompressionLevelNumeric = 0
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @Compress is not supported.', 16, 4
+    VALUES('The value for the parameter @Compress is not supported.', 16, 4)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -1276,31 +1318,31 @@ BEGIN
   IF @CompressionAlgorithm NOT IN ('MS_XPRESS','QAT_DEFLATE','ZSTD')
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @CompressionAlgorithm is not supported. The allowed values are MS_XPRESS, QAT_DEFLATE and ZSTD.', 16, 1
+    VALUES('The value for the parameter @CompressionAlgorithm is not supported. The allowed values are MS_XPRESS, QAT_DEFLATE and ZSTD.', 16, 1)
   END
 
   IF @CompressionAlgorithm IS NOT NULL AND NOT (@Version >= 16 OR (@EngineEdition = 8 AND @ProductUpdateType = 'Continuous'))
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @CompressionAlgorithm is not supported. Specifying the compression algorithm is only supported in SQL Server 2022 and later.', 16, 2
+    VALUES('The value for the parameter @CompressionAlgorithm is not supported. Specifying the compression algorithm is only supported in SQL Server 2022 and later.', 16, 2)
   END
 
   IF @CompressionAlgorithm = 'QAT_DEFLATE' AND NOT (@EngineEdition IN(2, 3))
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @CompressionAlgorithm is not supported. Setting the compression algorithm to QAT_DEFLATE is only supported in Standard and Enterprise Edition.', 16, 3
+    VALUES('The value for the parameter @CompressionAlgorithm is not supported. Setting the compression algorithm to QAT_DEFLATE is only supported in Standard and Enterprise Edition.', 16, 3)
   END
 
   IF @CompressionAlgorithm = 'ZSTD' AND NOT (@Version >= 17 OR (@EngineEdition = 8 AND @ProductUpdateType = 'Continuous'))
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @CompressionAlgorithm is not supported. Setting the compression algorithm to ZSTD is only supported in SQL Server 2025 and later.', 16, 4
+    VALUES('The value for the parameter @CompressionAlgorithm is not supported. Setting the compression algorithm to ZSTD is only supported in SQL Server 2025 and later.', 16, 4)
   END
 
   IF @CompressionAlgorithm IS NOT NULL AND @BackupSoftware IS NOT NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @CompressionAlgorithm is not supported. Setting the compression algorithm is only supported with SQL Server native backup.', 16, 5
+    VALUES('The value for the parameter @CompressionAlgorithm is not supported. Setting the compression algorithm is only supported with SQL Server native backup.', 16, 5)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -1308,19 +1350,19 @@ BEGIN
   IF @CompressionLevel IS NOT NULL AND @BackupSoftware IS NOT NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @CompressionLevel is not supported. For third-party backup software, use the parameter @CompressionLevelNumeric.', 16, 1
+    VALUES('The value for the parameter @CompressionLevel is not supported. For third-party backup software, use the parameter @CompressionLevelNumeric.', 16, 1)
   END
 
   IF @CompressionLevel NOT IN ('LOW','MEDIUM','HIGH')
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @CompressionLevel is not supported. The supported values are LOW, MEDIUM and HIGH.', 16, 2
+    VALUES('The value for the parameter @CompressionLevel is not supported. The supported values are LOW, MEDIUM and HIGH.', 16, 2)
   END
 
   IF @CompressionLevel IS NOT NULL AND NOT (@Version >= 17 OR (@EngineEdition = 8 AND @ProductUpdateType = 'Continuous'))
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @CompressionLevel is not supported. Setting the compression level is only supported in SQL Server 2025 and later.', 16, 3
+    VALUES('The value for the parameter @CompressionLevel is not supported. Setting the compression level is only supported in SQL Server 2025 and later.', 16, 3)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -1328,7 +1370,7 @@ BEGIN
   IF @CopyOnly NOT IN ('Y','N') OR @CopyOnly IS NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @CopyOnly is not supported.', 16, 1
+    VALUES('The value for the parameter @CopyOnly is not supported.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -1336,13 +1378,13 @@ BEGIN
   IF @ChangeBackupType NOT IN ('Y','N') OR @ChangeBackupType IS NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @ChangeBackupType is not supported.', 16, 1
+    VALUES('The value for the parameter @ChangeBackupType is not supported.', 16, 1)
   END
 
   IF @ChangeBackupType = 'Y' AND NOT @BackupType IN ('DIFF', 'LOG')
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'Setting @ChangeBackupType to ''Y'' is only supported with differential and log backups.', 16, 2
+    VALUES('Setting @ChangeBackupType to ''Y'' is only supported with differential and log backups.', 16, 2)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -1350,37 +1392,37 @@ BEGIN
   IF @BackupSoftware NOT IN ('LITESPEED','SQLBACKUP','SQLSAFE','DATA_DOMAIN_BOOST')
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @BackupSoftware is not supported.', 16, 1
+    VALUES('The value for the parameter @BackupSoftware is not supported.', 16, 1)
   END
 
   IF @BackupSoftware IS NOT NULL AND @HostPlatform = 'Linux'
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @BackupSoftware is not supported. Only native backups are supported on Linux.', 16, 2
+    VALUES('The value for the parameter @BackupSoftware is not supported. Only native backups are supported on Linux.', 16, 2)
   END
 
   IF @BackupSoftware = 'LITESPEED' AND NOT EXISTS (SELECT * FROM [master].sys.objects WHERE [type] = 'X' AND [name] = 'xp_backup_database')
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'LiteSpeed for SQL Server is not installed. Download https://www.quest.com/products/litespeed-for-sql-server/.', 16, 3
+    VALUES('LiteSpeed for SQL Server is not installed. Download https://www.quest.com/products/litespeed-for-sql-server/.', 16, 3)
   END
 
   IF @BackupSoftware = 'SQLBACKUP' AND NOT EXISTS (SELECT * FROM [master].sys.objects WHERE [type] = 'X' AND [name] = 'sqlbackup')
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'Red Gate SQL Backup Pro is not installed. Download https://www.red-gate.com/products/dba/sql-backup/.', 16, 4
+    VALUES('Red Gate SQL Backup Pro is not installed. Download https://www.red-gate.com/products/dba/sql-backup/.', 16, 4)
   END
 
   IF @BackupSoftware = 'SQLSAFE' AND NOT EXISTS (SELECT * FROM [master].sys.objects WHERE [type] = 'X' AND [name] = 'xp_ss_backup')
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'Idera SQL Safe Backup is not installed. Download https://www.idera.com/productssolutions/sqlserver/sqlsafebackup.', 16, 5
+    VALUES('Idera SQL Safe Backup is not installed. Download https://www.idera.com/productssolutions/sqlserver/sqlsafebackup.', 16, 5)
   END
 
   IF @BackupSoftware = 'DATA_DOMAIN_BOOST' AND NOT EXISTS (SELECT * FROM [master].sys.objects WHERE [type] = 'PC' AND [name] = 'emc_run_backup')
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'EMC Data Domain Boost is not installed. Download https://www.emc.com/en-us/data-protection/data-domain.htm.', 16, 6
+    VALUES('EMC Data Domain Boost is not installed. Download https://www.emc.com/en-us/data-protection/data-domain.htm.', 16, 6)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -1388,7 +1430,7 @@ BEGIN
   IF @Checksum NOT IN ('Y','N') OR @Checksum IS NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @Checksum is not supported.', 16, 1
+    VALUES('The value for the parameter @Checksum is not supported.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -1396,31 +1438,31 @@ BEGIN
   IF @BlockSize NOT IN (512,1024,2048,4096,8192,16384,32768,65536)
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @BlockSize is not supported.', 16, 1
+    VALUES('The value for the parameter @BlockSize is not supported.', 16, 1)
   END
 
   IF @BlockSize IS NOT NULL AND @BackupSoftware = 'SQLBACKUP'
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @BlockSize is not supported. This parameter is not supported with Redgate SQL Backup Pro.', 16, 2
+    VALUES('The value for the parameter @BlockSize is not supported. This parameter is not supported with Redgate SQL Backup Pro.', 16, 2)
   END
 
   IF @BlockSize IS NOT NULL AND @BackupSoftware = 'SQLSAFE'
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @BlockSize is not supported. This parameter is not supported with Idera SQL Safe.', 16, 3
+    VALUES('The value for the parameter @BlockSize is not supported. This parameter is not supported with Idera SQL Safe.', 16, 3)
   END
 
   IF @BlockSize IS NOT NULL AND @URL IS NOT NULL AND @Credential IS NOT NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'BLOCKSIZE is not supported when backing up to URL with page blobs. See https://docs.microsoft.com/en-us/sql/relational-databases/backup-restore/sql-server-backup-to-url', 16, 4
+    VALUES('BLOCKSIZE is not supported when backing up to URL with page blobs. See https://docs.microsoft.com/en-us/sql/relational-databases/backup-restore/sql-server-backup-to-url', 16, 4)
   END
 
   IF @BlockSize IS NOT NULL AND @BackupSoftware = 'DATA_DOMAIN_BOOST'
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @BlockSize is not supported. This parameter is not supported with Data Domain Boost.', 16, 5
+    VALUES('The value for the parameter @BlockSize is not supported. This parameter is not supported with Data Domain Boost.', 16, 5)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -1428,19 +1470,19 @@ BEGIN
   IF @BufferCount <= 0
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @BufferCount is not supported.', 16, 1
+    VALUES('The value for the parameter @BufferCount is not supported.', 16, 1)
   END
 
   IF @BufferCount IS NOT NULL AND @BackupSoftware = 'SQLBACKUP'
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @BufferCount is not supported.', 16, 2
+    VALUES('The value for the parameter @BufferCount is not supported.', 16, 2)
   END
 
   IF @BufferCount IS NOT NULL AND @BackupSoftware = 'SQLSAFE'
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @BufferCount is not supported.', 16, 3
+    VALUES('The value for the parameter @BufferCount is not supported.', 16, 3)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -1448,31 +1490,31 @@ BEGIN
   IF @MaxTransferSize < 65536 OR @MaxTransferSize > 20971520
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @MaxTransferSize is not supported.', 16, 1
+    VALUES('The value for the parameter @MaxTransferSize is not supported.', 16, 1)
   END
 
   IF @MaxTransferSize > 1048576 AND @BackupSoftware = 'SQLBACKUP'
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @MaxTransferSize is not supported.', 16, 2
+    VALUES('The value for the parameter @MaxTransferSize is not supported.', 16, 2)
   END
 
   IF @MaxTransferSize IS NOT NULL AND @BackupSoftware = 'SQLSAFE'
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @MaxTransferSize is not supported.', 16, 3
+    VALUES('The value for the parameter @MaxTransferSize is not supported.', 16, 3)
   END
 
   IF @MaxTransferSize IS NOT NULL AND @URL IS NOT NULL AND @Credential IS NOT NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'MAXTRANSFERSIZE is not supported when backing up to URL with page blobs. See https://docs.microsoft.com/en-us/sql/relational-databases/backup-restore/sql-server-backup-to-url', 16, 4
+    VALUES('MAXTRANSFERSIZE is not supported when backing up to URL with page blobs. See https://docs.microsoft.com/en-us/sql/relational-databases/backup-restore/sql-server-backup-to-url', 16, 4)
   END
 
   IF @MaxTransferSize IS NOT NULL AND @BackupSoftware = 'DATA_DOMAIN_BOOST'
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @MaxTransferSize is not supported.', 16, 5
+    VALUES('The value for the parameter @MaxTransferSize is not supported.', 16, 5)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -1480,61 +1522,61 @@ BEGIN
   IF @NumberOfFiles < 1 OR @NumberOfFiles > 64
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @NumberOfFiles is not supported.', 16, 1
+    VALUES('The value for the parameter @NumberOfFiles is not supported.', 16, 1)
   END
 
   IF @NumberOfFiles > 32 AND @BackupSoftware = 'SQLBACKUP'
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @NumberOfFiles is not supported.', 16, 2
+    VALUES('The value for the parameter @NumberOfFiles is not supported.', 16, 2)
   END
 
   IF @NumberOfFiles < (SELECT COUNT(*) FROM @Directories WHERE Mirror = 0)
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @NumberOfFiles is not supported.', 16, 3
+    VALUES('The value for the parameter @NumberOfFiles is not supported.', 16, 3)
   END
 
   IF @NumberOfFiles % (SELECT NULLIF(COUNT(*),0) FROM @Directories WHERE Mirror = 0) > 0
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @NumberOfFiles is not supported.', 16, 4
+    VALUES('The value for the parameter @NumberOfFiles is not supported.', 16, 4)
   END
 
   IF @URL IS NOT NULL AND @Credential IS NOT NULL AND @NumberOfFiles <> 1
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'Backup striping to URL with page blobs is not supported. See https://docs.microsoft.com/en-us/sql/relational-databases/backup-restore/sql-server-backup-to-url', 16, 5
+    VALUES('Backup striping to URL with page blobs is not supported. See https://docs.microsoft.com/en-us/sql/relational-databases/backup-restore/sql-server-backup-to-url', 16, 5)
   END
 
   IF @NumberOfFiles > 1 AND @BackupSoftware IN('SQLBACKUP','SQLSAFE') AND EXISTS(SELECT * FROM @Directories WHERE Mirror = 1)
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @NumberOfFiles is not supported.', 16, 6
+    VALUES('The value for the parameter @NumberOfFiles is not supported.', 16, 6)
   END
 
   IF @NumberOfFiles > 32 AND @BackupSoftware = 'DATA_DOMAIN_BOOST'
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @NumberOfFiles is not supported.', 16, 7
+    VALUES('The value for the parameter @NumberOfFiles is not supported.', 16, 7)
   END
 
   IF @NumberOfFiles < (SELECT COUNT(*) FROM @URLs WHERE Mirror = 0)
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @NumberOfFiles is not supported.', 16, 8
+    VALUES('The value for the parameter @NumberOfFiles is not supported.', 16, 8)
   END
 
   IF @NumberOfFiles % (SELECT NULLIF(COUNT(*),0) FROM @URLs WHERE Mirror = 0) > 0
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @NumberOfFiles is not supported.', 16, 9
+    VALUES('The value for the parameter @NumberOfFiles is not supported.', 16, 9)
   END
 
   IF @NumberOfFiles > 32 AND @URL LIKE 's3%' AND @MirrorURL LIKE 's3%'
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @NumberOfFiles is not supported. The maximum number of files when performing mirrored backups to S3 storage is 32.', 16, 10
+    VALUES('The value for the parameter @NumberOfFiles is not supported. The maximum number of files when performing mirrored backups to S3 storage is 32.', 16, 10)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -1542,13 +1584,13 @@ BEGIN
   IF @MinBackupSizeForMultipleFiles <= 0
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @MinBackupSizeForMultipleFiles is not supported.', 16, 1
+    VALUES('The value for the parameter @MinBackupSizeForMultipleFiles is not supported.', 16, 1)
   END
 
   IF @MinBackupSizeForMultipleFiles IS NOT NULL AND @NumberOfFiles IS NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @MinBackupSizeForMultipleFiles is not supported. This parameter can only be used together with @NumberOfFiles.', 16, 2
+    VALUES('The value for the parameter @MinBackupSizeForMultipleFiles is not supported. This parameter can only be used together with @NumberOfFiles.', 16, 2)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -1556,13 +1598,13 @@ BEGIN
   IF @MaxFileSize <= 0
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @MaxFileSize is not supported.', 16, 1
+    VALUES('The value for the parameter @MaxFileSize is not supported.', 16, 1)
   END
 
   IF @MaxFileSize IS NOT NULL AND @NumberOfFiles IS NOT NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The parameters @MaxFileSize and @NumberOfFiles cannot be used together.', 16, 2
+    VALUES('The parameters @MaxFileSize and @NumberOfFiles cannot be used together.', 16, 2)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -1570,31 +1612,31 @@ BEGIN
   IF (@BackupSoftware IS NULL AND @CompressionLevelNumeric IS NOT NULL)
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @CompressionLevelNumeric is not supported.', 16, 1
+    VALUES('The value for the parameter @CompressionLevelNumeric is not supported.', 16, 1)
   END
 
   IF @BackupSoftware = 'LITESPEED' AND (@CompressionLevelNumeric < 0  OR @CompressionLevelNumeric > 8)
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @CompressionLevelNumeric is not supported.', 16, 2
+    VALUES('The value for the parameter @CompressionLevelNumeric is not supported.', 16, 2)
   END
 
   IF @BackupSoftware = 'SQLBACKUP' AND (@CompressionLevelNumeric < 0 OR @CompressionLevelNumeric > 4)
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @CompressionLevelNumeric is not supported.', 16, 3
+    VALUES('The value for the parameter @CompressionLevelNumeric is not supported.', 16, 3)
   END
 
   IF @BackupSoftware = 'SQLSAFE' AND (@CompressionLevelNumeric < 1 OR @CompressionLevelNumeric > 4)
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @CompressionLevelNumeric is not supported.', 16, 4
+    VALUES('The value for the parameter @CompressionLevelNumeric is not supported.', 16, 4)
   END
 
   IF @CompressionLevelNumeric IS NOT NULL AND @BackupSoftware = 'DATA_DOMAIN_BOOST'
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @CompressionLevelNumeric is not supported.', 16, 5
+    VALUES('The value for the parameter @CompressionLevelNumeric is not supported.', 16, 5)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -1602,25 +1644,25 @@ BEGIN
   IF LEN(@Description) > 255
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @Description is not supported.', 16, 1
+    VALUES('The value for the parameter @Description is not supported.', 16, 1)
   END
 
   IF @BackupSoftware = 'LITESPEED' AND LEN(@Description) > 128
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @Description is not supported.', 16, 2
+    VALUES('The value for the parameter @Description is not supported.', 16, 2)
   END
 
   IF @BackupSoftware = 'DATA_DOMAIN_BOOST' AND LEN(@Description) > 254
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @Description is not supported.', 16, 3
+    VALUES('The value for the parameter @Description is not supported.', 16, 3)
   END
 
   IF @BackupSoftware = 'DATA_DOMAIN_BOOST' AND @Description LIKE '%"%'
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @Description is not supported.', 16, 4
+    VALUES('The value for the parameter @Description is not supported.', 16, 4)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -1628,13 +1670,13 @@ BEGIN
   IF LEN(@BackupSetName) > 128
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @BackupSetName is not supported.', 16, 1
+    VALUES('The value for the parameter @BackupSetName is not supported.', 16, 1)
   END
 
   IF @BackupSoftware = 'DATA_DOMAIN_BOOST' AND @BackupSetName LIKE '%"%'
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @BackupSetName is not supported.', 16, 2
+    VALUES('The value for the parameter @BackupSetName is not supported.', 16, 2)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -1642,25 +1684,25 @@ BEGIN
   IF @Threads IS NOT NULL AND (@BackupSoftware NOT IN('LITESPEED','SQLBACKUP','SQLSAFE') OR @BackupSoftware IS NULL)
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @Threads is not supported.', 16, 1
+    VALUES('The value for the parameter @Threads is not supported.', 16, 1)
   END
 
   IF @BackupSoftware = 'LITESPEED' AND (@Threads < 1 OR @Threads > 32)
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @Threads is not supported.', 16, 2
+    VALUES('The value for the parameter @Threads is not supported.', 16, 2)
   END
 
   IF @BackupSoftware = 'SQLBACKUP' AND (@Threads < 2 OR @Threads > 32)
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @Threads is not supported.', 16, 3
+    VALUES('The value for the parameter @Threads is not supported.', 16, 3)
   END
 
   IF @BackupSoftware = 'SQLSAFE' AND (@Threads < 1 OR @Threads > 64)
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @Threads is not supported.', 16, 4
+    VALUES('The value for the parameter @Threads is not supported.', 16, 4)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -1668,13 +1710,13 @@ BEGIN
   IF @Throttle < 1 OR @Throttle > 100
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @Throttle is not supported.', 16, 1
+    VALUES('The value for the parameter @Throttle is not supported.', 16, 1)
   END
 
   IF @Throttle IS NOT NULL AND (@BackupSoftware NOT IN('LITESPEED') OR @BackupSoftware IS NULL)
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @Throttle is not supported.', 16, 2
+    VALUES('The value for the parameter @Throttle is not supported.', 16, 2)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -1682,19 +1724,19 @@ BEGIN
   IF @Encrypt NOT IN('Y','N') OR @Encrypt IS NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @Encrypt is not supported.', 16, 1
+    VALUES('The value for the parameter @Encrypt is not supported.', 16, 1)
   END
 
   IF @Encrypt = 'Y' AND @BackupSoftware IS NULL AND NOT (@EngineEdition IN(3, 8) OR @EditionID IN(-1534726760, -1785266663))
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @Encrypt is not supported.', 16, 2
+    VALUES('The value for the parameter @Encrypt is not supported.', 16, 2)
   END
 
   IF @Encrypt = 'Y' AND @BackupSoftware = 'DATA_DOMAIN_BOOST'
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @Encrypt is not supported.', 16, 3
+    VALUES('The value for the parameter @Encrypt is not supported.', 16, 3)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -1702,31 +1744,31 @@ BEGIN
   IF @BackupSoftware IS NULL AND @Encrypt = 'Y' AND (@EncryptionAlgorithm NOT IN('AES_128','AES_192','AES_256','TRIPLE_DES_3KEY') OR @EncryptionAlgorithm IS NULL)
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @EncryptionAlgorithm is not supported.', 16, 1
+    VALUES('The value for the parameter @EncryptionAlgorithm is not supported.', 16, 1)
   END
 
   IF @BackupSoftware = 'LITESPEED' AND @Encrypt = 'Y' AND (@EncryptionAlgorithm NOT IN('RC2_40','RC2_56','RC2_112','RC2_128','TRIPLE_DES_3KEY','RC4_128','AES_128','AES_192','AES_256') OR @EncryptionAlgorithm IS NULL)
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @EncryptionAlgorithm is not supported.', 16, 2
+    VALUES('The value for the parameter @EncryptionAlgorithm is not supported.', 16, 2)
   END
 
   IF @BackupSoftware = 'SQLBACKUP' AND @Encrypt = 'Y' AND (@EncryptionAlgorithm NOT IN('AES_128','AES_256') OR @EncryptionAlgorithm IS NULL)
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @EncryptionAlgorithm is not supported.', 16, 3
+    VALUES('The value for the parameter @EncryptionAlgorithm is not supported.', 16, 3)
   END
 
   IF @BackupSoftware = 'SQLSAFE' AND @Encrypt = 'Y' AND (@EncryptionAlgorithm NOT IN('AES_128','AES_256') OR @EncryptionAlgorithm IS NULL)
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @EncryptionAlgorithm is not supported.', 16, 4
+    VALUES('The value for the parameter @EncryptionAlgorithm is not supported.', 16, 4)
   END
 
   IF @EncryptionAlgorithm IS NOT NULL AND @BackupSoftware = 'DATA_DOMAIN_BOOST'
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @EncryptionAlgorithm is not supported.', 16, 5
+    VALUES('The value for the parameter @EncryptionAlgorithm is not supported.', 16, 5)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -1734,25 +1776,25 @@ BEGIN
   IF (NOT (@BackupSoftware IS NULL AND @Encrypt = 'Y') AND @ServerCertificate IS NOT NULL)
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @ServerCertificate is not supported.', 16, 1
+    VALUES('The value for the parameter @ServerCertificate is not supported.', 16, 1)
   END
 
   IF @BackupSoftware IS NULL AND @Encrypt = 'Y' AND @ServerCertificate IS NULL AND @ServerAsymmetricKey IS NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @ServerCertificate is not supported.', 16, 2
+    VALUES('The value for the parameter @ServerCertificate is not supported.', 16, 2)
   END
 
   IF @BackupSoftware IS NULL AND @Encrypt = 'Y' AND @ServerCertificate IS NOT NULL AND @ServerAsymmetricKey IS NOT NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @ServerCertificate is not supported.', 16, 3
+    VALUES('The value for the parameter @ServerCertificate is not supported.', 16, 3)
   END
 
   IF @ServerCertificate IS NOT NULL AND NOT EXISTS(SELECT * FROM master.sys.certificates WHERE name = @ServerCertificate)
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @ServerCertificate is not supported.', 16, 4
+    VALUES('The value for the parameter @ServerCertificate is not supported.', 16, 4)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -1760,25 +1802,25 @@ BEGIN
   IF NOT (@BackupSoftware IS NULL AND @Encrypt = 'Y') AND @ServerAsymmetricKey IS NOT NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @ServerAsymmetricKey is not supported.', 16, 1
+    VALUES('The value for the parameter @ServerAsymmetricKey is not supported.', 16, 1)
   END
 
   IF @BackupSoftware IS NULL AND @Encrypt = 'Y' AND @ServerAsymmetricKey IS NULL AND @ServerCertificate IS NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @ServerAsymmetricKey is not supported.', 16, 2
+    VALUES('The value for the parameter @ServerAsymmetricKey is not supported.', 16, 2)
   END
 
   IF @BackupSoftware IS NULL AND @Encrypt = 'Y' AND @ServerAsymmetricKey IS NOT NULL AND @ServerCertificate IS NOT NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @ServerAsymmetricKey is not supported.', 16, 3
+    VALUES('The value for the parameter @ServerAsymmetricKey is not supported.', 16, 3)
   END
 
   IF @ServerAsymmetricKey IS NOT NULL AND NOT EXISTS(SELECT * FROM master.sys.asymmetric_keys WHERE name = @ServerAsymmetricKey)
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @ServerAsymmetricKey is not supported.', 16, 4
+    VALUES('The value for the parameter @ServerAsymmetricKey is not supported.', 16, 4)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -1786,25 +1828,25 @@ BEGIN
   IF @EncryptionKey IS NOT NULL AND @BackupSoftware IS NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @EncryptionKey is not supported.', 16, 1
+    VALUES('The value for the parameter @EncryptionKey is not supported.', 16, 1)
   END
 
   IF @EncryptionKey IS NOT NULL AND @Encrypt = 'N'
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @EncryptionKey is not supported.', 16, 2
+    VALUES('The value for the parameter @EncryptionKey is not supported.', 16, 2)
   END
 
   IF @EncryptionKey IS NULL AND @Encrypt = 'Y' AND @BackupSoftware IN('LITESPEED','SQLBACKUP','SQLSAFE')
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @EncryptionKey is not supported.', 16, 3
+    VALUES('The value for the parameter @EncryptionKey is not supported.', 16, 3)
   END
 
   IF @EncryptionKey IS NOT NULL AND @BackupSoftware = 'DATA_DOMAIN_BOOST'
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @EncryptionKey is not supported.', 16, 4
+    VALUES('The value for the parameter @EncryptionKey is not supported.', 16, 4)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -1812,13 +1854,13 @@ BEGIN
   IF @ReadWriteFileGroups NOT IN('Y','N') OR @ReadWriteFileGroups IS NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @ReadWriteFileGroups is not supported.', 16, 1
+    VALUES('The value for the parameter @ReadWriteFileGroups is not supported.', 16, 1)
   END
 
   IF @ReadWriteFileGroups = 'Y' AND @BackupType = 'LOG'
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @ReadWriteFileGroups is not supported.', 16, 2
+    VALUES('The value for the parameter @ReadWriteFileGroups is not supported.', 16, 2)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -1826,7 +1868,7 @@ BEGIN
   IF @OverrideBackupPreference NOT IN('Y','N') OR @OverrideBackupPreference IS NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @OverrideBackupPreference is not supported.', 16, 1
+    VALUES('The value for the parameter @OverrideBackupPreference is not supported.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -1834,19 +1876,19 @@ BEGIN
   IF @NoRecovery NOT IN('Y','N') OR @NoRecovery IS NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @NoRecovery is not supported.', 16, 1
+    VALUES('The value for the parameter @NoRecovery is not supported.', 16, 1)
   END
 
   IF @NoRecovery = 'Y' AND @BackupType <> 'LOG'
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @NoRecovery is not supported.', 16, 2
+    VALUES('The value for the parameter @NoRecovery is not supported.', 16, 2)
   END
 
   IF @NoRecovery = 'Y' AND @BackupSoftware = 'SQLSAFE'
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @NoRecovery is not supported.', 16, 3
+    VALUES('The value for the parameter @NoRecovery is not supported.', 16, 3)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -1854,19 +1896,19 @@ BEGIN
   IF @URL IS NOT NULL AND @Directory IS NOT NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @URL is not supported.', 16, 1
+    VALUES('The value for the parameter @URL is not supported.', 16, 1)
   END
 
   IF @URL IS NOT NULL AND @MirrorDirectory IS NOT NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @URL is not supported.', 16, 2
+    VALUES('The value for the parameter @URL is not supported.', 16, 2)
   END
 
   IF @URL IS NOT NULL AND @BackupSoftware IS NOT NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @URL is not supported.', 16, 3
+    VALUES('The value for the parameter @URL is not supported.', 16, 3)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -1874,19 +1916,19 @@ BEGIN
   IF @Credential IS NOT NULL AND @URL IS NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @Credential is not supported.', 16, 1
+    VALUES('The value for the parameter @Credential is not supported.', 16, 1)
   END
 
   IF @URL IS NOT NULL AND @Credential IS NULL AND NOT EXISTS(SELECT * FROM sys.credentials WHERE UPPER(credential_identity) IN('SHARED ACCESS SIGNATURE','MANAGED IDENTITY','S3 ACCESS KEY'))
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @Credential is not supported.', 16, 2
+    VALUES('The value for the parameter @Credential is not supported.', 16, 2)
   END
 
   IF @Credential IS NOT NULL AND NOT EXISTS(SELECT * FROM sys.credentials WHERE name = @Credential)
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @Credential is not supported.', 16, 3
+    VALUES('The value for the parameter @Credential is not supported.', 16, 3)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -1894,13 +1936,13 @@ BEGIN
   IF @MirrorCleanupTime < 0
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @MirrorCleanupTime is not supported.', 16, 1
+    VALUES('The value for the parameter @MirrorCleanupTime is not supported.', 16, 1)
   END
 
   IF @MirrorCleanupTime IS NOT NULL AND @MirrorDirectory IS NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @MirrorCleanupTime is not supported.', 16, 2
+    VALUES('The value for the parameter @MirrorCleanupTime is not supported.', 16, 2)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -1908,7 +1950,7 @@ BEGIN
   IF @MirrorCleanupMode NOT IN('BEFORE_BACKUP','AFTER_BACKUP') OR @MirrorCleanupMode IS NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @MirrorCleanupMode is not supported.', 16, 1
+    VALUES('The value for the parameter @MirrorCleanupMode is not supported.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -1916,25 +1958,25 @@ BEGIN
   IF @MirrorURL IS NOT NULL AND @Directory IS NOT NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @MirrorURL is not supported.', 16, 1
+    VALUES('The value for the parameter @MirrorURL is not supported.', 16, 1)
   END
 
   IF @MirrorURL IS NOT NULL AND @MirrorDirectory IS NOT NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @MirrorURL is not supported.', 16, 2
+    VALUES('The value for the parameter @MirrorURL is not supported.', 16, 2)
   END
 
   IF @MirrorURL IS NOT NULL AND @BackupSoftware IS NOT NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @MirrorURL is not supported.', 16, 3
+    VALUES('The value for the parameter @MirrorURL is not supported.', 16, 3)
   END
 
   IF @MirrorURL IS NOT NULL AND @URL IS NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @MirrorURL is not supported.', 16, 4
+    VALUES('The value for the parameter @MirrorURL is not supported.', 16, 4)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -1942,7 +1984,7 @@ BEGIN
   IF @Updateability NOT IN('READ_ONLY','READ_WRITE','ALL') OR @Updateability IS NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @Updateability is not supported.', 16, 1
+    VALUES('The value for the parameter @Updateability is not supported.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -1950,13 +1992,13 @@ BEGIN
   IF @AdaptiveCompression NOT IN('SIZE','SPEED')
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @AdaptiveCompression is not supported.', 16, 1
+    VALUES('The value for the parameter @AdaptiveCompression is not supported.', 16, 1)
   END
 
   IF @AdaptiveCompression IS NOT NULL AND (@BackupSoftware NOT IN('LITESPEED') OR @BackupSoftware IS NULL)
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @AdaptiveCompression is not supported.', 16, 2
+    VALUES('The value for the parameter @AdaptiveCompression is not supported.', 16, 2)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -1964,19 +2006,19 @@ BEGIN
   IF @MinModificationLevel <= 0 OR @MinModificationLevel > 100
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @MinModificationLevel is not supported.', 16, 1
+    VALUES('The value for the parameter @MinModificationLevel is not supported.', 16, 1)
   END
 
   IF @MinModificationLevel IS NOT NULL AND @ChangeBackupType = 'N'
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The parameter @MinModificationLevel can only be used together with @ChangeBackupType = ''Y''.', 16, 2
+    VALUES('The parameter @MinModificationLevel can only be used together with @ChangeBackupType = ''Y''.', 16, 2)
   END
 
   IF @MinModificationLevel IS NOT NULL AND @BackupType <> 'DIFF'
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The parameter @MinModificationLevel can only be used for differential backups.', 16, 3
+    VALUES('The parameter @MinModificationLevel can only be used for differential backups.', 16, 3)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -1984,13 +2026,13 @@ BEGIN
   IF @MinDatabaseSizeForDifferentialBackup <= 0
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @MinDatabaseSizeForDifferentialBackup is not supported.', 16, 1
+    VALUES('The value for the parameter @MinDatabaseSizeForDifferentialBackup is not supported.', 16, 1)
   END
 
   IF @MinDatabaseSizeForDifferentialBackup IS NOT NULL AND @BackupType <> 'DIFF'
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The parameter @MinDatabaseSizeForDifferentialBackup can only be used for differential backups.', 16, 2
+    VALUES('The parameter @MinDatabaseSizeForDifferentialBackup can only be used for differential backups.', 16, 2)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -1998,7 +2040,7 @@ BEGIN
   IF @MinLogSizeSinceLastLogBackup IS NOT NULL AND @BackupType <> 'LOG'
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @MinLogSizeSinceLastLogBackup is not supported.', 16, 1
+    VALUES('The value for the parameter @MinLogSizeSinceLastLogBackup is not supported.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -2006,7 +2048,7 @@ BEGIN
   IF @MinTimeSinceLastLogBackup IS NOT NULL AND @BackupType <> 'LOG'
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @MinTimeSinceLastLogBackup is not supported.', 16, 1
+    VALUES('The value for the parameter @MinTimeSinceLastLogBackup is not supported.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -2014,7 +2056,7 @@ BEGIN
   IF (@MinTimeSinceLastLogBackup IS NOT NULL AND @MinLogSizeSinceLastLogBackup IS NULL) OR (@MinTimeSinceLastLogBackup IS NULL AND @MinLogSizeSinceLastLogBackup IS NOT NULL)
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The parameters @MinTimeSinceLastLogBackup and @MinLogSizeSinceLastLogBackup can only be used together.', 16, 1
+    VALUES('The parameters @MinTimeSinceLastLogBackup and @MinLogSizeSinceLastLogBackup can only be used together.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -2022,19 +2064,19 @@ BEGIN
   IF @DataDomainBoostHost IS NOT NULL AND (@BackupSoftware <> 'DATA_DOMAIN_BOOST' OR @BackupSoftware IS NULL)
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @DataDomainBoostHost is not supported.', 16, 1
+    VALUES('The value for the parameter @DataDomainBoostHost is not supported.', 16, 1)
   END
 
   IF @DataDomainBoostHost IS NULL AND @BackupSoftware = 'DATA_DOMAIN_BOOST'
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @DataDomainBoostHost is not supported.', 16, 2
+    VALUES('The value for the parameter @DataDomainBoostHost is not supported.', 16, 2)
   END
 
   IF @DataDomainBoostHost LIKE '%"%'
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @DataDomainBoostHost is not supported.', 16, 3
+    VALUES('The value for the parameter @DataDomainBoostHost is not supported.', 16, 3)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -2042,19 +2084,19 @@ BEGIN
   IF @DataDomainBoostUser IS NOT NULL AND (@BackupSoftware <> 'DATA_DOMAIN_BOOST' OR @BackupSoftware IS NULL)
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @DataDomainBoostUser is not supported.', 16, 1
+    VALUES('The value for the parameter @DataDomainBoostUser is not supported.', 16, 1)
   END
 
   IF @DataDomainBoostUser IS NULL AND @BackupSoftware = 'DATA_DOMAIN_BOOST'
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @DataDomainBoostUser is not supported.', 16, 2
+    VALUES('The value for the parameter @DataDomainBoostUser is not supported.', 16, 2)
   END
 
   IF @DataDomainBoostUser LIKE '%"%'
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @DataDomainBoostUser is not supported.', 16, 3
+    VALUES('The value for the parameter @DataDomainBoostUser is not supported.', 16, 3)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -2062,19 +2104,19 @@ BEGIN
   IF @DataDomainBoostDevicePath IS NOT NULL AND (@BackupSoftware <> 'DATA_DOMAIN_BOOST' OR @BackupSoftware IS NULL)
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @DataDomainBoostDevicePath is not supported.', 16, 1
+    VALUES('The value for the parameter @DataDomainBoostDevicePath is not supported.', 16, 1)
   END
 
   IF @DataDomainBoostDevicePath IS NULL AND @BackupSoftware = 'DATA_DOMAIN_BOOST'
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @DataDomainBoostDevicePath is not supported.', 16, 2
+    VALUES('The value for the parameter @DataDomainBoostDevicePath is not supported.', 16, 2)
   END
 
   IF @DataDomainBoostDevicePath LIKE '%"%'
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @DataDomainBoostDevicePath is not supported.', 16, 3
+    VALUES('The value for the parameter @DataDomainBoostDevicePath is not supported.', 16, 3)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -2082,13 +2124,13 @@ BEGIN
   IF @DataDomainBoostLockboxPath IS NOT NULL AND (@BackupSoftware <> 'DATA_DOMAIN_BOOST' OR @BackupSoftware IS NULL)
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @DataDomainBoostLockboxPath is not supported.', 16, 1
+    VALUES('The value for the parameter @DataDomainBoostLockboxPath is not supported.', 16, 1)
   END
 
   IF @DataDomainBoostLockboxPath LIKE '%"%'
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @DataDomainBoostLockboxPath is not supported.', 16, 2
+    VALUES('The value for the parameter @DataDomainBoostLockboxPath is not supported.', 16, 2)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -2096,13 +2138,13 @@ BEGIN
   IF @DataDomainBoostNoOutputTable NOT IN('Y','N') OR @DataDomainBoostNoOutputTable IS NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @DataDomainBoostNoOutputTable is not supported.', 16, 1
+    VALUES('The value for the parameter @DataDomainBoostNoOutputTable is not supported.', 16, 1)
   END
 
   IF @DataDomainBoostNoOutputTable = 'Y' AND (@BackupSoftware <> 'DATA_DOMAIN_BOOST' OR @BackupSoftware IS NULL)
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @DataDomainBoostNoOutputTable is not supported.', 16, 2
+    VALUES('The value for the parameter @DataDomainBoostNoOutputTable is not supported.', 16, 2)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -2110,7 +2152,7 @@ BEGIN
   IF @DirectoryStructure = ''
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @DirectoryStructure is not supported.', 16, 1
+    VALUES('The value for the parameter @DirectoryStructure is not supported.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -2118,7 +2160,7 @@ BEGIN
   IF @AvailabilityGroupDirectoryStructure = ''
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @AvailabilityGroupDirectoryStructure is not supported.', 16, 1
+    VALUES('The value for the parameter @AvailabilityGroupDirectoryStructure is not supported.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -2126,7 +2168,7 @@ BEGIN
   IF @DirectoryStructureCase NOT IN('LOWER','UPPER')
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @DirectoryStructureCase is not supported.', 16, 1
+    VALUES('The value for the parameter @DirectoryStructureCase is not supported.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -2134,37 +2176,37 @@ BEGIN
   IF @FileName IS NULL OR @FileName = ''
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @FileName is not supported.', 16, 1
+    VALUES('The value for the parameter @FileName is not supported.', 16, 1)
   END
 
   IF @FileName NOT LIKE '%.{FileExtension}'
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @FileName is not supported.', 16, 2
+    VALUES('The value for the parameter @FileName is not supported.', 16, 2)
   END
 
   IF (@NumberOfFiles > 1 AND @FileName NOT LIKE '%{FileNumber}%')
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @FileName is not supported.', 16, 3
+    VALUES('The value for the parameter @FileName is not supported.', 16, 3)
   END
 
   IF @FileName LIKE '%{DirectorySeparator}%'
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @FileName is not supported.', 16, 4
+    VALUES('The value for the parameter @FileName is not supported.', 16, 4)
   END
 
   IF @FileName LIKE '%/%'
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @FileName is not supported.', 16, 5
+    VALUES('The value for the parameter @FileName is not supported.', 16, 5)
   END
 
   IF @FileName LIKE '%\%'
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @FileName is not supported.', 16, 6
+    VALUES('The value for the parameter @FileName is not supported.', 16, 6)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -2172,43 +2214,43 @@ BEGIN
   IF (@IsHadrEnabled = 1 AND @AvailabilityGroupFileName IS NULL)
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @AvailabilityGroupFileName is not supported.', 16, 1
+    VALUES('The value for the parameter @AvailabilityGroupFileName is not supported.', 16, 1)
   END
 
   IF @AvailabilityGroupFileName = ''
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @AvailabilityGroupFileName is not supported.', 16, 2
+    VALUES('The value for the parameter @AvailabilityGroupFileName is not supported.', 16, 2)
   END
 
   IF @AvailabilityGroupFileName NOT LIKE '%.{FileExtension}'
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @AvailabilityGroupFileName is not supported.', 16, 3
+    VALUES('The value for the parameter @AvailabilityGroupFileName is not supported.', 16, 3)
   END
 
   IF (@NumberOfFiles > 1 AND @AvailabilityGroupFileName NOT LIKE '%{FileNumber}%')
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @AvailabilityGroupFileName is not supported.', 16, 4
+    VALUES('The value for the parameter @AvailabilityGroupFileName is not supported.', 16, 4)
   END
 
   IF @AvailabilityGroupFileName LIKE '%{DirectorySeparator}%'
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @AvailabilityGroupFileName is not supported.', 16, 5
+    VALUES('The value for the parameter @AvailabilityGroupFileName is not supported.', 16, 5)
   END
 
   IF @AvailabilityGroupFileName LIKE '%/%'
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @AvailabilityGroupFileName is not supported.', 16, 6
+    VALUES('The value for the parameter @AvailabilityGroupFileName is not supported.', 16, 6)
   END
 
   IF @AvailabilityGroupFileName LIKE '%\%'
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @AvailabilityGroupFileName is not supported.', 16, 7
+    VALUES('The value for the parameter @AvailabilityGroupFileName is not supported.', 16, 7)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -2216,7 +2258,7 @@ BEGIN
   IF @FileNameCase NOT IN('LOWER','UPPER')
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @FileNameCase is not supported.', 16, 1
+    VALUES('The value for the parameter @FileNameCase is not supported.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -2224,7 +2266,7 @@ BEGIN
   IF EXISTS (SELECT * FROM (SELECT REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(@DirectoryStructure,'{DirectorySeparator}',''),'{ServerName}',''),'{InstanceName}',''),'{ServiceName}',''),'{ClusterName}',''),'{AvailabilityGroupName}',''),'{DatabaseName}',''),'{BackupType}',''),'{Partial}',''),'{CopyOnly}',''),'{Description}',''),'{BackupSetName}',''),'{Year}',''),'{Month}',''),'{Day}',''),'{Week}',''),'{Weekday}',''),'{Hour}',''),'{Minute}',''),'{Second}',''),'{Millisecond}',''),'{Microsecond}',''),'{MajorVersion}',''),'{MinorVersion}','') AS DirectoryStructure) Temp WHERE DirectoryStructure LIKE '%{%' OR DirectoryStructure LIKE '%}%')
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The parameter @DirectoryStructure contains one or more tokens that are not supported.', 16, 1
+    VALUES('The parameter @DirectoryStructure contains one or more tokens that are not supported.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -2232,7 +2274,7 @@ BEGIN
   IF EXISTS (SELECT * FROM (SELECT REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(@AvailabilityGroupDirectoryStructure,'{DirectorySeparator}',''),'{ServerName}',''),'{InstanceName}',''),'{ServiceName}',''),'{ClusterName}',''),'{AvailabilityGroupName}',''),'{DatabaseName}',''),'{BackupType}',''),'{Partial}',''),'{CopyOnly}',''),'{Description}',''),'{BackupSetName}',''),'{Year}',''),'{Month}',''),'{Day}',''),'{Week}',''),'{Weekday}',''),'{Hour}',''),'{Minute}',''),'{Second}',''),'{Millisecond}',''),'{Microsecond}',''),'{MajorVersion}',''),'{MinorVersion}','') AS AvailabilityGroupDirectoryStructure) Temp WHERE AvailabilityGroupDirectoryStructure LIKE '%{%' OR AvailabilityGroupDirectoryStructure LIKE '%}%')
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The parameter @AvailabilityGroupDirectoryStructure contains one or more tokens that are not supported.', 16, 1
+    VALUES('The parameter @AvailabilityGroupDirectoryStructure contains one or more tokens that are not supported.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -2240,7 +2282,7 @@ BEGIN
   IF EXISTS (SELECT * FROM (SELECT REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(@FileName,'{DirectorySeparator}',''),'{ServerName}',''),'{InstanceName}',''),'{ServiceName}',''),'{ClusterName}',''),'{AvailabilityGroupName}',''),'{DatabaseName}',''),'{BackupType}',''),'{Partial}',''),'{CopyOnly}',''),'{Description}',''),'{BackupSetName}',''),'{Year}',''),'{Month}',''),'{Day}',''),'{Week}',''),'{Weekday}',''),'{Hour}',''),'{Minute}',''),'{Second}',''),'{Millisecond}',''),'{Microsecond}',''),'{FileNumber}',''),'{NumberOfFiles}',''),'{FileExtension}',''),'{MajorVersion}',''),'{MinorVersion}','') AS [FileName]) Temp WHERE [FileName] LIKE '%{%' OR [FileName] LIKE '%}%')
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The parameter @FileName contains one or more tokens that are not supported.', 16, 1
+    VALUES('The parameter @FileName contains one or more tokens that are not supported.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -2248,7 +2290,7 @@ BEGIN
   IF EXISTS (SELECT * FROM (SELECT REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(@AvailabilityGroupFileName,'{DirectorySeparator}',''),'{ServerName}',''),'{InstanceName}',''),'{ServiceName}',''),'{ClusterName}',''),'{AvailabilityGroupName}',''),'{DatabaseName}',''),'{BackupType}',''),'{Partial}',''),'{CopyOnly}',''),'{Description}',''),'{BackupSetName}',''),'{Year}',''),'{Month}',''),'{Day}',''),'{Week}',''),'{Weekday}',''),'{Hour}',''),'{Minute}',''),'{Second}',''),'{Millisecond}',''),'{Microsecond}',''),'{FileNumber}',''),'{NumberOfFiles}',''),'{FileExtension}',''),'{MajorVersion}',''),'{MinorVersion}','') AS AvailabilityGroupFileName) Temp WHERE AvailabilityGroupFileName LIKE '%{%' OR AvailabilityGroupFileName LIKE '%}%')
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The parameter @AvailabilityGroupFileName contains one or more tokens that are not supported.', 16, 1
+    VALUES('The parameter @AvailabilityGroupFileName contains one or more tokens that are not supported.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -2256,7 +2298,7 @@ BEGIN
   IF @TokenTimezone NOT IN('LOCAL','UTC') OR @TokenTimezone IS NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @TokenTimezone is not supported.', 16, 1
+    VALUES('The value for the parameter @TokenTimezone is not supported.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -2264,7 +2306,7 @@ BEGIN
   IF @FileExtensionFull LIKE '%.%'
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @FileExtensionFull is not supported.', 16, 1
+    VALUES('The value for the parameter @FileExtensionFull is not supported.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -2272,7 +2314,7 @@ BEGIN
   IF @FileExtensionDiff LIKE '%.%'
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @FileExtensionDiff is not supported.', 16, 1
+    VALUES('The value for the parameter @FileExtensionDiff is not supported.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -2280,7 +2322,7 @@ BEGIN
   IF @FileExtensionLog LIKE '%.%'
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @FileExtensionLog is not supported.', 16, 1
+    VALUES('The value for the parameter @FileExtensionLog is not supported.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -2288,19 +2330,19 @@ BEGIN
   IF @Init NOT IN('Y','N') OR @Init IS NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @Init is not supported.', 16, 1
+    VALUES('The value for the parameter @Init is not supported.', 16, 1)
   END
 
   IF @Init = 'Y' AND @BackupType = 'LOG'
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @Init is not supported.', 16, 2
+    VALUES('The value for the parameter @Init is not supported.', 16, 2)
   END
 
   IF @Init = 'Y' AND @BackupSoftware = 'DATA_DOMAIN_BOOST'
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @Init is not supported.', 16, 3
+    VALUES('The value for the parameter @Init is not supported.', 16, 3)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -2308,19 +2350,19 @@ BEGIN
   IF @Format NOT IN('Y','N') OR @Format IS NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @Format is not supported.', 16, 1
+    VALUES('The value for the parameter @Format is not supported.', 16, 1)
   END
 
   IF @Format = 'Y' AND @BackupType = 'LOG'
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @Format is not supported.', 16, 2
+    VALUES('The value for the parameter @Format is not supported.', 16, 2)
   END
 
   IF @Format = 'Y' AND @BackupSoftware = 'DATA_DOMAIN_BOOST'
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @Format is not supported.', 16, 3
+    VALUES('The value for the parameter @Format is not supported.', 16, 3)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -2328,25 +2370,25 @@ BEGIN
   IF @ObjectLevelRecoveryMap NOT IN('Y','N') OR @ObjectLevelRecoveryMap IS NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @ObjectLevelRecoveryMap is not supported.', 16, 1
+    VALUES('The value for the parameter @ObjectLevelRecoveryMap is not supported.', 16, 1)
   END
 
   IF @ObjectLevelRecoveryMap = 'Y' AND @BackupSoftware IS NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @ObjectLevelRecoveryMap is not supported.', 16, 2
+    VALUES('The value for the parameter @ObjectLevelRecoveryMap is not supported.', 16, 2)
   END
 
   IF @ObjectLevelRecoveryMap = 'Y' AND @BackupSoftware <> 'LITESPEED'
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @ObjectLevelRecoveryMap is not supported.', 16, 3
+    VALUES('The value for the parameter @ObjectLevelRecoveryMap is not supported.', 16, 3)
   END
 
   IF @ObjectLevelRecoveryMap = 'Y' AND @BackupType = 'LOG'
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @ObjectLevelRecoveryMap is not supported.', 16, 4
+    VALUES('The value for the parameter @ObjectLevelRecoveryMap is not supported.', 16, 4)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -2354,7 +2396,7 @@ BEGIN
   IF @ExcludeLogShippedFromLogBackup NOT IN('Y','N') OR @ExcludeLogShippedFromLogBackup IS NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @ExcludeLogShippedFromLogBackup is not supported.', 16, 1
+    VALUES('The value for the parameter @ExcludeLogShippedFromLogBackup is not supported.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -2362,13 +2404,13 @@ BEGIN
   IF @ExcludeSeedingFromLogBackup NOT IN('Y','N') OR @ExcludeSeedingFromLogBackup IS NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @ExcludeSeedingFromLogBackup is not supported.', 16, 1
+    VALUES('The value for the parameter @ExcludeSeedingFromLogBackup is not supported.', 16, 1)
   END
 
   IF @ExcludeSeedingFromLogBackup = 'Y' AND @BackupType <> 'LOG'
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The parameter @ExcludeSeedingFromLogBackup can only be used for log backups.', 16, 2
+    VALUES('The parameter @ExcludeSeedingFromLogBackup can only be used for log backups.', 16, 2)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -2376,7 +2418,7 @@ BEGIN
   IF @DirectoryCheck NOT IN('Y','N') OR @DirectoryCheck IS NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @DirectoryCheck is not supported.', 16, 1
+    VALUES('The value for the parameter @DirectoryCheck is not supported.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -2384,7 +2426,7 @@ BEGIN
   IF @BackupOptions IS NOT NULL AND @URL IS NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @BackupOptions is not supported.', 16, 1
+    VALUES('The value for the parameter @BackupOptions is not supported.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -2392,7 +2434,7 @@ BEGIN
   IF @Stats <= 0 OR @Stats > 100
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @Stats is not supported.', 16, 1
+    VALUES('The value for the parameter @Stats is not supported.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -2400,7 +2442,7 @@ BEGIN
   IF @ExpireDate IS NOT NULL AND @BackupSoftware <> 'LITESPEED'
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @ExpireDate is not supported.', 16, 1
+    VALUES('The value for the parameter @ExpireDate is not supported.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -2408,13 +2450,13 @@ BEGIN
   IF @RetainDays < 0
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @RetainDays is not supported.', 16, 1
+    VALUES('The value for the parameter @RetainDays is not supported.', 16, 1)
   END
 
   IF @RetainDays IS NOT NULL AND @BackupSoftware <> 'LITESPEED'
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @RetainDays is not supported.', 16, 2
+    VALUES('The value for the parameter @RetainDays is not supported.', 16, 2)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -2422,7 +2464,7 @@ BEGIN
   IF @AllowNonCopyOnlyBackupsOnForwarder NOT IN('Y','N') OR @AllowNonCopyOnlyBackupsOnForwarder IS NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @AllowNonCopyOnlyBackupsOnForwarder is not supported.', 16, 1
+    VALUES('The value for the parameter @AllowNonCopyOnlyBackupsOnForwarder is not supported.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -2430,7 +2472,7 @@ BEGIN
   IF @StringDelimiter IS NULL OR LEN(@StringDelimiter) <> 1
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @StringDelimiter is not supported.', 16, 1
+    VALUES('The value for the parameter @StringDelimiter is not supported.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -2438,13 +2480,13 @@ BEGIN
   IF @DatabaseOrder NOT IN('DATABASE_NAME_ASC','DATABASE_NAME_DESC','DATABASE_SIZE_ASC','DATABASE_SIZE_DESC','LOG_SIZE_SINCE_LAST_LOG_BACKUP_ASC','LOG_SIZE_SINCE_LAST_LOG_BACKUP_DESC')
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @DatabaseOrder is not supported.', 16, 1
+    VALUES('The value for the parameter @DatabaseOrder is not supported.', 16, 1)
   END
 
   IF @DatabaseOrder IS NOT NULL AND @EngineEdition = 5
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @DatabaseOrder is not supported.', 16, 2
+    VALUES('The value for the parameter @DatabaseOrder is not supported.', 16, 2)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -2452,13 +2494,13 @@ BEGIN
   IF @DatabasesInParallel NOT IN('Y','N') OR @DatabasesInParallel IS NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @DatabasesInParallel is not supported.', 16, 1
+    VALUES('The value for the parameter @DatabasesInParallel is not supported.', 16, 1)
   END
 
   IF @DatabasesInParallel = 'Y' AND @EngineEdition = 5
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @DatabasesInParallel is not supported.', 16, 2
+    VALUES('The value for the parameter @DatabasesInParallel is not supported.', 16, 2)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -2466,7 +2508,7 @@ BEGIN
   IF @LogToTable NOT IN('Y','N') OR @LogToTable IS NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @LogToTable is not supported.', 16, 1
+    VALUES('The value for the parameter @LogToTable is not supported.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -2474,7 +2516,7 @@ BEGIN
   IF @Execute NOT IN('Y','N') OR @Execute IS NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @Execute is not supported.', 16, 1
+    VALUES('The value for the parameter @Execute is not supported.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -2482,7 +2524,7 @@ BEGIN
   IF EXISTS(SELECT * FROM @Errors)
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The documentation is available at https://ola.hallengren.com/sql-server-backup.html.', 16, 1
+    VALUES('The documentation is available at https://ola.hallengren.com/sql-server-backup.html.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -2498,7 +2540,7 @@ BEGIN
   IF @ErrorMessage IS NOT NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The following databases in the @Databases parameter do not exist: ' + @ErrorMessage + '.', 10, 1
+    VALUES('The following databases in the @Databases parameter do not exist: ' + @ErrorMessage + '.', 10, 1)
   END
 
   SELECT @ErrorMessage = STRING_AGG(CAST(QUOTENAME(AvailabilityGroupName) AS nvarchar(max)), ', ')
@@ -2510,7 +2552,7 @@ BEGIN
   IF @ErrorMessage IS NOT NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The following availability groups do not exist: ' + @ErrorMessage + '.', 10, 1
+    VALUES('The following availability groups do not exist: ' + @ErrorMessage + '.', 10, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -2520,7 +2562,7 @@ BEGIN
   IF UPPER(@@SERVERNAME) <> UPPER(@ServerName) AND @IsHadrEnabled = 1
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The @@SERVERNAME does not match SERVERPROPERTY(''ServerName''). See ' + CASE WHEN @IsClustered = 0 THEN 'https://docs.microsoft.com/en-us/sql/database-engine/install-windows/rename-a-computer-that-hosts-a-stand-alone-instance-of-sql-server' WHEN @IsClustered = 1 THEN 'https://docs.microsoft.com/en-us/sql/sql-server/failover-clusters/install/rename-a-sql-server-failover-cluster-instance' END + '.', 16, 1
+    VALUES('The @@SERVERNAME does not match SERVERPROPERTY(''ServerName''). See ' + CASE WHEN @IsClustered = 0 THEN 'https://docs.microsoft.com/en-us/sql/database-engine/install-windows/rename-a-computer-that-hosts-a-stand-alone-instance-of-sql-server' WHEN @IsClustered = 1 THEN 'https://docs.microsoft.com/en-us/sql/sql-server/failover-clusters/install/rename-a-sql-server-failover-cluster-instance' END + '.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -2669,7 +2711,7 @@ BEGIN
       FROM dbo.[Queue]
       WHERE SchemaName = @SchemaName
       AND ObjectName = @ObjectName
-      AND [Parameters] = @Parameters
+      AND [Parameters] = @ParametersString
 
       IF @QueueID IS NULL
       BEGIN
@@ -2679,12 +2721,12 @@ BEGIN
         FROM dbo.[Queue] WITH (UPDLOCK, HOLDLOCK)
         WHERE SchemaName = @SchemaName
         AND ObjectName = @ObjectName
-        AND [Parameters] = @Parameters
+        AND [Parameters] = @ParametersString
 
         IF @QueueID IS NULL
         BEGIN
           INSERT INTO dbo.[Queue] (SchemaName, ObjectName, [Parameters])
-          SELECT @SchemaName, @ObjectName, @Parameters
+          VALUES(@SchemaName, @ObjectName, @ParametersString)
 
           SET @QueueID = SCOPE_IDENTITY()
         END
@@ -3161,12 +3203,12 @@ BEGIN
       SET @CurrentDateUTC = SYSUTCDATETIME()
 
       INSERT INTO @CurrentCleanupDates ([Type], CleanupDate)
-      SELECT 'CurrentTime', @CurrentDate
+      VALUES('CurrentTime', @CurrentDate)
 
       IF @CurrentBackupType = 'LOG'
       BEGIN
         INSERT INTO @CurrentCleanupDates ([Type], CleanupDate)
-        SELECT 'LatestBackupTime', @CurrentLatestBackup
+        VALUES('LatestBackupTime', @CurrentLatestBackup)
       END
 
       SELECT @CurrentDirectoryStructure = CASE
@@ -3570,7 +3612,7 @@ BEGIN
           END
 
           INSERT INTO @CurrentFiles ([Type], FilePath, Mirror)
-          SELECT 'DISK', @CurrentFilePath, 0
+          VALUES('DISK', @CurrentFilePath, 0)
 
           SET @CurrentDirectoryPath = NULL
           SET @CurrentFileName = NULL
@@ -3578,7 +3620,7 @@ BEGIN
         END
 
         INSERT INTO @CurrentBackupSet (Mirror, VerifyCompleted)
-        SELECT 0, 0
+        VALUES(0, 0)
       END
 
       IF EXISTS (SELECT * FROM @CurrentDirectories WHERE Mirror = 1)
@@ -3600,7 +3642,7 @@ BEGIN
           SET @CurrentFilePath = @CurrentDirectoryPath + @DirectorySeparator + @CurrentFileName
 
           INSERT INTO @CurrentFiles ([Type], FilePath, Mirror)
-          SELECT 'DISK', @CurrentFilePath, 1
+          VALUES('DISK', @CurrentFilePath, 1)
 
           SET @CurrentDirectoryPath = NULL
           SET @CurrentFileName = NULL
@@ -3608,7 +3650,7 @@ BEGIN
         END
 
         INSERT INTO @CurrentBackupSet (Mirror, VerifyCompleted)
-        SELECT 1, 0
+        VALUES(1, 0)
       END
 
       IF EXISTS (SELECT * FROM @CurrentURLs WHERE Mirror = 0)
@@ -3630,7 +3672,7 @@ BEGIN
           SET @CurrentFilePath = @CurrentDirectoryPath + @DirectorySeparator + @CurrentFileName
 
           INSERT INTO @CurrentFiles ([Type], FilePath, Mirror)
-          SELECT 'URL', @CurrentFilePath, 0
+          VALUES('URL', @CurrentFilePath, 0)
 
           SET @CurrentDirectoryPath = NULL
           SET @CurrentFileName = NULL
@@ -3638,7 +3680,7 @@ BEGIN
         END
 
         INSERT INTO @CurrentBackupSet (Mirror, VerifyCompleted)
-        SELECT 0, 0
+        VALUES(0, 0)
       END
 
       IF EXISTS (SELECT * FROM @CurrentURLs WHERE Mirror = 1)
@@ -3660,7 +3702,7 @@ BEGIN
           SET @CurrentFilePath = @CurrentDirectoryPath + @DirectorySeparator + @CurrentFileName
 
           INSERT INTO @CurrentFiles ([Type], FilePath, Mirror)
-          SELECT 'URL', @CurrentFilePath, 1
+          VALUES('URL', @CurrentFilePath, 1)
 
           SET @CurrentDirectoryPath = NULL
           SET @CurrentFileName = NULL
@@ -3668,7 +3710,7 @@ BEGIN
         END
 
         INSERT INTO @CurrentBackupSet (Mirror, VerifyCompleted)
-        SELECT 1, 0
+        VALUES(1, 0)
       END
 
       -- Create directory
@@ -3739,7 +3781,7 @@ BEGIN
       IF @CleanupMode = 'BEFORE_BACKUP'
       BEGIN
         INSERT INTO @CurrentCleanupDates ([Type], CleanupDate, Mirror)
-        SELECT 'CleanupTime', DATEADD(hh,-(@CleanupTime),SYSDATETIME()), 0
+        VALUES('CleanupTime', DATEADD(hh,-(@CleanupTime),SYSDATETIME()), 0)
 
         IF NOT EXISTS(SELECT * FROM @CurrentCleanupDates WHERE (Mirror = 0 OR Mirror IS NULL) AND CleanupDate IS NULL)
         BEGIN
@@ -3755,7 +3797,7 @@ BEGIN
       IF @MirrorCleanupMode = 'BEFORE_BACKUP'
       BEGIN
         INSERT INTO @CurrentCleanupDates ([Type], CleanupDate, Mirror)
-        SELECT 'MirrorCleanupTime', DATEADD(hh,-(@MirrorCleanupTime),SYSDATETIME()), 1
+        VALUES('MirrorCleanupTime', DATEADD(hh,-(@MirrorCleanupTime),SYSDATETIME()), 1)
 
         IF NOT EXISTS(SELECT * FROM @CurrentCleanupDates WHERE (Mirror = 1 OR Mirror IS NULL) AND CleanupDate IS NULL)
         BEGIN
@@ -4261,7 +4303,7 @@ BEGIN
       IF @CleanupMode = 'AFTER_BACKUP'
       BEGIN
         INSERT INTO @CurrentCleanupDates ([Type], CleanupDate, Mirror)
-        SELECT 'CleanupTime', DATEADD(hh,-(@CleanupTime),SYSDATETIME()), 0
+        VALUES('CleanupTime', DATEADD(hh,-(@CleanupTime),SYSDATETIME()), 0)
 
         IF NOT EXISTS(SELECT * FROM @CurrentCleanupDates WHERE (Mirror = 0 OR Mirror IS NULL) AND CleanupDate IS NULL)
         BEGIN
@@ -4277,7 +4319,7 @@ BEGIN
       IF @MirrorCleanupMode = 'AFTER_BACKUP'
       BEGIN
         INSERT INTO @CurrentCleanupDates ([Type], CleanupDate, Mirror)
-        SELECT 'MirrorCleanupTime', DATEADD(hh,-(@MirrorCleanupTime),SYSDATETIME()), 1
+        VALUES('MirrorCleanupTime', DATEADD(hh,-(@MirrorCleanupTime),SYSDATETIME()), 1)
 
         IF NOT EXISTS(SELECT * FROM @CurrentCleanupDates WHERE (Mirror = 1 OR Mirror IS NULL) AND CleanupDate IS NULL)
         BEGIN
