@@ -35,7 +35,7 @@ jobs:
           FILES="CommandLog.sql Queue.sql QueueDatabase.sql CommandExecute.sql DatabaseBackup.sql DatabaseIntegrityCheck.sql IndexOptimize.sql MaintenanceSolution.sql"
 
           # Explicit FTPS (AUTH TLS) on port 21
-          SETTINGS="set ftp:ssl-force true; set ftp:ssl-protect-data true; set ssl:verify-certificate false; set net:max-retries 2; set net:timeout 60"
+          SETTINGS="set ftp:ssl-force true; set ftp:ssl-protect-data true; set ssl:verify-certificate true; set net:max-retries 2; set net:timeout 60"
 
           run_lftp () {
             lftp -p 21 -u "$FTP_USERNAME,$FTP_PASSWORD" -e "$SETTINGS; $1; bye" "$FTP_SERVER"
