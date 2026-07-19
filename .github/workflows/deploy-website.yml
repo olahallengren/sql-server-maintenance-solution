@@ -41,14 +41,9 @@ jobs:
             lftp -p 21 -u "$FTP_USERNAME,$FTP_PASSWORD" -e "$SETTINGS; $1; bye" "$FTP_SERVER"
           }
 
-          # Two-phase upload. Phase 1 uploads ALL files under temporary
-          # names - the slow, interruptible part - while the live site
-          # stays completely untouched; a failure anywhere in this phase
-          # leaves the previous release fully intact, not mixed. Phase 2
-          # renames the temp files into place, in order, big file last.
-          # Renames are atomic metadata operations taking milliseconds,
-          # so the site flips from old release to new near-instantly and
-          # no live file name ever points at a half-written file.
+          # Two-phase upload.
+          # Phase 1 uploads ALL files under temporary names - the slow, interruptible part - while the live site stays completely untouched; a failure anywhere in this phase
+          # Phase 2 renames the temp files into place, in order, big file last.
           UPLOAD=""
           for f in $FILES; do
             UPLOAD="$UPLOAD put $f -o $REMOTE_DIR/$f.tmp;"
@@ -57,10 +52,7 @@ jobs:
             UPLOAD="$UPLOAD mv $REMOTE_DIR/$f.tmp $REMOTE_DIR/$f;"
           done
 
-          # Verification: list the files on the server and compare each
-          # size, byte for byte, against the file in the repository. Any
-          # missing or short file fails the run - a completed-but-corrupted
-          # transfer cannot pass silently.
+          # Verification: list the files on the server and compare each size, byte for byte, against the file in the repository.
           verify () {
             LISTING=$(run_lftp "cls -s --block-size=1 $REMOTE_DIR/*.sql") || return 1
             for f in $FILES; do
@@ -75,12 +67,7 @@ jobs:
             return 0
           }
 
-          # Try the whole upload-and-verify up to 3 times, a few minutes
-          # apart. Transient problems (dropped connection, brief outage)
-          # are absorbed here without you being involved. Because every
-          # attempt re-uploads the complete set, a failure midway through
-          # one attempt is healed by the next. Only if all attempts fail
-          # does the run fail - and GitHub then sends the failure email.
+          # Try the whole upload-and-verify up to 3 times
           for attempt in 1 2 3; do
             echo "=== Upload attempt $attempt of 3 ==="
             if run_lftp "$UPLOAD" && verify; then
@@ -89,7 +76,7 @@ jobs:
             fi
             if [ "$attempt" -lt 3 ]; then
               echo "Attempt $attempt failed - waiting 3 minutes before retrying."
-              sleep 180
+              sleep 120
             fi
           done
 
