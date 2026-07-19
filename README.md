@@ -37,7 +37,7 @@ Supported versions: SQL Server 2017, SQL Server 2019, SQL Server 2022, SQL Serve
  - [Frequently Asked Questions](https://ola.hallengren.com/frequently-asked-questions.html)
  - [Version History](https://ola.hallengren.com/versions.html)
 
-A copy of the documentation is also available in this repository: [docs](/docs).
+A copy of the stored procedure documentation is also available in this repository: [docs](/docs).
 
 [licence badge]:https://img.shields.io/badge/license-MIT-blue.svg
 [stars badge]:https://img.shields.io/github/stars/olahallengren/sql-server-maintenance-solution.svg
