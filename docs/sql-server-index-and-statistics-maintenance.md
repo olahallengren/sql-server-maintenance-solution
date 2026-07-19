@@ -226,7 +226,7 @@ IndexOptimize checks modification_counter in [sys.dm_db_stats_properties](https:
 
 ### StatisticsModificationLevel
 
-Specify a percentage of modified rows for when the statistics should be updated. Statistics will also be updated when the number of modified rows has reached a decreasing, dynamic threshold, SQRT(number of rows * 1000).
+Specify a percentage of modified rows for when the statistics should be updated. Statistics will also be updated when the number of modified rows has reached a decreasing, dynamic threshold, SQRT(number of rows \* 1000).
 
 IndexOptimize checks the columns modification_counter and rows in [sys.dm_db_stats_properties](https://learn.microsoft.com/en-us/sql/relational-databases/system-dynamic-management-views/sys-dm-db-stats-properties-transact-sql). For incremental statistics it checks the columns modification_counter and rows in [sys.dm_db_incremental_stats_properties](https://learn.microsoft.com/en-us/sql/relational-databases/system-dynamic-management-views/sys-dm-db-incremental-stats-properties-transact-sql).
 
