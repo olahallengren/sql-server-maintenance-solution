@@ -75,7 +75,7 @@ jobs:
               exit 0
             fi
             if [ "$attempt" -lt 3 ]; then
-              echo "Attempt $attempt failed - waiting 3 minutes before retrying."
+              echo "Attempt $attempt failed - waiting 120 seconds before retrying."
               sleep 120
             fi
           done
