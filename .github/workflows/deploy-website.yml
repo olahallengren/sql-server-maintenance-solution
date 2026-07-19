@@ -1,23 +1,6 @@
 name: Deploy to website
 
-# Uploads the released .sql files to the website over FTPS whenever a
-# release is merged to main. Runs on the same trigger as the tag workflow;
-# the two run independently and in parallel.
-#
-# BEFORE FIRST USE:
-#   1. Change REMOTE_DIR below to the scripts directory on your server.
-#   2. Add three repository secrets under
-#      Settings -> Secrets and variables -> Actions -> New repository secret:
-#        FTP_SERVER     185.116.236.159   (host only - no ftp:// prefix)
-#        FTP_USERNAME   the same user name as in your FTP client
-#        FTP_PASSWORD   the same password as in your FTP client
-#      (Note: a password containing a comma would need extra handling -
-#      tell me if yours has one.)
-#
-# ALERTING: nothing to configure. If the run fails after all retries,
-# GitHub emails you automatically (default is email on failure only -
-# successful deploys are silent). Recovery: open the failed run in the
-# Actions tab and click "Re-run failed jobs".
+# Uploads the released .sql files to the website over FTPS whenever a release is merged to main.
 
 on:
   push:
@@ -35,7 +18,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Check out the repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Install lftp (FTPS client)
         run: sudo apt-get update -qq && sudo apt-get install -y -qq lftp
@@ -48,30 +31,19 @@ jobs:
         run: |
           set -u
 
-          # Upload order: components first, MaintenanceSolution.sql last,
-          # so the most-downloaded file only changes once everything else
-          # is already current.
+          # Upload order: components first, MaintenanceSolution.sql last.
           FILES="CommandLog.sql Queue.sql QueueDatabase.sql CommandExecute.sql DatabaseBackup.sql DatabaseIntegrityCheck.sql IndexOptimize.sql MaintenanceSolution.sql"
 
-          # Explicit FTPS (AUTH TLS) on port 21 - the same protocol settings
-          # as in your FTP client. verify-certificate is off because the
-          # server is addressed by IP (185.116.236.159): certificates are
-          # issued for host names, so the name check cannot succeed against
-          # an IP. The connection itself is still fully encrypted.
+          # Explicit FTPS (AUTH TLS) on port 21
           SETTINGS="set ftp:ssl-force true; set ftp:ssl-protect-data true; set ssl:verify-certificate false; set net:max-retries 2; set net:timeout 60"
 
           run_lftp () {
             lftp -p 21 -u "$FTP_USERNAME,$FTP_PASSWORD" -e "$SETTINGS; $1; bye" "$FTP_SERVER"
           }
 
-          # Two-phase upload. Phase 1 uploads ALL files under temporary
-          # names - the slow, interruptible part - while the live site
-          # stays completely untouched; a failure anywhere in this phase
-          # leaves the previous release fully intact, not mixed. Phase 2
-          # renames the temp files into place, in order, big file last.
-          # Renames are atomic metadata operations taking milliseconds,
-          # so the site flips from old release to new near-instantly and
-          # no live file name ever points at a half-written file.
+          # Two-phase upload.
+          # Phase 1 uploads ALL files under temporary names - the slow, interruptible part - while the live site stays completely untouched.
+          # Phase 2 renames the temp files into place, in order.
           UPLOAD=""
           for f in $FILES; do
             UPLOAD="$UPLOAD put $f -o $REMOTE_DIR/$f.tmp;"
@@ -80,10 +52,7 @@ jobs:
             UPLOAD="$UPLOAD mv $REMOTE_DIR/$f.tmp $REMOTE_DIR/$f;"
           done
 
-          # Verification: list the files on the server and compare each
-          # size, byte for byte, against the file in the repository. Any
-          # missing or short file fails the run - a completed-but-corrupted
-          # transfer cannot pass silently.
+          # Verification: list the files on the server and compare each size, byte for byte, against the file in the repository.
           verify () {
             LISTING=$(run_lftp "cls -s --block-size=1 $REMOTE_DIR/*.sql") || return 1
             for f in $FILES; do
@@ -98,12 +67,7 @@ jobs:
             return 0
           }
 
-          # Try the whole upload-and-verify up to 3 times, a few minutes
-          # apart. Transient problems (dropped connection, brief outage)
-          # are absorbed here without you being involved. Because every
-          # attempt re-uploads the complete set, a failure midway through
-          # one attempt is healed by the next. Only if all attempts fail
-          # does the run fail - and GitHub then sends the failure email.
+          # Try the whole upload-and-verify up to 3 times
           for attempt in 1 2 3; do
             echo "=== Upload attempt $attempt of 3 ==="
             if run_lftp "$UPLOAD" && verify; then
@@ -111,11 +75,10 @@ jobs:
               exit 0
             fi
             if [ "$attempt" -lt 3 ]; then
-              echo "Attempt $attempt failed - waiting 3 minutes before retrying."
-              sleep 180
+              echo "Attempt $attempt failed - waiting 120 seconds before retrying."
+              sleep 120
             fi
           done
 
-          echo "All attempts failed. The website may be behind or partially updated;"
-          echo "re-run this workflow when the host is reachable to make it consistent."
+          echo "All attempts failed. The website may be behind or partially updated; re-run this workflow when the host is reachable to make it consistent."
           exit 1
