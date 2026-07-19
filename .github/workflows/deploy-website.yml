@@ -80,6 +80,5 @@ jobs:
             fi
           done
 
-          echo "All attempts failed. The website may be behind or partially updated;"
-          echo "re-run this workflow when the host is reachable to make it consistent."
+          echo "All attempts failed. The website may be behind or partially updated; re-run this workflow when the host is reachable to make it consistent."
           exit 1
