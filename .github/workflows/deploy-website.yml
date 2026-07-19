@@ -31,7 +31,7 @@ jobs:
         run: |
           set -u
 
-          # Upload order: components first, MaintenanceSolution.sql last, so the most-downloaded file only changes once everything else is already current.
+          # Upload order: components first, MaintenanceSolution.sql last.
           FILES="CommandLog.sql Queue.sql QueueDatabase.sql CommandExecute.sql DatabaseBackup.sql DatabaseIntegrityCheck.sql IndexOptimize.sql MaintenanceSolution.sql"
 
           # Explicit FTPS (AUTH TLS) on port 21
@@ -43,7 +43,7 @@ jobs:
 
           # Two-phase upload.
           # Phase 1 uploads ALL files under temporary names - the slow, interruptible part - while the live site stays completely untouched.
-          # Phase 2 renames the temp files into place, in order, big file last.
+          # Phase 2 renames the temp files into place, in order.
           UPLOAD=""
           for f in $FILES; do
             UPLOAD="$UPLOAD put $f -o $REMOTE_DIR/$f.tmp;"
