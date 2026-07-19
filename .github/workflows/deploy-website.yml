@@ -42,7 +42,7 @@ jobs:
           }
 
           # Two-phase upload.
-          # Phase 1 uploads ALL files under temporary names - the slow, interruptible part - while the live site stays completely untouched; a failure anywhere in this phase
+          # Phase 1 uploads ALL files under temporary names - the slow, interruptible part - while the live site stays completely untouched.
           # Phase 2 renames the temp files into place, in order, big file last.
           UPLOAD=""
           for f in $FILES; do
