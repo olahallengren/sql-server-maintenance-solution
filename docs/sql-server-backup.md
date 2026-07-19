@@ -41,10 +41,10 @@ Specify backup root directories, which can be local directories or network share
 | Value | Description |
 | --- | --- |
 | NULL | Back up to the SQL Server default backup directory. This is the default. |
-| C:\Backup | Back up to the directory C:\Backup. |
-| C:\Backup, D:\Backup | Back up to the directories C:\Backup and D:\Backup. |
-| \\Server1\Backup | Back up to the network share \\Server1\Backup. |
-| \\Server1\Backup, \\Server2\Backup | Back up to the network shares \\Server1\Backup and \\Server2\Backup. |
+| C:\\Backup | Back up to the directory C:\\Backup. |
+| C:\\Backup, D:\\Backup | Back up to the directories C:\\Backup and D:\\Backup. |
+| \\\\Server1\\Backup | Back up to the network share \\\\Server1\\Backup. |
+| \\\\Server1\\Backup, \\\\Server2\\Backup | Back up to the network shares \\\\Server1\\Backup and \\\\Server2\\Backup. |
 | NUL | Back up to NUL. |
 
 DatabaseBackup creates a directory structure with server name, instance name, database name, and backup type under the backup root directory. If the database is part of an availability group, then cluster name and availability group name are used instead of server name and instance name.
@@ -455,9 +455,9 @@ You can use the following tokens:
 | MinorVersion | Minor version |
 | DirectorySeparator | The directory separator |
 
-Default directory structure: {ServerName}${InstanceName}{DirectorySeparator}{DatabaseName}{DirectorySeparator}{BackupType}_{Partial}_{CopyOnly}
+Default directory structure: {ServerName}${InstanceName}{DirectorySeparator}{DatabaseName}{DirectorySeparator}{BackupType}\_{Partial}\_{CopyOnly}
 
-Tokens that do not apply will be removed. For example, the token {CopyOnly} (and the associated _) will be removed if it is not a copy-only backup.
+Tokens that do not apply will be removed. For example, the token {CopyOnly} (and the associated \_) will be removed if it is not a copy-only backup.
 
 If the parameter is set to NULL, no sub-directories will be created.
 
@@ -484,9 +484,9 @@ You can use the following tokens:
 | MinorVersion | Minor version |
 | DirectorySeparator | The directory separator |
 
-Default directory structure: {ClusterName}${AvailabilityGroupName}{DirectorySeparator}{DatabaseName}{DirectorySeparator}{BackupType}_{Partial}_{CopyOnly}
+Default directory structure: {ClusterName}${AvailabilityGroupName}{DirectorySeparator}{DatabaseName}{DirectorySeparator}{BackupType}\_{Partial}\_{CopyOnly}
 
-Tokens that do not apply will be removed. For example, the token {CopyOnly} (and the associated _) will be removed if it is not a copy-only backup.
+Tokens that do not apply will be removed. For example, the token {CopyOnly} (and the associated \_) will be removed if it is not a copy-only backup.
 
 If the parameter is set to NULL, no sub-directories will be created.
 
@@ -533,9 +533,9 @@ You can use the following tokens:
 | MajorVersion | Major version |
 | MinorVersion | Minor version |
 
-Default file name: {ServerName}${InstanceName}_{DatabaseName}_{BackupType}_{Partial}_{CopyOnly}_{Year}{Month}{Day}_{Hour}{Minute}{Second}_{FileNumber}.{FileExtension}
+Default file name: {ServerName}${InstanceName}\_{DatabaseName}\_{BackupType}\_{Partial}\_{CopyOnly}\_{Year}{Month}{Day}\_{Hour}{Minute}{Second}\_{FileNumber}.{FileExtension}
 
-Tokens that do not apply will be removed. For example, the token {CopyOnly} (and the associated _) will be removed if it is not a copy-only backup.
+Tokens that do not apply will be removed. For example, the token {CopyOnly} (and the associated \_) will be removed if it is not a copy-only backup.
 
 ### AvailabilityGroupFileName
 
@@ -572,9 +572,9 @@ You can use the following tokens:
 | MajorVersion | Major version |
 | MinorVersion | Minor version |
 
-Default file name: {ClusterName}${AvailabilityGroupName}_{DatabaseName}_{BackupType}_{Partial}_{CopyOnly}_{Year}{Month}{Day}_{Hour}{Minute}{Second}_{FileNumber}.{FileExtension}
+Default file name: {ClusterName}${AvailabilityGroupName}\_{DatabaseName}\_{BackupType}\_{Partial}\_{CopyOnly}\_{Year}{Month}{Day}\_{Hour}{Minute}{Second}\_{FileNumber}.{FileExtension}
 
-Tokens that do not apply will be removed. For example, the token {CopyOnly} (and the associated _) will be removed if it is not a copy-only backup.
+Tokens that do not apply will be removed. For example, the token {CopyOnly} (and the associated \_) will be removed if it is not a copy-only backup.
 
 ### FileNameCase
 
