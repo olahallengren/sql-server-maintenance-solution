@@ -8,7 +8,7 @@ DatabaseIntegrityCheck is the SQL Server Maintenance Solution’s stored procedu
 
 ## Download
 
-Download [MaintenanceSolution.sql](/MaintenanceSolution.sql). This script creates all the objects and jobs that you need. You can also [download](https://ola.hallengren.com/downloads.html) the objects as separate scripts. The SQL Server Maintenance Solution is available on [GitHub](https://github.com/olahallengren/sql-server-maintenance-solution).
+Download [MaintenanceSolution.sql](/MaintenanceSolution.sql). This script creates all the objects and jobs that you need. You can also [download](https://github.com/olahallengren/sql-server-maintenance-solution) the objects as separate scripts. The SQL Server Maintenance Solution is available on [GitHub](https://github.com/olahallengren/sql-server-maintenance-solution).
 
 ## License
 
