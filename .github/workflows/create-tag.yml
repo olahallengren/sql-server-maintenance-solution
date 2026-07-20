@@ -49,8 +49,6 @@ jobs:
           fi
 
           # 4. Create an annotated tag on this commit through the API.
-          #    Tag objects created server-side are signed by GitHub's web-flow key,
-          #    so the tag shows as Verified (a runner-side "git tag" cannot sign).
           TAG_SHA=$(gh api "repos/$GITHUB_REPOSITORY/git/tags" \
             -f tag="$TAG" \
             -f message="Version: $VERSION" \
