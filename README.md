@@ -31,13 +31,11 @@ Supported versions: SQL Server 2017, SQL Server 2019, SQL Server 2022, SQL Serve
 
 ## Documentation
 
- - [SQL Server Backup](https://ola.hallengren.com/sql-server-backup.html)
- - [SQL Server Integrity Check](https://ola.hallengren.com/sql-server-integrity-check.html)
- - [SQL Server Index and Statistics Maintenance](https://ola.hallengren.com/sql-server-index-and-statistics-maintenance.html)
- - [Frequently Asked Questions](https://ola.hallengren.com/frequently-asked-questions.html)
- - [Version History](https://ola.hallengren.com/versions.html)
-
-A copy of the stored procedure documentation is also available in this repository: [docs](/docs).
+ - SQL Server Backup: [website](https://ola.hallengren.com/sql-server-backup.html) &middot; [repository](/docs/sql-server-backup.md)
+ - SQL Server Integrity Check: [website](https://ola.hallengren.com/sql-server-integrity-check.html) &middot; [repository](/docs/sql-server-integrity-check.md)
+ - SQL Server Index and Statistics Maintenance: [website](https://ola.hallengren.com/sql-server-index-and-statistics-maintenance.html) &middot; [repository](/docs/sql-server-index-and-statistics-maintenance.md)
+ - Frequently Asked Questions: [website](https://ola.hallengren.com/frequently-asked-questions.html)
+ - Version History: [website](https://ola.hallengren.com/versions.html)
 
 [licence badge]:https://img.shields.io/badge/license-MIT-blue.svg
 [stars badge]:https://img.shields.io/github/stars/olahallengren/sql-server-maintenance-solution.svg
