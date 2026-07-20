@@ -56,7 +56,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-07-19 18:23:28                                                               //--
+  --// Version: 2026-07-20 15:04:58                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -2232,7 +2232,6 @@ BEGIN
 
         IF ((@CurrentInRowDataPageCount >= @MinNumberOfPages OR @MinNumberOfPages = 0) AND (@CurrentInRowDataPageCount <= @MaxNumberOfPages OR @MaxNumberOfPages IS NULL)) OR @CurrentInRowDataPageCount IS NULL
         BEGIN
-
           -- Does the index exist?
           IF @CurrentIndexID IS NOT NULL AND EXISTS(SELECT * FROM @ActionsPreferred)
           BEGIN
@@ -2385,7 +2384,6 @@ BEGIN
           BEGIN
             SET @CurrentMaxDOP = 1
           END
-
         END
 
         -- Create index comment
