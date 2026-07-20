@@ -46,7 +46,11 @@ jobs:
             exit 0
           fi
 
-          # 4. Create the tag on this commit and push it.
-          git tag "$TAG"
+          # 4. Create an annotated tag on this commit and push it.
+          #    Annotated tags carry a tagger and date, so the runner needs a git identity.
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git tag -a "$TAG" -m "Version: $VERSION"
           git push origin "refs/tags/$TAG"
           echo "Created tag $TAG"
