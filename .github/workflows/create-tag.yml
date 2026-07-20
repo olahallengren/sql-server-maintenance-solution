@@ -22,8 +22,6 @@ jobs:
           fetch-depth: 0     # full history so existing tags are visible
 
       - name: Read version from header and create tag
-        env:
-          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
 
@@ -48,16 +46,11 @@ jobs:
             exit 0
           fi
 
-          # 4. Create an annotated tag on this commit through the API.
-          TAG_SHA=$(gh api "repos/$GITHUB_REPOSITORY/git/tags" \
-            -f tag="$TAG" \
-            -f message="Version: $VERSION" \
-            -f object="$GITHUB_SHA" \
-            -f type="commit" \
-            --jq .sha)
+          # 4. Create an annotated tag on this commit and push it.
+          #    Annotated tags carry a tagger and date, so the runner needs a git identity.
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-          gh api "repos/$GITHUB_REPOSITORY/git/refs" \
-            -f ref="refs/tags/$TAG" \
-            -f sha="$TAG_SHA"
-
+          git tag -a "$TAG" -m "Version: $VERSION"
+          git push origin "refs/tags/$TAG"
           echo "Created tag $TAG"
