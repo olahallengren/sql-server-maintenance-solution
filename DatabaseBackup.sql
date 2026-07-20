@@ -94,7 +94,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-07-20 15:04:58                                                               //--
+  --// Version: 2026-07-20 15:32:25                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -1410,19 +1410,19 @@ BEGIN
   IF @BackupSoftware = 'SQLBACKUP' AND NOT EXISTS (SELECT * FROM [master].sys.objects WHERE [type] = 'X' AND [name] = 'sqlbackup')
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('Red Gate SQL Backup Pro is not installed. Download https://www.red-gate.com/products/dba/sql-backup/.', 16, 4)
+    VALUES('Red Gate SQL Backup Pro is not installed. Download https://www.red-gate.com/products/sql-backup/.', 16, 4)
   END
 
   IF @BackupSoftware = 'SQLSAFE' AND NOT EXISTS (SELECT * FROM [master].sys.objects WHERE [type] = 'X' AND [name] = 'xp_ss_backup')
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('Idera SQL Safe Backup is not installed. Download https://www.idera.com/productssolutions/sqlserver/sqlsafebackup.', 16, 5)
+    VALUES('Idera SQL Safe Backup is not installed. Download https://www.idera.com/products/sql-safe-backup/.', 16, 5)
   END
 
   IF @BackupSoftware = 'DATA_DOMAIN_BOOST' AND NOT EXISTS (SELECT * FROM [master].sys.objects WHERE [type] = 'PC' AND [name] = 'emc_run_backup')
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('EMC Data Domain Boost is not installed. Download https://www.emc.com/en-us/data-protection/data-domain.htm.', 16, 6)
+    VALUES('EMC Data Domain Boost is not installed. Download https://www.dell.com/en-us/shop/storage-servers-and-networking-for-business/sf/powerprotect-data-domain.', 16, 6)
   END
 
   ----------------------------------------------------------------------------------------------------
