@@ -10,7 +10,7 @@ License: https://ola.hallengren.com/license.html
 
 GitHub: https://github.com/olahallengren/sql-server-maintenance-solution
 
-Version: 2026-07-21 11:25:14
+Version: 2026-07-21 14:38:46
 
 You can contact me by e-mail at ola@hallengren.com.
 
@@ -133,7 +133,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-07-21 11:25:14                                                               //--
+  --// Version: 2026-07-21 14:38:46                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -493,7 +493,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-07-21 11:25:14                                                               //--
+  --// Version: 2026-07-21 14:38:46                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -4964,7 +4964,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-07-21 11:25:14                                                               //--
+  --// Version: 2026-07-21 14:38:46                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -6975,7 +6975,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-07-21 11:25:14                                                               //--
+  --// Version: 2026-07-21 14:38:46                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -10047,7 +10047,7 @@ BEGIN
 
   INSERT INTO @Jobs ([Name], CommandCmdExec, OutputFileNamePart01)
   VALUES('Output File Cleanup',
-         'cmd /q /c "For /F "tokens=1 delims=" %v In (''ForFiles /P "' + COALESCE(@OutputFileDirectory,@TokenLogDirectory,@LogDirectory) + '" /m *_*_*_*.txt /d -30 2^>^&1'') do if EXIST "' + COALESCE(@OutputFileDirectory,@TokenLogDirectory,@LogDirectory) + '"\%v echo del "' + COALESCE(@OutputFileDirectory,@TokenLogDirectory,@LogDirectory) + '"\%v& del "' + COALESCE(@OutputFileDirectory,@TokenLogDirectory,@LogDirectory) + '"\%v"',
+         'powershell.exe -NoProfile -Command "Get-ChildItem -LiteralPath ''' + COALESCE(@OutputFileDirectory,@TokenLogDirectory,@LogDirectory) + ''' -Filter ''*_*_*_*.txt'' -File | Where-Object { $_.LastWriteTime.Date -le (Get-Date).Date.AddDays(-30) } | ForEach-Object { Write-Output (''del '' + $_.FullName); Remove-Item -LiteralPath $_.FullName }"',
          'OutputFileCleanup')
 
   IF @AmazonRDS = 1
