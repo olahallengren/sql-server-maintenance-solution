@@ -1,0 +1,30 @@
+name: Check checksums
+
+# Verifies SHA256SUMS.txt against the scripts before a pull request can be merged.
+
+on:
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:              # adds a manual "Run workflow" button, handy for testing
+
+jobs:
+  checksums:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v5
+
+      - name: Check that every script is listed in SHA256SUMS.txt
+        run: |
+          ls *.sql | sort > /tmp/scripts.txt
+          awk '{print $2}' SHA256SUMS.txt | sort > /tmp/listed.txt
+          if ! diff /tmp/scripts.txt /tmp/listed.txt; then
+            echo "The scripts in the repository and the files listed in SHA256SUMS.txt do not match."
+            echo "Lines starting with < are scripts that are not listed; lines starting with > are listed files that do not exist."
+            exit 1
+          fi
+          echo "All scripts are listed."
+
+      - name: Check that the checksums are current
+        run: sha256sum -c SHA256SUMS.txt
