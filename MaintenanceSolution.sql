@@ -1596,6 +1596,18 @@ BEGIN
   END
 
   ----------------------------------------------------------------------------------------------------
+  --// Get default credential for S3/Azure backup                                                 //--
+  ----------------------------------------------------------------------------------------------------
+
+  IF @URL IS NOT NULL AND @Credential IS NULL
+  BEGIN
+    SELECT TOP 1 @Credential = name
+    FROM sys.credentials
+    WHERE UPPER(credential_identity) IN ('SHARED ACCESS SIGNATURE','MANAGED IDENTITY','S3 ACCESS KEY')
+    ORDER BY name ASC
+  END
+
+  ----------------------------------------------------------------------------------------------------
   --// Check input parameters                                                                     //--
   ----------------------------------------------------------------------------------------------------
 
