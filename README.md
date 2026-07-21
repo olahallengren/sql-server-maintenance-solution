@@ -9,8 +9,9 @@
 
 ## Getting Started
 
-Download [MaintenanceSolution.sql](/MaintenanceSolution.sql).
-This script creates all the objects and jobs that you need.
+Download the script for your platform:
+ - [MaintenanceSolution.sql](/MaintenanceSolution.sql): SQL Server 2017, SQL Server 2019, SQL Server 2022, SQL Server 2025, and Azure SQL Managed Instance. This script creates all the objects and jobs that you need.
+ - [MaintenanceSolutionAzureSQLDatabase.sql](/MaintenanceSolutionAzureSQLDatabase.sql): Azure SQL Database. This script creates the objects for integrity check and index and statistics maintenance.
 
 You can also download the objects as separate scripts:
  - [DatabaseBackup.sql](/DatabaseBackup.sql): Stored procedure to back up databases
@@ -27,7 +28,7 @@ When you update DatabaseBackup, DatabaseIntegrityCheck, or IndexOptimize, you sh
 
 You need CommandLog if you are going to use the option to log commands to a table.
 
-Supported versions: SQL Server 2017, SQL Server 2019, SQL Server 2022, SQL Server 2025, Azure SQL Database, and Azure SQL Managed Instance.
+You can verify the scripts against the SHA-256 checksums in [SHA256SUMS.txt](/SHA256SUMS.txt).
 
 ## Documentation
 
