@@ -1,6 +1,6 @@
 name: Deploy to website
 
-# Uploads the released .sql files to the website over FTPS whenever a release is merged to main.
+# Uploads the released files to the website over FTPS whenever a release is merged to main.
 
 on:
   push:
@@ -31,8 +31,9 @@ jobs:
         run: |
           set -u
 
-          # Upload order: components first, MaintenanceSolution.sql last.
-          FILES="CommandLog.sql Queue.sql QueueDatabase.sql CommandExecute.sql DatabaseBackup.sql DatabaseIntegrityCheck.sql IndexOptimize.sql MaintenanceSolution.sql"
+          # Upload order: components first, then the installers, SHA256SUMS.txt last
+          # (the checksums go live only after the files they describe are in place).
+          FILES="CommandLog.sql Queue.sql QueueDatabase.sql CommandExecute.sql DatabaseBackup.sql DatabaseIntegrityCheck.sql IndexOptimize.sql MaintenanceSolutionAzureSQLDatabase.sql MaintenanceSolution.sql SHA256SUMS.txt"
 
           # Explicit FTPS (AUTH TLS) on port 21
           SETTINGS="set ftp:ssl-force true; set ftp:ssl-protect-data true; set ssl:verify-certificate true; set net:max-retries 2; set net:timeout 60"
@@ -54,7 +55,7 @@ jobs:
 
           # Verification: list the files on the server and compare each size, byte for byte, against the file in the repository.
           verify () {
-            LISTING=$(run_lftp "cls -s --block-size=1 $REMOTE_DIR/*.sql") || return 1
+            LISTING=$(run_lftp "cls -s --block-size=1 $REMOTE_DIR/*.sql $REMOTE_DIR/SHA256SUMS.txt") || return 1
             for f in $FILES; do
               LOCAL=$(stat -c %s "$f")
               REMOTE=$(printf '%s\n' "$LISTING" | grep "/$f\$" | awk '{print $1}')
