@@ -9,7 +9,7 @@ License: https://ola.hallengren.com/license.html
 
 GitHub: https://github.com/olahallengren/sql-server-maintenance-solution
 
-Version: 2026-07-22 01:08:53
+Version: 2026-07-22 01:23:44
 
 You can contact me by e-mail at ola@hallengren.com.
 
@@ -88,7 +88,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-07-22 01:08:53                                                               //--
+  --// Version: 2026-07-22 01:23:44                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -394,7 +394,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-07-22 01:08:53                                                               //--
+  --// Version: 2026-07-22 01:23:44                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -1821,6 +1821,10 @@ BEGIN
         AND is_local = 1
       END
 
+      SELECT @CurrentSecondaryRoleAllowConnections = secondary_role_allow_connections_desc
+      FROM sys.availability_replicas
+      WHERE replica_id = @CurrentAvailabilityGroupReplicaID
+
       SELECT @CurrentAvailabilityGroupRole = role_desc
       FROM sys.dm_hadr_availability_replica_states
       WHERE replica_id = @CurrentAvailabilityGroupReplicaID
@@ -2419,7 +2423,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-07-22 01:08:53                                                               //--
+  --// Version: 2026-07-22 01:23:44                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
