@@ -4,11 +4,15 @@
 
 This documentation is generated from [ola.hallengren.com/sql-server-backup.html](https://ola.hallengren.com/sql-server-backup.html), which is the primary source.
 
-DatabaseBackup is the SQL Server Maintenance Solution’s stored procedure for backing up databases. DatabaseBackup is supported on SQL Server 2017, SQL Server 2019, SQL Server 2022, SQL Server 2025, and Azure SQL Managed Instance.
+DatabaseBackup is the SQL Server Maintenance Solution’s stored procedure for backing up databases.
 
 ## Download
 
-Download [MaintenanceSolution.sql](/MaintenanceSolution.sql). This script creates all the objects and jobs that you need. You can also [download](https://github.com/olahallengren/sql-server-maintenance-solution) the objects as separate scripts. The SQL Server Maintenance Solution is available on [GitHub](https://github.com/olahallengren/sql-server-maintenance-solution).
+Download the script for your platform:
+
+- [MaintenanceSolution.sql](/MaintenanceSolution.sql): SQL Server 2017, SQL Server 2019, SQL Server 2022, SQL Server 2025, and Azure SQL Managed Instance. This script creates all the objects and jobs that you need.
+
+You can also [download](https://github.com/olahallengren/sql-server-maintenance-solution) the objects as separate scripts. The SQL Server Maintenance Solution is available on [GitHub](https://github.com/olahallengren/sql-server-maintenance-solution).
 
 ## License
 

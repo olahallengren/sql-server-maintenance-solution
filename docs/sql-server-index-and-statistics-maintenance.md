@@ -4,11 +4,16 @@
 
 This documentation is generated from [ola.hallengren.com/sql-server-index-and-statistics-maintenance.html](https://ola.hallengren.com/sql-server-index-and-statistics-maintenance.html), which is the primary source.
 
-IndexOptimize is the SQL Server Maintenance Solution’s stored procedure for rebuilding and reorganizing indexes and updating statistics. IndexOptimize is supported on SQL Server 2017, SQL Server 2019, SQL Server 2022, SQL Server 2025, Azure SQL Database, and Azure SQL Managed Instance.
+IndexOptimize is the SQL Server Maintenance Solution’s stored procedure for rebuilding and reorganizing indexes and updating statistics.
 
 ## Download
 
-Download [MaintenanceSolution.sql](/MaintenanceSolution.sql). This script creates all the objects and jobs that you need. You can also [download](https://github.com/olahallengren/sql-server-maintenance-solution) the objects as separate scripts. The SQL Server Maintenance Solution is available on [GitHub](https://github.com/olahallengren/sql-server-maintenance-solution).
+Download the script for your platform:
+
+- [MaintenanceSolution.sql](/MaintenanceSolution.sql): SQL Server 2017, SQL Server 2019, SQL Server 2022, SQL Server 2025, and Azure SQL Managed Instance. This script creates all the objects and jobs that you need.
+- [MaintenanceSolutionAzureSQLDatabase.sql](/MaintenanceSolutionAzureSQLDatabase.sql): Azure SQL Database. This script creates the objects for integrity check and index and statistics maintenance.
+
+You can also [download](https://github.com/olahallengren/sql-server-maintenance-solution) the objects as separate scripts. The SQL Server Maintenance Solution is available on [GitHub](https://github.com/olahallengren/sql-server-maintenance-solution).
 
 ## License
 
