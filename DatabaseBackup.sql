@@ -94,7 +94,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-07-22 18:59:22                                                               //--
+  --// Version: 2026-07-22 20:03:34                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -124,6 +124,8 @@ BEGIN
   DECLARE @CurrentParameterMessage nvarchar(max)
 
   DECLARE @HostPlatform nvarchar(max)
+  DECLARE @ContainedAvailabilityGroupID uniqueidentifier
+  DECLARE @ContainedAvailabilityGroupListenerConnection bit
   DECLARE @DirectorySeparator nvarchar(max)
 
   DECLARE @Updated bit
@@ -173,7 +175,6 @@ BEGIN
   DECLARE @CurrentDate datetime2
   DECLARE @CurrentDateUTC datetime2
   DECLARE @CurrentCleanupDate datetime2
-  DECLARE @CurrentContainedAvailabilityGroupListenerConnection bit
   DECLARE @CurrentAvailabilityGroupReplicaID uniqueidentifier
   DECLARE @CurrentAvailabilityGroupID uniqueidentifier
   DECLARE @CurrentAvailabilityGroup nvarchar(max)
@@ -322,6 +323,15 @@ BEGIN
     FROM sys.dm_os_host_info
   END
 
+  IF @Version >= 16 AND @EngineEdition NOT IN(5, 8)
+  BEGIN
+    SET @CurrentCommand = 'SELECT @ParamContainedAvailabilityGroupID = contained_availability_group_id FROM sys.dm_exec_sessions WHERE session_id = @@SPID'
+
+    EXECUTE sp_executesql @stmt = @CurrentCommand, @params = N'@ParamContainedAvailabilityGroupID uniqueidentifier OUTPUT', @ParamContainedAvailabilityGroupID = @ContainedAvailabilityGroupID OUTPUT
+  END
+
+  SET @ContainedAvailabilityGroupListenerConnection = CASE WHEN @ContainedAvailabilityGroupID IS NOT NULL THEN 1 ELSE 0 END
+
   DECLARE @AmazonRDS bit = CASE WHEN @EngineEdition IN (5, 8) THEN 0 WHEN EXISTS (SELECT * FROM sys.databases WHERE [name] = 'rdsadmin') AND SUSER_SNAME(0x01) = 'rdsa' THEN 1 ELSE 0 END
 
   ----------------------------------------------------------------------------------------------------
@@ -429,6 +439,12 @@ BEGIN
   IF @EngineEdition <> 5
   BEGIN
     SET @StartMessage = 'Platform: ' + ISNULL(@HostPlatform, 'N/A')
+    RAISERROR('%s',10,1,@StartMessage) WITH NOWAIT
+  END
+
+  IF @Version >= 16 AND @EngineEdition NOT IN(5, 8)
+  BEGIN
+    SET @StartMessage = 'Contained availability group connection: ' + CASE WHEN @ContainedAvailabilityGroupListenerConnection = 1 THEN 'Yes' WHEN @ContainedAvailabilityGroupListenerConnection = 0 THEN 'No' ELSE 'N/A' END
     RAISERROR('%s',10,1,@StartMessage) WITH NOWAIT
   END
 
@@ -2883,8 +2899,6 @@ BEGIN
     WHEN @MaxTransferSize IS NULL AND @Compress = 'Y' AND @CurrentIsEncrypted = 1 AND @BackupSoftware IS NULL AND (@Version < 15.04043 AND NOT (@EngineEdition = 8 AND @ProductUpdateType = 'Continuous')) AND @Credential IS NULL THEN 65537
     END
 
-    SET @CurrentContainedAvailabilityGroupListenerConnection = 0
-
     IF @IsHadrEnabled = 1
     BEGIN
       SELECT @CurrentAvailabilityGroupReplicaID = databases.replica_id
@@ -2898,14 +2912,7 @@ BEGIN
 
       IF @CurrentAvailabilityGroupReplicaID IS NULL AND @CurrentAvailabilityGroupID IS NULL AND @Version >= 16
       BEGIN
-        SET @CurrentCommand = 'SELECT @ParamAvailabilityGroupID = contained_availability_group_id FROM sys.dm_exec_sessions WHERE session_id = @@SPID'
-
-        EXECUTE sp_executesql @stmt = @CurrentCommand, @params = N'@ParamAvailabilityGroupID uniqueidentifier OUTPUT', @ParamAvailabilityGroupID = @CurrentAvailabilityGroupID OUTPUT
-
-        IF @CurrentAvailabilityGroupID IS NOT NULL
-        BEGIN
-          SET @CurrentContainedAvailabilityGroupListenerConnection = 1
-        END
+        SET @CurrentAvailabilityGroupID = @ContainedAvailabilityGroupID
 
         SELECT @CurrentAvailabilityGroupReplicaID = replica_id
         FROM sys.dm_hadr_availability_replica_states
@@ -2972,7 +2979,7 @@ BEGIN
     AND NOT @CurrentInStandby = 1
     AND (@CurrentAvailabilityGroupRole = 'PRIMARY' OR @CurrentAvailabilityGroupRole IS NULL)
     AND (@CurrentDistributedAvailabilityGroupRole = 'PRIMARY' OR @CurrentDistributedAvailabilityGroupRole IS NULL)
-    AND (@BackupType IN('DIFF','FULL') OR (@ChangeBackupType = 'Y' AND @CurrentBackupType = 'LOG' AND @CurrentRecoveryModel IN('FULL','BULK_LOGGED') AND @CurrentLogLSN IS NULL AND NOT (@CurrentDatabaseName = 'master' AND @CurrentContainedAvailabilityGroupListenerConnection = 0)))
+    AND (@BackupType IN('DIFF','FULL') OR (@ChangeBackupType = 'Y' AND @CurrentBackupType = 'LOG' AND @CurrentRecoveryModel IN('FULL','BULK_LOGGED') AND @CurrentLogLSN IS NULL AND NOT (@CurrentDatabaseName = 'master' AND @ContainedAvailabilityGroupListenerConnection = 0)))
     BEGIN
       SET @CurrentCommand = 'SELECT @ParamAllocatedExtentPageCount = SUM(allocated_extent_page_count), @ParamModifiedExtentPageCount = SUM(modified_extent_page_count) FROM sys.dm_db_file_space_usage'
 
@@ -2988,11 +2995,11 @@ BEGIN
 
     IF @ChangeBackupType = 'Y'
     BEGIN
-      IF @CurrentBackupType = 'LOG' AND @CurrentRecoveryModel IN('FULL','BULK_LOGGED') AND @CurrentLogLSN IS NULL AND NOT (@CurrentDatabaseName = 'master' AND @CurrentContainedAvailabilityGroupListenerConnection = 0) AND (@BackupInProgress = 0 OR @BackupInProgress IS NULL)
+      IF @CurrentBackupType = 'LOG' AND @CurrentRecoveryModel IN('FULL','BULK_LOGGED') AND @CurrentLogLSN IS NULL AND NOT (@CurrentDatabaseName = 'master' AND @ContainedAvailabilityGroupListenerConnection = 0) AND (@BackupInProgress = 0 OR @BackupInProgress IS NULL)
       BEGIN
         SET @CurrentBackupType = 'DIFF'
       END
-      IF @CurrentBackupType = 'DIFF' AND ((@CurrentDatabaseName = 'master' AND @CurrentContainedAvailabilityGroupListenerConnection = 0) OR @CurrentDifferentialBaseLSN IS NULL OR (@CurrentModifiedExtentPageCount * 1. / NULLIF(@CurrentAllocatedExtentPageCount, 0) * 100 >= @MinModificationLevel) OR (COALESCE(CAST(@CurrentAllocatedExtentPageCount AS bigint) * 8192, CAST(@CurrentDatabaseSize AS bigint) * 8192) < CAST(@MinDatabaseSizeForDifferentialBackup AS bigint) * 1024 * 1024))
+      IF @CurrentBackupType = 'DIFF' AND ((@CurrentDatabaseName = 'master' AND @ContainedAvailabilityGroupListenerConnection = 0) OR @CurrentDifferentialBaseLSN IS NULL OR (@CurrentModifiedExtentPageCount * 1. / NULLIF(@CurrentAllocatedExtentPageCount, 0) * 100 >= @MinModificationLevel) OR (COALESCE(CAST(@CurrentAllocatedExtentPageCount AS bigint) * 8192, CAST(@CurrentDatabaseSize AS bigint) * 8192) < CAST(@MinDatabaseSizeForDifferentialBackup AS bigint) * 1024 * 1024))
       BEGIN
         SET @CurrentBackupType = 'FULL'
       END
@@ -3080,12 +3087,6 @@ BEGIN
 
     IF @CurrentAvailabilityGroup IS NOT NULL
     BEGIN
-      IF @Version >= 16 AND @EngineEdition NOT IN(5, 8)
-      BEGIN
-        SET @StartMessage = 'Contained availability group connection: ' + CASE WHEN @CurrentContainedAvailabilityGroupListenerConnection = 1 THEN 'Yes' WHEN @CurrentContainedAvailabilityGroupListenerConnection = 0 THEN 'No' ELSE 'N/A' END
-        RAISERROR('%s',10,1,@StartMessage) WITH NOWAIT
-      END
-
       SET @DatabaseMessage = 'Availability group: ' + ISNULL(@CurrentAvailabilityGroup,'N/A')
       RAISERROR('%s',10,1,@DatabaseMessage) WITH NOWAIT
 
@@ -3185,7 +3186,7 @@ BEGIN
     AND NOT (@CurrentBackupType = 'LOG' AND @CurrentRecoveryModel = 'SIMPLE')
     AND NOT (@CurrentBackupType = 'LOG' AND @CurrentRecoveryModel IN('FULL','BULK_LOGGED') AND @CurrentLogLSN IS NULL)
     AND NOT (@CurrentBackupType = 'DIFF' AND @CurrentDifferentialBaseLSN IS NULL)
-    AND NOT (@CurrentBackupType IN('DIFF','LOG') AND (@CurrentDatabaseName = 'master' AND @CurrentContainedAvailabilityGroupListenerConnection = 0))
+    AND NOT (@CurrentBackupType IN('DIFF','LOG') AND (@CurrentDatabaseName = 'master' AND @ContainedAvailabilityGroupListenerConnection = 0))
     AND NOT (@CurrentAvailabilityGroup IS NOT NULL AND @CurrentBackupOperationSupportedOnSecondaryReplicas = 0 AND (@CurrentAvailabilityGroupRole <> 'PRIMARY' OR @CurrentAvailabilityGroupRole IS NULL))
     AND NOT (@CurrentAvailabilityGroup IS NOT NULL AND @CurrentBackupOperationSupportedOnSecondaryReplicas = 1 AND (@CurrentIsPreferredBackupReplica <> 1 OR @CurrentIsPreferredBackupReplica IS NULL) AND @OverrideBackupPreference = 'N')
     AND NOT (@CurrentDistributedAvailabilityGroup IS NOT NULL AND @CurrentBackupOperationSupportedOnSecondaryReplicas = 0 AND (@CurrentDistributedAvailabilityGroupRole <> 'PRIMARY' OR @CurrentDistributedAvailabilityGroupRole IS NULL))
@@ -4479,7 +4480,6 @@ BEGIN
     SET @CurrentDate = NULL
     SET @CurrentDateUTC = NULL
     SET @CurrentCleanupDate = NULL
-    SET @CurrentContainedAvailabilityGroupListenerConnection = NULL
     SET @CurrentAvailabilityGroupReplicaID = NULL
     SET @CurrentAvailabilityGroupID = NULL
     SET @CurrentAvailabilityGroup = NULL
