@@ -94,7 +94,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-07-22 23:46:33                                                               //--
+  --// Version: 2026-07-23 00:22:31                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -2929,6 +2929,15 @@ BEGIN
       FROM sys.dm_hadr_database_replica_states
       WHERE replica_id = @CurrentAvailabilityGroupReplicaID
       AND database_id = DB_ID(@CurrentDatabaseName)
+
+      IF @CurrentAvailabilityGroupDatabaseReplicaSynchronizationState IS NULL AND @ContainedAvailabilityGroupListenerConnection = 1
+      BEGIN
+        SELECT @CurrentAvailabilityGroupDatabaseReplicaSynchronizationState = synchronization_state_desc,
+               @CurrentAvailabilityGroupDatabaseReplicaSynchronizationHealth = synchronization_health_desc
+        FROM sys.dm_hadr_database_replica_states
+        WHERE replica_id = @CurrentAvailabilityGroupReplicaID
+        AND DB_NAME(database_id) = @CurrentDatabaseName
+      END
 
       SELECT @CurrentAvailabilityGroup = [name],
              @CurrentAvailabilityGroupBackupPreference = UPPER(automated_backup_preference_desc)
