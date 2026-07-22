@@ -94,7 +94,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-07-22 21:56:04                                                               //--
+  --// Version: 2026-07-22 23:46:33                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -3239,7 +3239,7 @@ BEGIN
         IF @Description IS NULL OR LTRIM(RTRIM(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(@Description,'\',''),'/',''),':',''),'*',''),'?',''),'"',''),'<',''),'>',''),'|',''))) = '' SET @CurrentDirectoryStructure = REPLACE(@CurrentDirectoryStructure,'{Description}','')
         IF @BackupSetName IS NULL OR LTRIM(RTRIM(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(@BackupSetName,'\',''),'/',''),':',''),'*',''),'?',''),'"',''),'<',''),'>',''),'|',''))) = '' SET @CurrentDirectoryStructure = REPLACE(@CurrentDirectoryStructure,'{BackupSetName}','')
 
-        IF @Directory IS NULL AND @MirrorDirectory IS NULL AND @URL IS NULL AND @DefaultDirectory LIKE '%' + '.' + @@SERVICENAME + @DirectorySeparator + 'MSSQL' + @DirectorySeparator + 'Backup'
+        IF @Directory IS NULL AND @MirrorDirectory IS NULL AND @URL IS NULL AND @DefaultDirectory LIKE '%' + '.' + REPLACE(@@SERVICENAME,'_','[_]') + @DirectorySeparator + 'MSSQL' + @DirectorySeparator + 'Backup'
         BEGIN
           SET @CurrentDirectoryStructure = REPLACE(@CurrentDirectoryStructure,'{ServerName}','')
           SET @CurrentDirectoryStructure = REPLACE(@CurrentDirectoryStructure,'{InstanceName}','')
