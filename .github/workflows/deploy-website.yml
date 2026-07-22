@@ -38,8 +38,7 @@ jobs:
           # Explicit FTPS (AUTH TLS) on port 21
           SETTINGS="set ftp:ssl-force true; set ftp:ssl-protect-data true; set ssl:verify-certificate true; set net:max-retries 2; set net:timeout 60"
 
-          # The password is read from the LFTP_PASSWORD environment variable (--env-password),
-          # keeping it off the command line and out of the process table.
+          # The password is read from the LFTP_PASSWORD environment variable, keeping it off the command line and out of the process table.
           run_lftp () {
             lftp -p 21 --env-password -u "$FTP_USERNAME" -e "$SETTINGS; $1; bye" "$FTP_SERVER"
           }
