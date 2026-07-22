@@ -10,7 +10,7 @@ License: https://ola.hallengren.com/license.html
 
 GitHub: https://github.com/olahallengren/sql-server-maintenance-solution
 
-Version: 2026-07-22 14:07:58
+Version: 2026-07-22 18:59:22
 
 You can contact me by e-mail at ola@hallengren.com.
 
@@ -133,7 +133,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-07-22 14:07:58                                                               //--
+  --// Version: 2026-07-22 18:59:22                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -493,7 +493,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-07-22 14:07:58                                                               //--
+  --// Version: 2026-07-22 18:59:22                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -4975,7 +4975,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-07-22 14:07:58                                                               //--
+  --// Version: 2026-07-22 18:59:22                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -6998,7 +6998,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-07-22 14:07:58                                                               //--
+  --// Version: 2026-07-22 18:59:22                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -9910,7 +9910,6 @@ BEGIN
   DECLARE @LogDirectory nvarchar(max)
 
   DECLARE @TokenServer nvarchar(max)
-  DECLARE @TokenJobID nvarchar(max)
   DECLARE @TokenJobName nvarchar(max)
   DECLARE @TokenStepID nvarchar(max)
   DECLARE @TokenStepName nvarchar(max)
@@ -9927,8 +9926,6 @@ BEGIN
                        CommandTSQL nvarchar(max),
                        CommandCmdExec nvarchar(max),
                        DatabaseName varchar(max),
-                       OutputFileNamePart01 nvarchar(max),
-                       OutputFileNamePart02 nvarchar(max),
                        Selected bit DEFAULT 0,
                        Completed bit DEFAULT 0)
 
@@ -9937,8 +9934,6 @@ BEGIN
   DECLARE @CurrentCommandTSQL nvarchar(max)
   DECLARE @CurrentCommandCmdExec nvarchar(max)
   DECLARE @CurrentDatabaseName nvarchar(max)
-  DECLARE @CurrentOutputFileNamePart01 nvarchar(max)
-  DECLARE @CurrentOutputFileNamePart02 nvarchar(max)
 
   DECLARE @CurrentJobStepCommand nvarchar(max)
   DECLARE @CurrentJobStepSubSystem nvarchar(max)
@@ -9956,7 +9951,6 @@ BEGIN
   END
 
   SET @TokenServer = '$' + '(ESCAPE_SQUOTE(SRVR))'
-  SET @TokenJobID = '$' + '(ESCAPE_SQUOTE(JOBID))'
   SET @TokenStepID = '$' + '(ESCAPE_SQUOTE(STEPID))'
   SET @TokenDate = '$' + '(ESCAPE_SQUOTE(DATE))'
   SET @TokenTime = '$' + '(ESCAPE_SQUOTE(TIME))'
@@ -10013,74 +10007,59 @@ BEGIN
     SET @JobOwner = SUSER_SNAME(0x01)
   END
 
-  INSERT INTO @Jobs ([Name], CommandTSQL, DatabaseName, OutputFileNamePart01, OutputFileNamePart02)
+  INSERT INTO @Jobs ([Name], CommandTSQL, DatabaseName)
   VALUES('DatabaseBackup - SYSTEM_DATABASES - FULL',
          'EXECUTE [dbo].[DatabaseBackup]' + CHAR(13) + CHAR(10) + '@Databases = ''SYSTEM_DATABASES'',' + CHAR(13) + CHAR(10) + CASE WHEN @BackupURL IS NOT NULL THEN '@URL = N''' + REPLACE(@BackupURL,'''','''''') + '''' ELSE '@Directory = ' + ISNULL('N''' + REPLACE(@BackupDirectory,'''','''''') + '''','NULL') END + ',' + CHAR(13) + CHAR(10) + '@BackupType = ''FULL'',' + CHAR(13) + CHAR(10) + '@Verify = ''Y'',' + CHAR(13) + CHAR(10) + '@CleanupTime = ' + ISNULL(CAST(@CleanupTime AS nvarchar),'NULL') + ',' + CHAR(13) + CHAR(10) + '@Checksum = ''Y'',' + CHAR(13) + CHAR(10) + '@LogToTable = ''' + @LogToTable + '''',
-         @DatabaseName,
-         'DatabaseBackup',
-         'FULL')
+         @DatabaseName)
 
-  INSERT INTO @Jobs ([Name], CommandTSQL, DatabaseName, OutputFileNamePart01, OutputFileNamePart02)
+  INSERT INTO @Jobs ([Name], CommandTSQL, DatabaseName)
   VALUES('DatabaseBackup - USER_DATABASES - DIFF',
          'EXECUTE [dbo].[DatabaseBackup]' + CHAR(13) + CHAR(10) + '@Databases = ''USER_DATABASES'',' + CHAR(13) + CHAR(10) + CASE WHEN @BackupURL IS NOT NULL THEN '@URL = N''' + REPLACE(@BackupURL,'''','''''') + '''' ELSE '@Directory = ' + ISNULL('N''' + REPLACE(@BackupDirectory,'''','''''') + '''','NULL') END + ',' + CHAR(13) + CHAR(10) + '@BackupType = ''DIFF'',' + CHAR(13) + CHAR(10) + '@Verify = ''Y'',' + CHAR(13) + CHAR(10) + '@CleanupTime = ' + ISNULL(CAST(@CleanupTime AS nvarchar),'NULL') + ',' + CHAR(13) + CHAR(10) + '@Checksum = ''Y'',' + CHAR(13) + CHAR(10) + '@LogToTable = ''' + @LogToTable + '''',
-          @DatabaseName,
-         'DatabaseBackup',
-         'DIFF')
+          @DatabaseName)
 
-  INSERT INTO @Jobs ([Name], CommandTSQL, DatabaseName, OutputFileNamePart01, OutputFileNamePart02)
+  INSERT INTO @Jobs ([Name], CommandTSQL, DatabaseName)
   VALUES('DatabaseBackup - USER_DATABASES - FULL',
          'EXECUTE [dbo].[DatabaseBackup]' + CHAR(13) + CHAR(10) + '@Databases = ''USER_DATABASES'',' + CHAR(13) + CHAR(10) + CASE WHEN @BackupURL IS NOT NULL THEN '@URL = N''' + REPLACE(@BackupURL,'''','''''') + '''' ELSE '@Directory = ' + ISNULL('N''' + REPLACE(@BackupDirectory,'''','''''') + '''','NULL') END + ',' + CHAR(13) + CHAR(10) + '@BackupType = ''FULL'',' + CHAR(13) + CHAR(10) + '@Verify = ''Y'',' + CHAR(13) + CHAR(10) + '@CleanupTime = ' + ISNULL(CAST(@CleanupTime AS nvarchar),'NULL') + ',' + CHAR(13) + CHAR(10) + '@Checksum = ''Y'',' + CHAR(13) + CHAR(10) + '@LogToTable = ''' + @LogToTable + '''',
-         @DatabaseName,
-         'DatabaseBackup',
-         'FULL')
+         @DatabaseName)
 
-  INSERT INTO @Jobs ([Name], CommandTSQL, DatabaseName, OutputFileNamePart01, OutputFileNamePart02)
+  INSERT INTO @Jobs ([Name], CommandTSQL, DatabaseName)
   VALUES('DatabaseBackup - USER_DATABASES - LOG',
          'EXECUTE [dbo].[DatabaseBackup]' + CHAR(13) + CHAR(10) + '@Databases = ''USER_DATABASES'',' + CHAR(13) + CHAR(10) + CASE WHEN @BackupURL IS NOT NULL THEN '@URL = N''' + REPLACE(@BackupURL,'''','''''') + '''' ELSE '@Directory = ' + ISNULL('N''' + REPLACE(@BackupDirectory,'''','''''') + '''','NULL') END + ',' + CHAR(13) + CHAR(10) + '@BackupType = ''LOG'',' + CHAR(13) + CHAR(10) + '@Verify = ''Y'',' + CHAR(13) + CHAR(10) + '@CleanupTime = ' + ISNULL(CAST(@CleanupTime AS nvarchar),'NULL') + ',' + CHAR(13) + CHAR(10) + '@Checksum = ''Y'',' + CHAR(13) + CHAR(10) + '@LogToTable = ''' + @LogToTable + '''',
-         @DatabaseName,
-         'DatabaseBackup',
-         'LOG')
+         @DatabaseName)
 
-  INSERT INTO @Jobs ([Name], CommandTSQL, DatabaseName, OutputFileNamePart01)
+  INSERT INTO @Jobs ([Name], CommandTSQL, DatabaseName)
   VALUES('DatabaseIntegrityCheck - SYSTEM_DATABASES',
          'EXECUTE [dbo].[DatabaseIntegrityCheck]' + CHAR(13) + CHAR(10) + '@Databases = ''SYSTEM_DATABASES'',' + CHAR(13) + CHAR(10) + '@NoInformationalMessages = ''Y'',' + CHAR(13) + CHAR(10) + '@LogToTable = ''' + @LogToTable + '''',
-         @DatabaseName,
-         'DatabaseIntegrityCheck')
+         @DatabaseName)
 
-  INSERT INTO @Jobs ([Name], CommandTSQL, DatabaseName, OutputFileNamePart01)
+  INSERT INTO @Jobs ([Name], CommandTSQL, DatabaseName)
   VALUES('DatabaseIntegrityCheck - USER_DATABASES',
          'EXECUTE [dbo].[DatabaseIntegrityCheck]' + CHAR(13) + CHAR(10) + '@Databases = ''USER_DATABASES'',' + CHAR(13) + CHAR(10) + '@NoInformationalMessages = ''Y'',' + CHAR(13) + CHAR(10) + '@LogToTable = ''' + @LogToTable + '''',
-         @DatabaseName,
-         'DatabaseIntegrityCheck')
+         @DatabaseName)
 
-  INSERT INTO @Jobs ([Name], CommandTSQL, DatabaseName, OutputFileNamePart01)
+  INSERT INTO @Jobs ([Name], CommandTSQL, DatabaseName)
   VALUES('IndexOptimize - USER_DATABASES',
          'EXECUTE [dbo].[IndexOptimize]' + CHAR(13) + CHAR(10) + '@Databases = ''USER_DATABASES'',' + CHAR(13) + CHAR(10) + '@LogToTable = ''' + @LogToTable + '''',
-         @DatabaseName,
-         'IndexOptimize')
+         @DatabaseName)
 
-  INSERT INTO @Jobs ([Name], CommandTSQL, DatabaseName, OutputFileNamePart01)
+  INSERT INTO @Jobs ([Name], CommandTSQL, DatabaseName)
   VALUES('sp_delete_backuphistory',
          'DECLARE @CleanupDate datetime' + CHAR(13) + CHAR(10) + 'SET @CleanupDate = DATEADD(dd,-30,GETDATE())' + CHAR(13) + CHAR(10) + 'EXECUTE dbo.sp_delete_backuphistory @oldest_date = @CleanupDate',
-         'msdb',
-         'sp_delete_backuphistory')
+         'msdb')
 
-  INSERT INTO @Jobs ([Name], CommandTSQL, DatabaseName, OutputFileNamePart01)
+  INSERT INTO @Jobs ([Name], CommandTSQL, DatabaseName)
   VALUES('sp_purge_jobhistory',
          'DECLARE @CleanupDate datetime' + CHAR(13) + CHAR(10) + 'SET @CleanupDate = DATEADD(dd,-30,GETDATE())' + CHAR(13) + CHAR(10) + 'EXECUTE dbo.sp_purge_jobhistory @oldest_date = @CleanupDate',
-         'msdb',
-         'sp_purge_jobhistory')
+         'msdb')
 
-  INSERT INTO @Jobs ([Name], CommandTSQL, DatabaseName, OutputFileNamePart01)
+  INSERT INTO @Jobs ([Name], CommandTSQL, DatabaseName)
   VALUES('CommandLog Cleanup',
          'DELETE FROM [dbo].[CommandLog]' + CHAR(13) + CHAR(10) + 'WHERE StartTime < DATEADD(dd,-30,GETDATE())',
-         @DatabaseName,
-         'CommandLogCleanup')
+         @DatabaseName)
 
-  INSERT INTO @Jobs ([Name], CommandCmdExec, OutputFileNamePart01)
+  INSERT INTO @Jobs ([Name], CommandCmdExec)
   VALUES('Output File Cleanup',
-         'powershell.exe -NoProfile -Command "Get-ChildItem -LiteralPath ''' + COALESCE(@OutputFileDirectory,@TokenLogDirectory,@LogDirectory) + ''' -Filter ''*_*_*_*.txt'' -File | Where-Object { $_.LastWriteTime.Date -le (Get-Date).Date.AddDays(-30) } | ForEach-Object { Write-Output (''del '' + $_.FullName); Remove-Item -LiteralPath $_.FullName }"',
-         'OutputFileCleanup')
+         'powershell.exe -NoProfile -Command "Get-ChildItem -LiteralPath ''' + COALESCE(@OutputFileDirectory,@TokenLogDirectory,@LogDirectory) + ''' -Filter ''*_*_*_*.txt'' -File | Where-Object { $_.LastWriteTime.Date -le (Get-Date).Date.AddDays(-30) } | ForEach-Object { Write-Output (''del '' + $_.FullName); Remove-Item -LiteralPath $_.FullName }"')
 
   IF @AmazonRDS = 1
   BEGIN
@@ -10108,13 +10087,11 @@ BEGIN
 
   WHILE EXISTS (SELECT * FROM @Jobs WHERE Completed = 0 AND Selected = 1)
   BEGIN
-    SELECT @CurrentJobID = JobID,
-           @CurrentJobName = [Name],
-           @CurrentCommandTSQL = CommandTSQL,
-           @CurrentCommandCmdExec = CommandCmdExec,
-           @CurrentDatabaseName = DatabaseName,
-           @CurrentOutputFileNamePart01 = OutputFileNamePart01,
-           @CurrentOutputFileNamePart02 = OutputFileNamePart02
+    SELECT TOP 1 @CurrentJobID = JobID,
+                 @CurrentJobName = [Name],
+                 @CurrentCommandTSQL = CommandTSQL,
+                 @CurrentCommandCmdExec = CommandCmdExec,
+                 @CurrentDatabaseName = DatabaseName
     FROM @Jobs
     WHERE Completed = 0
     AND Selected = 1
@@ -10135,9 +10112,7 @@ BEGIN
 
     IF @AmazonRDS = 0 AND SERVERPROPERTY('EngineEdition') <> 8
     BEGIN
-      SET @CurrentOutputFileName = COALESCE(@OutputFileDirectory,@TokenLogDirectory,@LogDirectory) + @DirectorySeparator + ISNULL(CASE WHEN @TokenJobName IS NULL THEN @CurrentOutputFileNamePart01 END + '_','') + ISNULL(CASE WHEN @TokenJobName IS NULL THEN @CurrentOutputFileNamePart02 END + '_','') + ISNULL(@TokenJobName,@TokenJobID) + '_' + @TokenStepID + '_' + @TokenDate + '_' + @TokenTime + '.txt'
-      IF LEN(@CurrentOutputFileName) > 200 SET @CurrentOutputFileName = COALESCE(@OutputFileDirectory,@TokenLogDirectory,@LogDirectory) + @DirectorySeparator + ISNULL(CASE WHEN @TokenJobName IS NULL THEN @CurrentOutputFileNamePart01 END + '_','') + ISNULL(@TokenJobName,@TokenJobID) + '_' + @TokenStepID + '_' + @TokenDate + '_' + @TokenTime + '.txt'
-      IF LEN(@CurrentOutputFileName) > 200 SET @CurrentOutputFileName = COALESCE(@OutputFileDirectory,@TokenLogDirectory,@LogDirectory) + @DirectorySeparator + ISNULL(@TokenJobName,@TokenJobID) + '_' + @TokenStepID + '_' + @TokenDate + '_' + @TokenTime + '.txt'
+      SET @CurrentOutputFileName = COALESCE(@OutputFileDirectory,@TokenLogDirectory,@LogDirectory) + @DirectorySeparator + @TokenJobName + '_' + @TokenStepID + '_' + @TokenDate + '_' + @TokenTime + '.txt'
       IF LEN(@CurrentOutputFileName) > 200 SET @CurrentOutputFileName = NULL
     END
 
@@ -10158,8 +10133,6 @@ BEGIN
     SET @CurrentCommandTSQL = NULL
     SET @CurrentCommandCmdExec = NULL
     SET @CurrentDatabaseName = NULL
-    SET @CurrentOutputFileNamePart01 = NULL
-    SET @CurrentOutputFileNamePart02 = NULL
     SET @CurrentJobStepCommand = NULL
     SET @CurrentJobStepSubSystem = NULL
     SET @CurrentJobStepDatabaseName = NULL
