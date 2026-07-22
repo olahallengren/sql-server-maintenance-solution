@@ -9,7 +9,7 @@ License: https://ola.hallengren.com/license.html
 
 GitHub: https://github.com/olahallengren/sql-server-maintenance-solution
 
-Version: 2026-07-21 14:38:46
+Version: 2026-07-22 09:54:08
 
 You can contact me by e-mail at ola@hallengren.com.
 
@@ -88,7 +88,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-07-21 14:38:46                                                               //--
+  --// Version: 2026-07-22 09:54:08                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -394,7 +394,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-07-21 14:38:46                                                               //--
+  --// Version: 2026-07-22 09:54:08                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -1802,8 +1802,25 @@ BEGIN
       INNER JOIN sys.availability_replicas availability_replicas ON databases.replica_id = availability_replicas.replica_id
       WHERE databases.[name] = @CurrentDatabaseName
 
-      SELECT @CurrentAvailabilityGroupID = group_id,
-             @CurrentSecondaryRoleAllowConnections = secondary_role_allow_connections_desc
+      SELECT @CurrentAvailabilityGroupID = group_id
+      FROM sys.availability_replicas
+      WHERE replica_id = @CurrentAvailabilityGroupReplicaID
+
+      IF @ContainedAvailabilityGroupListenerConnection = 1 AND @CurrentAvailabilityGroupReplicaID IS NULL AND @CurrentAvailabilityGroupID IS NULL
+      BEGIN
+        SELECT @CurrentAvailabilityGroupID = availability_group_listeners.group_id
+        FROM sys.dm_exec_connections dm_exec_connections
+        INNER JOIN sys.availability_group_listener_ip_addresses availability_group_listener_ip_addresses ON dm_exec_connections.local_net_address = availability_group_listener_ip_addresses.ip_address
+        INNER JOIN sys.availability_group_listeners availability_group_listeners ON availability_group_listener_ip_addresses.listener_id = availability_group_listeners.listener_id
+        WHERE dm_exec_connections.session_id = @@SPID
+
+        SELECT @CurrentAvailabilityGroupReplicaID = replica_id
+        FROM sys.dm_hadr_availability_replica_states
+        WHERE group_id = @CurrentAvailabilityGroupID
+        AND is_local = 1
+      END
+
+      SELECT @CurrentSecondaryRoleAllowConnections = secondary_role_allow_connections_desc
       FROM sys.availability_replicas
       WHERE replica_id = @CurrentAvailabilityGroupReplicaID
 
@@ -2405,7 +2422,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-07-21 14:38:46                                                               //--
+  --// Version: 2026-07-22 09:54:08                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -3994,6 +4011,20 @@ BEGIN
       SELECT @CurrentAvailabilityGroupID = group_id
       FROM sys.availability_replicas
       WHERE replica_id = @CurrentAvailabilityGroupReplicaID
+
+      IF @ContainedAvailabilityGroupListenerConnection = 1 AND @CurrentAvailabilityGroupReplicaID IS NULL AND @CurrentAvailabilityGroupID IS NULL
+      BEGIN
+        SELECT @CurrentAvailabilityGroupID = availability_group_listeners.group_id
+        FROM sys.dm_exec_connections dm_exec_connections
+        INNER JOIN sys.availability_group_listener_ip_addresses availability_group_listener_ip_addresses ON dm_exec_connections.local_net_address = availability_group_listener_ip_addresses.ip_address
+        INNER JOIN sys.availability_group_listeners availability_group_listeners ON availability_group_listener_ip_addresses.listener_id = availability_group_listeners.listener_id
+        WHERE dm_exec_connections.session_id = @@SPID
+
+        SELECT @CurrentAvailabilityGroupReplicaID = replica_id
+        FROM sys.dm_hadr_availability_replica_states
+        WHERE group_id = @CurrentAvailabilityGroupID
+        AND is_local = 1
+      END
 
       SELECT @CurrentAvailabilityGroupRole = role_desc
       FROM sys.dm_hadr_availability_replica_states
