@@ -10095,6 +10095,16 @@ BEGIN
          'powershell.exe -NoProfile -Command "Get-ChildItem -LiteralPath ''' + COALESCE(@OutputFileDirectory,@TokenLogDirectory,@LogDirectory) + ''' -Filter ''*_*_*_*.txt'' -File | Where-Object { $_.LastWriteTime.Date -le (Get-Date).Date.AddDays(-30) } | ForEach-Object { Write-Output (''del '' + $_.FullName); Remove-Item -LiteralPath $_.FullName }"',
          'OutputFileCleanup')
 
+  INSERT INTO @Jobs ([Name], CommandTSQL, DatabaseName)
+  SELECT 'sp_cycle_errorlog',
+         'EXECUTE dbo.sp_cycle_errorlog',
+         'msdb'
+
+  INSERT INTO @Jobs ([Name], CommandTSQL, DatabaseName)
+  SELECT 'sp_cycle_agent_errorlog',
+         'EXECUTE dbo.sp_cycle_agent_errorlog',
+         'msdb'
+
   IF @AmazonRDS = 1
   BEGIN
    UPDATE @Jobs
@@ -10105,7 +10115,7 @@ BEGIN
   BEGIN
    UPDATE @Jobs
    SET Selected = 1
-   WHERE [Name] IN('DatabaseIntegrityCheck - SYSTEM_DATABASES','DatabaseIntegrityCheck - USER_DATABASES','IndexOptimize - USER_DATABASES','CommandLog Cleanup','sp_delete_backuphistory','sp_purge_jobhistory')
+   WHERE [Name] IN('DatabaseIntegrityCheck - SYSTEM_DATABASES','DatabaseIntegrityCheck - USER_DATABASES','IndexOptimize - USER_DATABASES','CommandLog Cleanup','sp_delete_backuphistory','sp_purge_jobhistory','sp_cycle_errorlog','sp_cycle_agent_errorlog')
   END
   ELSE IF @HostPlatform = 'Windows'
   BEGIN
