@@ -94,7 +94,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-07-23 00:22:31                                                               //--
+  --// Version: 2026-07-23 16:34:50                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -1516,6 +1516,24 @@ BEGIN
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
     VALUES('The value for the parameter @MaxTransferSize is not supported.', 16, 5)
+  END
+
+  IF @MaxTransferSize > 4194304 AND @URL IS NULL AND @BackupSoftware IS NULL
+  BEGIN
+    INSERT INTO @Errors ([Message], Severity, [State])
+    VALUES('The value for the parameter @MaxTransferSize is not supported.', 16, 6)
+  END
+
+  IF @MaxTransferSize > 4194304 AND @URL LIKE 'https%' AND @Credential IS NULL AND @BackupSoftware IS NULL
+  BEGIN
+    INSERT INTO @Errors ([Message], Severity, [State])
+    VALUES('The value for the parameter @MaxTransferSize is not supported.', 16, 7)
+  END
+
+  IF @MaxTransferSize < 5242880 AND @URL LIKE 's3%' AND @BackupSoftware IS NULL
+  BEGIN
+    INSERT INTO @Errors ([Message], Severity, [State])
+    VALUES('The value for the parameter @MaxTransferSize is not supported.', 16, 8)
   END
 
   ----------------------------------------------------------------------------------------------------
