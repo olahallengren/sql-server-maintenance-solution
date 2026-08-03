@@ -56,7 +56,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-07-23 23:22:18                                                               //--
+  --// Version: 2026-08-03 22:09:47                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -1038,6 +1038,12 @@ BEGIN
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
     VALUES('The value for the parameter @WaitAtLowPriorityMaxDuration is not supported.', 16, 1)
+  END
+
+  IF @WaitAtLowPriorityAbortAfterWait = 'SELF' AND @WaitAtLowPriorityMaxDuration = 0
+  BEGIN
+    INSERT INTO @Errors ([Message], Severity, [State])
+    VALUES('The value for the parameter @WaitAtLowPriorityMaxDuration is not supported.', 16, 2)
   END
 
   ----------------------------------------------------------------------------------------------------
