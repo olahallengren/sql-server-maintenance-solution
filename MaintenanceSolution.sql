@@ -10,7 +10,7 @@ License: https://ola.hallengren.com/license.html
 
 GitHub: https://github.com/olahallengren/sql-server-maintenance-solution
 
-Version: 2026-08-03 22:09:47
+Version: 2026-08-04 21:29:03
 
 You can contact me by e-mail at ola@hallengren.com.
 
@@ -133,7 +133,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-08-03 22:09:47                                                               //--
+  --// Version: 2026-08-04 21:29:03                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -493,7 +493,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-08-03 22:09:47                                                               //--
+  --// Version: 2026-08-04 21:29:03                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -4987,7 +4987,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-08-03 22:09:47                                                               //--
+  --// Version: 2026-08-04 21:29:03                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -7010,7 +7010,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-08-03 22:09:47                                                               //--
+  --// Version: 2026-08-04 21:29:03                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -7105,6 +7105,8 @@ BEGIN
   DECLARE @CurrentPartitionNumber int
   DECLARE @CurrentPartitionCount int
   DECLARE @CurrentInRowDataPageCount bigint
+  DECLARE @CurrentAlterIndexCompleted bit
+  DECLARE @CurrentUpdateStatisticsCompleted bit
   DECLARE @CurrentIsPartition bit
   DECLARE @CurrentIndexExists bit
   DECLARE @CurrentStatisticsExists bit
@@ -7186,7 +7188,9 @@ BEGIN
                                        StartPosition int,
                                        [Order] int DEFAULT 0,
                                        Selected bit DEFAULT 0,
-                                       Completed bit DEFAULT 0,
+                                       AlterIndexCompleted bit DEFAULT 0,
+                                       UpdateStatisticsCompleted bit DEFAULT 0,
+                                       Completed AS CASE WHEN AlterIndexCompleted = 1 AND UpdateStatisticsCompleted = 1 THEN 1 ELSE 0 END,
                                        PRIMARY KEY (Selected, Completed, [Order], ID),
                                        INDEX IX_ObjectID_StatisticsID_PartitionNumber NONCLUSTERED (ObjectID, StatisticsID, PartitionNumber))
 
@@ -9090,6 +9094,19 @@ BEGIN
         UPDATE tmpIndexesStatistics
         SET [Order] = RowNumber
 
+        -- Update that alter index is completed for rows that have no index, if no index actions have been selected, for rows on read-only filegroups, or based on the page counts
+        UPDATE @tmpIndexesStatistics
+        SET AlterIndexCompleted = 1
+        WHERE IndexID IS NULL
+        OR NOT EXISTS (SELECT * FROM @ActionsPreferred)
+        OR OnReadOnlyFileGroup = 1
+        OR NOT (((InRowDataPageCount >= @MinNumberOfPages OR @MinNumberOfPages = 0) AND (InRowDataPageCount <= @MaxNumberOfPages OR @MaxNumberOfPages IS NULL)) OR InRowDataPageCount IS NULL)
+
+        -- Update that update statistics is completed for rows that have no statistics
+        UPDATE @tmpIndexesStatistics
+        SET UpdateStatisticsCompleted = 1
+        WHERE StatisticsID IS NULL
+
         SET @CurrentCommand = 'SELECT schemas.[name] AS SchemaName, objects.[name] AS ObjectName'
                             + ' FROM sys.objects objects'
                             + ' INNER JOIN sys.schemas schemas ON objects.[schema_id] = schemas.[schema_id]'
@@ -9186,7 +9203,9 @@ BEGIN
                      @CurrentPartitionID = PartitionID,
                      @CurrentPartitionNumber = PartitionNumber,
                      @CurrentPartitionCount = PartitionCount,
-                     @CurrentInRowDataPageCount = InRowDataPageCount
+                     @CurrentInRowDataPageCount = InRowDataPageCount,
+                     @CurrentAlterIndexCompleted = AlterIndexCompleted,
+                     @CurrentUpdateStatisticsCompleted = UpdateStatisticsCompleted
         FROM @tmpIndexesStatistics
         WHERE Selected = 1
         AND Completed = 0
@@ -9200,47 +9219,41 @@ BEGIN
         -- Is the index a partition?
         IF @CurrentPartitionNumber IS NULL OR @CurrentPartitionCount = 1 BEGIN SET @CurrentIsPartition = 0 END ELSE BEGIN SET @CurrentIsPartition = 1 END
 
-        IF ((@CurrentInRowDataPageCount >= @MinNumberOfPages OR @MinNumberOfPages = 0) AND (@CurrentInRowDataPageCount <= @MaxNumberOfPages OR @MaxNumberOfPages IS NULL)) OR @CurrentInRowDataPageCount IS NULL
+        IF @CurrentAlterIndexCompleted = 0 AND @CurrentIndexID IS NOT NULL AND EXISTS(SELECT * FROM @ActionsPreferred) AND @CurrentOnReadOnlyFileGroup = 0
         BEGIN
           -- Does the index exist?
-          IF @CurrentIndexID IS NOT NULL AND EXISTS(SELECT * FROM @ActionsPreferred)
-          BEGIN
-            SET @CurrentCommand = ''
+          SET @CurrentCommand = ''
 
-            IF @LockTimeout IS NOT NULL SET @CurrentCommand = 'SET LOCK_TIMEOUT ' + CAST(@LockTimeout * 1000 AS nvarchar(max)) + '; '
+          IF @LockTimeout IS NOT NULL SET @CurrentCommand = 'SET LOCK_TIMEOUT ' + CAST(@LockTimeout * 1000 AS nvarchar(max)) + '; '
 
-            IF @CurrentIsPartition = 0 SET @CurrentCommand += 'IF EXISTS(SELECT * FROM sys.indexes indexes INNER JOIN sys.objects objects ON indexes.[object_id] = objects.[object_id] INNER JOIN sys.schemas schemas ON objects.[schema_id] = schemas.[schema_id] WHERE objects.[type] IN(''U'',''V'') AND indexes.[type] IN(1,2,3,4,5,6,7) AND indexes.is_disabled = 0 AND indexes.is_hypothetical = 0 AND schemas.[schema_id] = @ParamSchemaID AND schemas.[name] = @ParamSchemaName AND objects.[object_id] = @ParamObjectID AND objects.[name] = @ParamObjectName AND objects.[type] = @ParamObjectType AND indexes.index_id = @ParamIndexID AND indexes.[name] = @ParamIndexName AND indexes.[type] = @ParamIndexType) BEGIN SET @ParamIndexExists = 1 END'
-            IF @CurrentIsPartition = 1 SET @CurrentCommand += 'IF EXISTS(SELECT * FROM sys.indexes indexes INNER JOIN sys.objects objects ON indexes.[object_id] = objects.[object_id] INNER JOIN sys.schemas schemas ON objects.[schema_id] = schemas.[schema_id] INNER JOIN sys.partitions partitions ON indexes.[object_id] = partitions.[object_id] AND indexes.index_id = partitions.index_id WHERE objects.[type] IN(''U'',''V'') AND indexes.[type] IN(1,2,3,4,5,6,7) AND indexes.is_disabled = 0 AND indexes.is_hypothetical = 0 AND schemas.[schema_id] = @ParamSchemaID AND schemas.[name] = @ParamSchemaName AND objects.[object_id] = @ParamObjectID AND objects.[name] = @ParamObjectName AND objects.[type] = @ParamObjectType AND indexes.index_id = @ParamIndexID AND indexes.[name] = @ParamIndexName AND indexes.[type] = @ParamIndexType AND partitions.partition_id = @ParamPartitionID AND partitions.partition_number = @ParamPartitionNumber) BEGIN SET @ParamIndexExists = 1 END'
+          IF @CurrentIsPartition = 0 SET @CurrentCommand += 'IF EXISTS(SELECT * FROM sys.indexes indexes INNER JOIN sys.objects objects ON indexes.[object_id] = objects.[object_id] INNER JOIN sys.schemas schemas ON objects.[schema_id] = schemas.[schema_id] WHERE objects.[type] IN(''U'',''V'') AND indexes.[type] IN(1,2,3,4,5,6,7) AND indexes.is_disabled = 0 AND indexes.is_hypothetical = 0 AND schemas.[schema_id] = @ParamSchemaID AND schemas.[name] = @ParamSchemaName AND objects.[object_id] = @ParamObjectID AND objects.[name] = @ParamObjectName AND objects.[type] = @ParamObjectType AND indexes.index_id = @ParamIndexID AND indexes.[name] = @ParamIndexName AND indexes.[type] = @ParamIndexType) BEGIN SET @ParamIndexExists = 1 END'
+          IF @CurrentIsPartition = 1 SET @CurrentCommand += 'IF EXISTS(SELECT * FROM sys.indexes indexes INNER JOIN sys.objects objects ON indexes.[object_id] = objects.[object_id] INNER JOIN sys.schemas schemas ON objects.[schema_id] = schemas.[schema_id] INNER JOIN sys.partitions partitions ON indexes.[object_id] = partitions.[object_id] AND indexes.index_id = partitions.index_id WHERE objects.[type] IN(''U'',''V'') AND indexes.[type] IN(1,2,3,4,5,6,7) AND indexes.is_disabled = 0 AND indexes.is_hypothetical = 0 AND schemas.[schema_id] = @ParamSchemaID AND schemas.[name] = @ParamSchemaName AND objects.[object_id] = @ParamObjectID AND objects.[name] = @ParamObjectName AND objects.[type] = @ParamObjectType AND indexes.index_id = @ParamIndexID AND indexes.[name] = @ParamIndexName AND indexes.[type] = @ParamIndexType AND partitions.partition_id = @ParamPartitionID AND partitions.partition_number = @ParamPartitionNumber) BEGIN SET @ParamIndexExists = 1 END'
 
-            BEGIN TRY
-              EXECUTE @CurrentDatabase_sp_executesql @stmt = @CurrentCommand, @params = N'@ParamSchemaID int, @ParamSchemaName sysname, @ParamObjectID int, @ParamObjectName sysname, @ParamObjectType sysname, @ParamIndexID int, @ParamIndexName sysname, @ParamIndexType int, @ParamPartitionID bigint, @ParamPartitionNumber int, @ParamIndexExists bit OUTPUT', @ParamSchemaID = @CurrentSchemaID, @ParamSchemaName = @CurrentSchemaName, @ParamObjectID = @CurrentObjectID, @ParamObjectName = @CurrentObjectName, @ParamObjectType = @CurrentObjectType, @ParamIndexID = @CurrentIndexID, @ParamIndexName = @CurrentIndexName, @ParamIndexType = @CurrentIndexType, @ParamPartitionID = @CurrentPartitionID, @ParamPartitionNumber = @CurrentPartitionNumber, @ParamIndexExists = @CurrentIndexExists OUTPUT
+          BEGIN TRY
+            EXECUTE @CurrentDatabase_sp_executesql @stmt = @CurrentCommand, @params = N'@ParamSchemaID int, @ParamSchemaName sysname, @ParamObjectID int, @ParamObjectName sysname, @ParamObjectType sysname, @ParamIndexID int, @ParamIndexName sysname, @ParamIndexType int, @ParamPartitionID bigint, @ParamPartitionNumber int, @ParamIndexExists bit OUTPUT', @ParamSchemaID = @CurrentSchemaID, @ParamSchemaName = @CurrentSchemaName, @ParamObjectID = @CurrentObjectID, @ParamObjectName = @CurrentObjectName, @ParamObjectType = @CurrentObjectType, @ParamIndexID = @CurrentIndexID, @ParamIndexName = @CurrentIndexName, @ParamIndexType = @CurrentIndexType, @ParamPartitionID = @CurrentPartitionID, @ParamPartitionNumber = @CurrentPartitionNumber, @ParamIndexExists = @CurrentIndexExists OUTPUT
 
-              IF @CurrentIndexExists IS NULL
-              BEGIN
-                SET @CurrentIndexExists = 0
-                GOTO NoAction
-              END
-            END TRY
-            BEGIN CATCH
-              SET @ErrorMessage = 'Msg ' + CAST(ERROR_NUMBER() AS nvarchar(max)) + ', ' + ISNULL(ERROR_MESSAGE(),'') + CASE WHEN ERROR_NUMBER() = 1222 THEN ' The index ' + QUOTENAME(@CurrentIndexName) + ' on the object ' + QUOTENAME(@CurrentDatabaseName) + '.' + QUOTENAME(@CurrentSchemaName) + '.' + QUOTENAME(@CurrentObjectName) + ' is locked. It could not be checked if the index exists.' ELSE '' END
-              SET @Severity = CASE WHEN ERROR_NUMBER() IN(1205,1222) THEN @LockMessageSeverity ELSE 16 END
-              RAISERROR('%s',@Severity,1,@ErrorMessage) WITH NOWAIT
-              RAISERROR(@EmptyLine,10,1) WITH NOWAIT
-
-              IF NOT (ERROR_NUMBER() IN(1205,1222) AND @LockMessageSeverity = 10)
-              BEGIN
-                SET @ReturnCode = ERROR_NUMBER()
-              END
-
+            IF @CurrentIndexExists IS NULL
+            BEGIN
+              SET @CurrentIndexExists = 0
               GOTO NoAction
-            END CATCH
-          END
+            END
+          END TRY
+          BEGIN CATCH
+            SET @ErrorMessage = 'Msg ' + CAST(ERROR_NUMBER() AS nvarchar(max)) + ', ' + ISNULL(ERROR_MESSAGE(),'') + CASE WHEN ERROR_NUMBER() = 1222 THEN ' The index ' + QUOTENAME(@CurrentIndexName) + ' on the object ' + QUOTENAME(@CurrentDatabaseName) + '.' + QUOTENAME(@CurrentSchemaName) + '.' + QUOTENAME(@CurrentObjectName) + ' is locked. It could not be checked if the index exists.' ELSE '' END
+            SET @Severity = CASE WHEN ERROR_NUMBER() IN(1205,1222) THEN @LockMessageSeverity ELSE 16 END
+            RAISERROR('%s',@Severity,1,@ErrorMessage) WITH NOWAIT
+            RAISERROR(@EmptyLine,10,1) WITH NOWAIT
+
+            IF NOT (ERROR_NUMBER() IN(1205,1222) AND @LockMessageSeverity = 10)
+            BEGIN
+              SET @ReturnCode = ERROR_NUMBER()
+            END
+
+            GOTO NoAction
+          END CATCH
 
           -- Is the index fragmented?
-          IF @CurrentIndexID IS NOT NULL
-          AND @CurrentOnReadOnlyFileGroup = 0
-          AND EXISTS(SELECT * FROM @ActionsPreferred)
-          AND (EXISTS(SELECT [Priority], [Action], COUNT(*) FROM @ActionsPreferred GROUP BY [Priority], [Action] HAVING COUNT(*) <> 3) OR @MinNumberOfPages > 0 OR @MaxNumberOfPages IS NOT NULL)
+          IF EXISTS(SELECT [Priority], [Action], COUNT(*) FROM @ActionsPreferred GROUP BY [Priority], [Action] HAVING COUNT(*) <> 3) OR @MinNumberOfPages > 0 OR @MaxNumberOfPages IS NOT NULL
           BEGIN
             SET @CurrentCommand = ''
 
@@ -9274,51 +9287,40 @@ BEGIN
           END
 
           -- Select fragmentation group
-          IF @CurrentIndexID IS NOT NULL AND @CurrentOnReadOnlyFileGroup = 0 AND EXISTS(SELECT * FROM @ActionsPreferred)
-          BEGIN
-            SET @CurrentFragmentationGroup = CASE
-            WHEN @CurrentFragmentationLevel >= @FragmentationLevel2 THEN 'High'
-            WHEN @CurrentFragmentationLevel >= @FragmentationLevel1 AND @CurrentFragmentationLevel < @FragmentationLevel2 THEN 'Medium'
-            WHEN @CurrentFragmentationLevel < @FragmentationLevel1 THEN 'Low'
-            END
+          SET @CurrentFragmentationGroup = CASE
+          WHEN @CurrentFragmentationLevel >= @FragmentationLevel2 THEN 'High'
+          WHEN @CurrentFragmentationLevel >= @FragmentationLevel1 AND @CurrentFragmentationLevel < @FragmentationLevel2 THEN 'Medium'
+          WHEN @CurrentFragmentationLevel < @FragmentationLevel1 THEN 'Low'
           END
 
           -- Which actions are allowed?
-          IF @CurrentIndexID IS NOT NULL AND EXISTS(SELECT * FROM @ActionsPreferred)
+          IF NOT (@CurrentIsMemoryOptimized = 1)
+          AND NOT (@CurrentAllowPageLocks = 0)
           BEGIN
-            IF NOT (@CurrentOnReadOnlyFileGroup = 1)
-            AND NOT (@CurrentIsMemoryOptimized = 1)
-            AND NOT (@CurrentAllowPageLocks = 0)
-            BEGIN
-              INSERT INTO @CurrentActionsAllowed ([Action])
-              VALUES ('INDEX_REORGANIZE')
-            END
-            IF NOT (@CurrentOnReadOnlyFileGroup = 1)
-            AND NOT (@CurrentIsMemoryOptimized = 1)
-            BEGIN
-              INSERT INTO @CurrentActionsAllowed ([Action])
-              VALUES ('INDEX_REBUILD_OFFLINE')
-            END
-            IF @EngineEdition IN (3, 5, 8)
-            AND NOT (@CurrentOnReadOnlyFileGroup = 1)
-            AND NOT (@CurrentIsMemoryOptimized = 1)
-            AND NOT (@CurrentIndexType = 1 AND @CurrentIsImageText = 1 AND @CurrentIsImageText IS NOT NULL)
-            AND NOT (@CurrentIndexType = 1 AND @CurrentIsFileStream = 1 AND @CurrentIsFileStream IS NOT NULL)
-            AND NOT (@CurrentIndexType = 3)
-            AND NOT (@CurrentIndexType = 4)
-            AND NOT (@CurrentIndexType = 5 AND NOT (@Version >= 15 OR @EngineEdition = 5 OR (@EngineEdition = 8 AND @ProductUpdateType = 'Continuous')))
-            AND NOT (@CurrentIndexType = 2 AND @CurrentHasClusteredColumnstore = 1 AND @CurrentHasClusteredColumnstore IS NOT NULL AND NOT (@Version >= 15 OR @EngineEdition = 5 OR (@EngineEdition = 8 AND @ProductUpdateType = 'Continuous')))
-            AND NOT (@CurrentIndexType = 5 AND @CurrentIsColumnstoreOrdered = 1 AND @CurrentIsColumnstoreOrdered IS NOT NULL AND NOT (@Version >= 17 OR @EngineEdition = 5 OR (@EngineEdition = 8 AND @ProductUpdateType = 'Continuous')))
-            BEGIN
-              INSERT INTO @CurrentActionsAllowed ([Action])
-              VALUES ('INDEX_REBUILD_ONLINE')
-            END
+            INSERT INTO @CurrentActionsAllowed ([Action])
+            VALUES ('INDEX_REORGANIZE')
+          END
+          IF NOT (@CurrentIsMemoryOptimized = 1)
+          BEGIN
+            INSERT INTO @CurrentActionsAllowed ([Action])
+            VALUES ('INDEX_REBUILD_OFFLINE')
+          END
+          IF @EngineEdition IN (3, 5, 8)
+          AND NOT (@CurrentIsMemoryOptimized = 1)
+          AND NOT (@CurrentIndexType = 1 AND @CurrentIsImageText = 1 AND @CurrentIsImageText IS NOT NULL)
+          AND NOT (@CurrentIndexType = 1 AND @CurrentIsFileStream = 1 AND @CurrentIsFileStream IS NOT NULL)
+          AND NOT (@CurrentIndexType = 3)
+          AND NOT (@CurrentIndexType = 4)
+          AND NOT (@CurrentIndexType = 5 AND NOT (@Version >= 15 OR @EngineEdition = 5 OR (@EngineEdition = 8 AND @ProductUpdateType = 'Continuous')))
+          AND NOT (@CurrentIndexType = 2 AND @CurrentHasClusteredColumnstore = 1 AND @CurrentHasClusteredColumnstore IS NOT NULL AND NOT (@Version >= 15 OR @EngineEdition = 5 OR (@EngineEdition = 8 AND @ProductUpdateType = 'Continuous')))
+          AND NOT (@CurrentIndexType = 5 AND @CurrentIsColumnstoreOrdered = 1 AND @CurrentIsColumnstoreOrdered IS NOT NULL AND NOT (@Version >= 17 OR @EngineEdition = 5 OR (@EngineEdition = 8 AND @ProductUpdateType = 'Continuous')))
+          BEGIN
+            INSERT INTO @CurrentActionsAllowed ([Action])
+            VALUES ('INDEX_REBUILD_ONLINE')
           END
 
           -- Decide action
-          IF @CurrentIndexID IS NOT NULL
-          AND EXISTS(SELECT * FROM @ActionsPreferred)
-          AND (@CurrentPageCount >= @MinNumberOfPages OR @MinNumberOfPages = 0)
+          IF (@CurrentPageCount >= @MinNumberOfPages OR @MinNumberOfPages = 0)
           AND (@CurrentPageCount <= @MaxNumberOfPages OR @MaxNumberOfPages IS NULL)
           AND @CurrentResumableIndexOperation = 0
           BEGIN
@@ -9354,148 +9356,149 @@ BEGIN
           BEGIN
             SET @CurrentMaxDOP = 1
           END
-        END
 
-        -- Create index comment
-        IF @CurrentAction IS NOT NULL
-        BEGIN
-          SET @CurrentComment = 'ObjectType: ' + CASE WHEN @CurrentObjectType = 'U' THEN 'Table' WHEN @CurrentObjectType = 'V' THEN 'View' ELSE 'N/A' END + ', '
-          SET @CurrentComment += 'IndexType: ' + CASE WHEN @CurrentIndexType = 1 THEN 'Clustered' WHEN @CurrentIndexType = 2 THEN 'NonClustered' WHEN @CurrentIndexType = 3 THEN 'XML' WHEN @CurrentIndexType = 4 THEN 'Spatial' WHEN @CurrentIndexType = 5 THEN 'Clustered Columnstore' WHEN @CurrentIndexType = 6 THEN 'NonClustered Columnstore' WHEN @CurrentIndexType = 7 THEN 'NonClustered Hash' ELSE 'N/A' END + ', '
-          IF @CurrentIsImageText IS NOT NULL SET @CurrentComment += 'ImageText: ' + CASE WHEN @CurrentIsImageText = 1 THEN 'Yes' WHEN @CurrentIsImageText = 0 THEN 'No' ELSE 'N/A' END + ', '
-          IF @CurrentIsFileStream IS NOT NULL SET @CurrentComment += 'FileStream: ' + CASE WHEN @CurrentIsFileStream = 1 THEN 'Yes' WHEN @CurrentIsFileStream = 0 THEN 'No' ELSE 'N/A' END + ', '
-          IF @CurrentHasClusteredColumnstore IS NOT NULL AND @CurrentIndexType NOT IN(5, 6) SET @CurrentComment += 'HasClusteredColumnstore: ' + CASE WHEN @CurrentHasClusteredColumnstore = 1 THEN 'Yes' WHEN @CurrentHasClusteredColumnstore = 0 THEN 'No' ELSE 'N/A' END + ', '
-          IF @CurrentIsColumnstoreOrdered IS NOT NULL AND @CurrentIndexType = 5 SET @CurrentComment += 'IsColumnstoreOrdered: ' + CASE WHEN @CurrentIsColumnstoreOrdered = 1 THEN 'Yes' WHEN @CurrentIsColumnstoreOrdered = 0 THEN 'No' ELSE 'N/A' END + ', '
-          IF @CurrentIsComputed IS NOT NULL SET @CurrentComment += 'Computed: ' + CASE WHEN @CurrentIsComputed = 1 THEN 'Yes' WHEN @CurrentIsComputed = 0 THEN 'No' ELSE 'N/A' END + ', '
-          IF @CurrentIsClusteredIndexComputed IS NOT NULL AND @CurrentIndexType = 2 SET @CurrentComment += 'ClusteredIndexComputed: ' + CASE WHEN @CurrentIsClusteredIndexComputed = 1 THEN 'Yes' WHEN @CurrentIsClusteredIndexComputed = 0 THEN 'No' ELSE 'N/A' END + ', '
-          IF @CurrentIsTimestamp IS NOT NULL SET @CurrentComment += 'Timestamp: ' + CASE WHEN @CurrentIsTimestamp = 1 THEN 'Yes' WHEN @CurrentIsTimestamp = 0 THEN 'No' ELSE 'N/A' END + ', '
-          IF @Resumable = 'Y' SET @CurrentComment += 'HasFilter: ' + CASE WHEN @CurrentHasFilter = 1 THEN 'Yes' WHEN @CurrentHasFilter = 0 THEN 'No' ELSE 'N/A' END + ', '
-          SET @CurrentComment += 'AllowPageLocks: ' + CASE WHEN @CurrentAllowPageLocks = 1 THEN 'Yes' WHEN @CurrentAllowPageLocks = 0 THEN 'No' ELSE 'N/A' END + ', '
-          SET @CurrentComment += 'PageCount: ' + ISNULL(CAST(@CurrentPageCount AS nvarchar(max)),'N/A') + ', '
-          SET @CurrentComment += 'Fragmentation: ' + ISNULL(CAST(@CurrentFragmentationLevel AS nvarchar(max)),'N/A')
-        END
-
-        IF @CurrentAction IS NOT NULL AND (@CurrentPageCount IS NOT NULL OR @CurrentFragmentationLevel IS NOT NULL)
-        BEGIN
-        SET @CurrentExtendedInfo = (SELECT *
-                                    FROM (SELECT CAST(@CurrentPageCount AS nvarchar(max)) AS [PageCount],
-                                                 CAST(@CurrentFragmentationLevel AS nvarchar(max)) AS Fragmentation
-                                    ) ExtendedInfo FOR XML RAW('ExtendedInfo'), ELEMENTS)
-        END
-
-        IF @CurrentAction IS NOT NULL AND (SYSDATETIME() < DATEADD(SECOND,@TimeLimit,@StartTime) OR @TimeLimit IS NULL)
-        BEGIN
-          SET @CurrentDatabaseContext = @CurrentDatabaseName
-
-          SET @CurrentCommandType = 'ALTER_INDEX'
-
-          SET @CurrentCommand = ''
-          IF @LockTimeout IS NOT NULL SET @CurrentCommand = 'SET LOCK_TIMEOUT ' + CAST(@LockTimeout * 1000 AS nvarchar(max)) + '; '
-          SET @CurrentCommand += 'ALTER INDEX ' + QUOTENAME(@CurrentIndexName) + ' ON ' + QUOTENAME(@CurrentSchemaName) + '.' + QUOTENAME(@CurrentObjectName)
-          IF @CurrentResumableIndexOperation = 1 SET @CurrentCommand += ' RESUME'
-          IF @CurrentAction IN('INDEX_REBUILD_ONLINE','INDEX_REBUILD_OFFLINE') AND @CurrentResumableIndexOperation = 0 SET @CurrentCommand += ' REBUILD'
-          IF @CurrentAction IN('INDEX_REORGANIZE') AND @CurrentResumableIndexOperation = 0 SET @CurrentCommand += ' REORGANIZE'
-          IF @CurrentIsPartition = 1 AND @CurrentResumableIndexOperation = 0 SET @CurrentCommand += ' PARTITION = ' + CAST(@CurrentPartitionNumber AS nvarchar(max))
-
-          IF @CurrentAction IN('INDEX_REBUILD_ONLINE','INDEX_REBUILD_OFFLINE') AND @SortInTempdb = 'Y' AND @CurrentIndexType IN(1,2,3,4) AND @CurrentResumableIndexOperation = 0
+          -- Create index comment
+          IF @CurrentAction IS NOT NULL
           BEGIN
-            INSERT INTO @CurrentAlterIndexWithClauseArguments (Argument)
-            VALUES('SORT_IN_TEMPDB = ON')
+            SET @CurrentComment = 'ObjectType: ' + CASE WHEN @CurrentObjectType = 'U' THEN 'Table' WHEN @CurrentObjectType = 'V' THEN 'View' ELSE 'N/A' END + ', '
+            SET @CurrentComment += 'IndexType: ' + CASE WHEN @CurrentIndexType = 1 THEN 'Clustered' WHEN @CurrentIndexType = 2 THEN 'NonClustered' WHEN @CurrentIndexType = 3 THEN 'XML' WHEN @CurrentIndexType = 4 THEN 'Spatial' WHEN @CurrentIndexType = 5 THEN 'Clustered Columnstore' WHEN @CurrentIndexType = 6 THEN 'NonClustered Columnstore' WHEN @CurrentIndexType = 7 THEN 'NonClustered Hash' ELSE 'N/A' END + ', '
+            IF @CurrentIsImageText IS NOT NULL SET @CurrentComment += 'ImageText: ' + CASE WHEN @CurrentIsImageText = 1 THEN 'Yes' WHEN @CurrentIsImageText = 0 THEN 'No' ELSE 'N/A' END + ', '
+            IF @CurrentIsFileStream IS NOT NULL SET @CurrentComment += 'FileStream: ' + CASE WHEN @CurrentIsFileStream = 1 THEN 'Yes' WHEN @CurrentIsFileStream = 0 THEN 'No' ELSE 'N/A' END + ', '
+            IF @CurrentHasClusteredColumnstore IS NOT NULL AND @CurrentIndexType NOT IN(5, 6) SET @CurrentComment += 'HasClusteredColumnstore: ' + CASE WHEN @CurrentHasClusteredColumnstore = 1 THEN 'Yes' WHEN @CurrentHasClusteredColumnstore = 0 THEN 'No' ELSE 'N/A' END + ', '
+            IF @CurrentIsColumnstoreOrdered IS NOT NULL AND @CurrentIndexType = 5 SET @CurrentComment += 'IsColumnstoreOrdered: ' + CASE WHEN @CurrentIsColumnstoreOrdered = 1 THEN 'Yes' WHEN @CurrentIsColumnstoreOrdered = 0 THEN 'No' ELSE 'N/A' END + ', '
+            IF @CurrentIsComputed IS NOT NULL SET @CurrentComment += 'Computed: ' + CASE WHEN @CurrentIsComputed = 1 THEN 'Yes' WHEN @CurrentIsComputed = 0 THEN 'No' ELSE 'N/A' END + ', '
+            IF @CurrentIsClusteredIndexComputed IS NOT NULL AND @CurrentIndexType = 2 SET @CurrentComment += 'ClusteredIndexComputed: ' + CASE WHEN @CurrentIsClusteredIndexComputed = 1 THEN 'Yes' WHEN @CurrentIsClusteredIndexComputed = 0 THEN 'No' ELSE 'N/A' END + ', '
+            IF @CurrentIsTimestamp IS NOT NULL SET @CurrentComment += 'Timestamp: ' + CASE WHEN @CurrentIsTimestamp = 1 THEN 'Yes' WHEN @CurrentIsTimestamp = 0 THEN 'No' ELSE 'N/A' END + ', '
+            IF @Resumable = 'Y' SET @CurrentComment += 'HasFilter: ' + CASE WHEN @CurrentHasFilter = 1 THEN 'Yes' WHEN @CurrentHasFilter = 0 THEN 'No' ELSE 'N/A' END + ', '
+            SET @CurrentComment += 'AllowPageLocks: ' + CASE WHEN @CurrentAllowPageLocks = 1 THEN 'Yes' WHEN @CurrentAllowPageLocks = 0 THEN 'No' ELSE 'N/A' END + ', '
+            SET @CurrentComment += 'PageCount: ' + ISNULL(CAST(@CurrentPageCount AS nvarchar(max)),'N/A') + ', '
+            SET @CurrentComment += 'Fragmentation: ' + ISNULL(CAST(@CurrentFragmentationLevel AS nvarchar(max)),'N/A')
           END
 
-          IF @CurrentAction IN('INDEX_REBUILD_ONLINE','INDEX_REBUILD_OFFLINE') AND @SortInTempdb = 'N' AND @CurrentIndexType IN(1,2,3,4) AND @CurrentResumableIndexOperation = 0
+          IF @CurrentAction IS NOT NULL AND (@CurrentPageCount IS NOT NULL OR @CurrentFragmentationLevel IS NOT NULL)
           BEGIN
-            INSERT INTO @CurrentAlterIndexWithClauseArguments (Argument)
-            VALUES('SORT_IN_TEMPDB = OFF')
+          SET @CurrentExtendedInfo = (SELECT *
+                                      FROM (SELECT CAST(@CurrentPageCount AS nvarchar(max)) AS [PageCount],
+                                                   CAST(@CurrentFragmentationLevel AS nvarchar(max)) AS Fragmentation
+                                      ) ExtendedInfo FOR XML RAW('ExtendedInfo'), ELEMENTS)
           END
 
-          IF @CurrentAction = 'INDEX_REBUILD_ONLINE' AND @CurrentResumableIndexOperation = 0
+          IF @CurrentAction IS NOT NULL AND (SYSDATETIME() < DATEADD(SECOND,@TimeLimit,@StartTime) OR @TimeLimit IS NULL)
           BEGIN
-            INSERT INTO @CurrentAlterIndexWithClauseArguments (Argument)
-            VALUES('ONLINE = ON' + CASE WHEN @WaitAtLowPriorityMaxDuration IS NOT NULL THEN ' (WAIT_AT_LOW_PRIORITY (MAX_DURATION = ' + CAST(@WaitAtLowPriorityMaxDuration AS nvarchar(max)) + ', ABORT_AFTER_WAIT = ' + UPPER(@WaitAtLowPriorityAbortAfterWait) + '))' ELSE '' END)
-          END
+            SET @CurrentDatabaseContext = @CurrentDatabaseName
 
-          IF @CurrentAction = 'INDEX_REBUILD_ONLINE' AND @CurrentResumableIndexOperation = 1 AND @WaitAtLowPriorityMaxDuration IS NOT NULL
-          BEGIN
-            INSERT INTO @CurrentAlterIndexWithClauseArguments (Argument)
-            VALUES('WAIT_AT_LOW_PRIORITY (MAX_DURATION = ' + CAST(@WaitAtLowPriorityMaxDuration AS nvarchar(max)) + ', ABORT_AFTER_WAIT = ' + UPPER(@WaitAtLowPriorityAbortAfterWait) + ')')
-          END
+            SET @CurrentCommandType = 'ALTER_INDEX'
 
-          IF @CurrentAction = 'INDEX_REBUILD_OFFLINE' AND @CurrentResumableIndexOperation = 0
-          BEGIN
-            INSERT INTO @CurrentAlterIndexWithClauseArguments (Argument)
-            VALUES('ONLINE = OFF')
-          END
+            SET @CurrentCommand = ''
+            IF @LockTimeout IS NOT NULL SET @CurrentCommand = 'SET LOCK_TIMEOUT ' + CAST(@LockTimeout * 1000 AS nvarchar(max)) + '; '
+            SET @CurrentCommand += 'ALTER INDEX ' + QUOTENAME(@CurrentIndexName) + ' ON ' + QUOTENAME(@CurrentSchemaName) + '.' + QUOTENAME(@CurrentObjectName)
+            IF @CurrentResumableIndexOperation = 1 SET @CurrentCommand += ' RESUME'
+            IF @CurrentAction IN('INDEX_REBUILD_ONLINE','INDEX_REBUILD_OFFLINE') AND @CurrentResumableIndexOperation = 0 SET @CurrentCommand += ' REBUILD'
+            IF @CurrentAction IN('INDEX_REORGANIZE') AND @CurrentResumableIndexOperation = 0 SET @CurrentCommand += ' REORGANIZE'
+            IF @CurrentIsPartition = 1 AND @CurrentResumableIndexOperation = 0 SET @CurrentCommand += ' PARTITION = ' + CAST(@CurrentPartitionNumber AS nvarchar(max))
 
-          IF @CurrentAction IN('INDEX_REBUILD_ONLINE','INDEX_REBUILD_OFFLINE') AND @CurrentMaxDOP IS NOT NULL
-          BEGIN
-            INSERT INTO @CurrentAlterIndexWithClauseArguments (Argument)
-            VALUES('MAXDOP = ' + CAST(@CurrentMaxDOP AS nvarchar(max)))
-          END
+            IF @CurrentAction IN('INDEX_REBUILD_ONLINE','INDEX_REBUILD_OFFLINE') AND @SortInTempdb = 'Y' AND @CurrentIndexType IN(1,2,3,4) AND @CurrentResumableIndexOperation = 0
+            BEGIN
+              INSERT INTO @CurrentAlterIndexWithClauseArguments (Argument)
+              VALUES('SORT_IN_TEMPDB = ON')
+            END
 
-          IF @CurrentAction IN('INDEX_REBUILD_ONLINE','INDEX_REBUILD_OFFLINE') AND @FillFactor IS NOT NULL AND @CurrentIsPartition = 0 AND @CurrentIndexType IN(1,2,3,4) AND @CurrentResumableIndexOperation = 0
-          BEGIN
-            INSERT INTO @CurrentAlterIndexWithClauseArguments (Argument)
-            VALUES('FILLFACTOR = ' + CAST(@FillFactor AS nvarchar(max)))
-          END
+            IF @CurrentAction IN('INDEX_REBUILD_ONLINE','INDEX_REBUILD_OFFLINE') AND @SortInTempdb = 'N' AND @CurrentIndexType IN(1,2,3,4) AND @CurrentResumableIndexOperation = 0
+            BEGIN
+              INSERT INTO @CurrentAlterIndexWithClauseArguments (Argument)
+              VALUES('SORT_IN_TEMPDB = OFF')
+            END
 
-          IF @CurrentAction IN('INDEX_REBUILD_ONLINE','INDEX_REBUILD_OFFLINE') AND @PadIndex IS NOT NULL AND @CurrentIsPartition = 0 AND @CurrentIndexType IN(1,2,3,4) AND @CurrentResumableIndexOperation = 0
-          BEGIN
-            INSERT INTO @CurrentAlterIndexWithClauseArguments (Argument)
-            VALUES('PAD_INDEX = ' + CASE WHEN @PadIndex = 'Y' THEN 'ON' WHEN @PadIndex = 'N' THEN 'OFF' END)
-          END
+            IF @CurrentAction = 'INDEX_REBUILD_ONLINE' AND @CurrentResumableIndexOperation = 0
+            BEGIN
+              INSERT INTO @CurrentAlterIndexWithClauseArguments (Argument)
+              VALUES('ONLINE = ON' + CASE WHEN @WaitAtLowPriorityMaxDuration IS NOT NULL THEN ' (WAIT_AT_LOW_PRIORITY (MAX_DURATION = ' + CAST(@WaitAtLowPriorityMaxDuration AS nvarchar(max)) + ', ABORT_AFTER_WAIT = ' + UPPER(@WaitAtLowPriorityAbortAfterWait) + '))' ELSE '' END)
+            END
 
-          IF @CurrentAction IN('INDEX_REBUILD_ONLINE','INDEX_REBUILD_OFFLINE') AND @DataCompression IS NOT NULL AND @CurrentIndexType IN(1,2,4) AND @CurrentResumableIndexOperation = 0
-          BEGIN
-            INSERT INTO @CurrentAlterIndexWithClauseArguments (Argument)
-            VALUES('DATA_COMPRESSION = ' + @DataCompression)
-          END
+            IF @CurrentAction = 'INDEX_REBUILD_ONLINE' AND @CurrentResumableIndexOperation = 1 AND @WaitAtLowPriorityMaxDuration IS NOT NULL
+            BEGIN
+              INSERT INTO @CurrentAlterIndexWithClauseArguments (Argument)
+              VALUES('WAIT_AT_LOW_PRIORITY (MAX_DURATION = ' + CAST(@WaitAtLowPriorityMaxDuration AS nvarchar(max)) + ', ABORT_AFTER_WAIT = ' + UPPER(@WaitAtLowPriorityAbortAfterWait) + ')')
+            END
 
-          IF @CurrentAction = 'INDEX_REBUILD_ONLINE' AND @CurrentResumableIndexOperation = 0
-          BEGIN
-            INSERT INTO @CurrentAlterIndexWithClauseArguments (Argument)
-            VALUES(CASE WHEN @Resumable = 'Y' AND @CurrentIndexType IN(1,2) AND (@CurrentIsComputed = 0 OR @CurrentIsComputed IS NULL) AND (@CurrentIsClusteredIndexComputed = 0 OR @CurrentIsClusteredIndexComputed IS NULL) AND (@CurrentIsTimestamp = 0 OR @CurrentIsTimestamp IS NULL) AND @CurrentHasFilter = 0 AND (@CurrentHasClusteredColumnstore = 0 OR @CurrentHasClusteredColumnstore IS NULL) THEN 'RESUMABLE = ON' ELSE 'RESUMABLE = OFF' END)
-          END
+            IF @CurrentAction = 'INDEX_REBUILD_OFFLINE' AND @CurrentResumableIndexOperation = 0
+            BEGIN
+              INSERT INTO @CurrentAlterIndexWithClauseArguments (Argument)
+              VALUES('ONLINE = OFF')
+            END
 
-          IF @CurrentAction = 'INDEX_REBUILD_ONLINE' AND ((@Resumable = 'Y' AND @CurrentIndexType IN(1,2) AND (@CurrentIsComputed = 0 OR @CurrentIsComputed IS NULL) AND (@CurrentIsClusteredIndexComputed = 0 OR @CurrentIsClusteredIndexComputed IS NULL) AND (@CurrentIsTimestamp = 0 OR @CurrentIsTimestamp IS NULL) AND @CurrentHasFilter = 0 AND (@CurrentHasClusteredColumnstore = 0 OR @CurrentHasClusteredColumnstore IS NULL)) OR @CurrentResumableIndexOperation = 1) AND @TimeLimit IS NOT NULL
-          BEGIN
-            INSERT INTO @CurrentAlterIndexWithClauseArguments (Argument)
-            VALUES('MAX_DURATION = ' + CAST(CASE WHEN DATEDIFF(MINUTE,SYSDATETIME(),DATEADD(SECOND,@TimeLimit,@StartTime)) < 1 THEN 1 WHEN DATEDIFF(MINUTE,SYSDATETIME(),DATEADD(SECOND,@TimeLimit,@StartTime)) > 10080 THEN 10080 ELSE DATEDIFF(MINUTE,SYSDATETIME(),DATEADD(SECOND,@TimeLimit,@StartTime)) END AS nvarchar(max)))
-          END
+            IF @CurrentAction IN('INDEX_REBUILD_ONLINE','INDEX_REBUILD_OFFLINE') AND @CurrentMaxDOP IS NOT NULL
+            BEGIN
+              INSERT INTO @CurrentAlterIndexWithClauseArguments (Argument)
+              VALUES('MAXDOP = ' + CAST(@CurrentMaxDOP AS nvarchar(max)))
+            END
 
-          IF @CurrentAction IN('INDEX_REORGANIZE') AND @LOBCompaction = 'Y'
-          BEGIN
-            INSERT INTO @CurrentAlterIndexWithClauseArguments (Argument)
-            VALUES('LOB_COMPACTION = ON')
-          END
+            IF @CurrentAction IN('INDEX_REBUILD_ONLINE','INDEX_REBUILD_OFFLINE') AND @FillFactor IS NOT NULL AND @CurrentIsPartition = 0 AND @CurrentIndexType IN(1,2,3,4) AND @CurrentResumableIndexOperation = 0
+            BEGIN
+              INSERT INTO @CurrentAlterIndexWithClauseArguments (Argument)
+              VALUES('FILLFACTOR = ' + CAST(@FillFactor AS nvarchar(max)))
+            END
 
-          IF @CurrentAction IN('INDEX_REORGANIZE') AND @LOBCompaction = 'N'
-          BEGIN
-            INSERT INTO @CurrentAlterIndexWithClauseArguments (Argument)
-            VALUES('LOB_COMPACTION = OFF')
-          END
+            IF @CurrentAction IN('INDEX_REBUILD_ONLINE','INDEX_REBUILD_OFFLINE') AND @PadIndex IS NOT NULL AND @CurrentIsPartition = 0 AND @CurrentIndexType IN(1,2,3,4) AND @CurrentResumableIndexOperation = 0
+            BEGIN
+              INSERT INTO @CurrentAlterIndexWithClauseArguments (Argument)
+              VALUES('PAD_INDEX = ' + CASE WHEN @PadIndex = 'Y' THEN 'ON' WHEN @PadIndex = 'N' THEN 'OFF' END)
+            END
 
-          IF EXISTS (SELECT * FROM @CurrentAlterIndexWithClauseArguments)
-          BEGIN
-            SELECT @CurrentCommand += ' WITH (' + STRING_AGG(Argument, ', ') WITHIN GROUP (ORDER BY ID ASC) + ')'
-            FROM @CurrentAlterIndexWithClauseArguments
-          END
+            IF @CurrentAction IN('INDEX_REBUILD_ONLINE','INDEX_REBUILD_OFFLINE') AND @DataCompression IS NOT NULL AND @CurrentIndexType IN(1,2,4) AND @CurrentResumableIndexOperation = 0
+            BEGIN
+              INSERT INTO @CurrentAlterIndexWithClauseArguments (Argument)
+              VALUES('DATA_COMPRESSION = ' + @DataCompression)
+            END
 
-          EXECUTE @CurrentCommandOutput = dbo.CommandExecute @DatabaseContext = @CurrentDatabaseContext, @Command = @CurrentCommand, @CommandType = @CurrentCommandType, @Mode = 2, @Comment = @CurrentComment, @DatabaseName = @CurrentDatabaseName, @SchemaName = @CurrentSchemaName, @ObjectName = @CurrentObjectName, @ObjectType = @CurrentObjectType, @IndexName = @CurrentIndexName, @IndexType = @CurrentIndexType, @PartitionNumber = @CurrentPartitionNumber, @ExtendedInfo = @CurrentExtendedInfo, @LockMessageSeverity = @LockMessageSeverity, @ExecuteAsUser = @ExecuteAsUser, @LogToTable = @LogToTable, @Execute = @Execute
-          SET @Error = @@ERROR
-          IF @Error <> 0 SET @CurrentCommandOutput = @Error
-          IF @CurrentCommandOutput <> 0 SET @ReturnCode = @CurrentCommandOutput
+            IF @CurrentAction = 'INDEX_REBUILD_ONLINE' AND @CurrentResumableIndexOperation = 0
+            BEGIN
+              INSERT INTO @CurrentAlterIndexWithClauseArguments (Argument)
+              VALUES(CASE WHEN @Resumable = 'Y' AND @CurrentIndexType IN(1,2) AND (@CurrentIsComputed = 0 OR @CurrentIsComputed IS NULL) AND (@CurrentIsClusteredIndexComputed = 0 OR @CurrentIsClusteredIndexComputed IS NULL) AND (@CurrentIsTimestamp = 0 OR @CurrentIsTimestamp IS NULL) AND @CurrentHasFilter = 0 AND (@CurrentHasClusteredColumnstore = 0 OR @CurrentHasClusteredColumnstore IS NULL) THEN 'RESUMABLE = ON' ELSE 'RESUMABLE = OFF' END)
+            END
 
-          IF @Delay > 0
-          BEGIN
-            SET @CurrentDelay = DATEADD(ss,@Delay,'1900-01-01')
-            WAITFOR DELAY @CurrentDelay
+            IF @CurrentAction = 'INDEX_REBUILD_ONLINE' AND ((@Resumable = 'Y' AND @CurrentIndexType IN(1,2) AND (@CurrentIsComputed = 0 OR @CurrentIsComputed IS NULL) AND (@CurrentIsClusteredIndexComputed = 0 OR @CurrentIsClusteredIndexComputed IS NULL) AND (@CurrentIsTimestamp = 0 OR @CurrentIsTimestamp IS NULL) AND @CurrentHasFilter = 0 AND (@CurrentHasClusteredColumnstore = 0 OR @CurrentHasClusteredColumnstore IS NULL)) OR @CurrentResumableIndexOperation = 1) AND @TimeLimit IS NOT NULL
+            BEGIN
+              INSERT INTO @CurrentAlterIndexWithClauseArguments (Argument)
+              VALUES('MAX_DURATION = ' + CAST(CASE WHEN DATEDIFF(MINUTE,SYSDATETIME(),DATEADD(SECOND,@TimeLimit,@StartTime)) < 1 THEN 1 WHEN DATEDIFF(MINUTE,SYSDATETIME(),DATEADD(SECOND,@TimeLimit,@StartTime)) > 10080 THEN 10080 ELSE DATEDIFF(MINUTE,SYSDATETIME(),DATEADD(SECOND,@TimeLimit,@StartTime)) END AS nvarchar(max)))
+            END
+
+            IF @CurrentAction IN('INDEX_REORGANIZE') AND @LOBCompaction = 'Y'
+            BEGIN
+              INSERT INTO @CurrentAlterIndexWithClauseArguments (Argument)
+              VALUES('LOB_COMPACTION = ON')
+            END
+
+            IF @CurrentAction IN('INDEX_REORGANIZE') AND @LOBCompaction = 'N'
+            BEGIN
+              INSERT INTO @CurrentAlterIndexWithClauseArguments (Argument)
+              VALUES('LOB_COMPACTION = OFF')
+            END
+
+            IF EXISTS (SELECT * FROM @CurrentAlterIndexWithClauseArguments)
+            BEGIN
+              SELECT @CurrentCommand += ' WITH (' + STRING_AGG(Argument, ', ') WITHIN GROUP (ORDER BY ID ASC) + ')'
+              FROM @CurrentAlterIndexWithClauseArguments
+            END
+
+            EXECUTE @CurrentCommandOutput = dbo.CommandExecute @DatabaseContext = @CurrentDatabaseContext, @Command = @CurrentCommand, @CommandType = @CurrentCommandType, @Mode = 2, @Comment = @CurrentComment, @DatabaseName = @CurrentDatabaseName, @SchemaName = @CurrentSchemaName, @ObjectName = @CurrentObjectName, @ObjectType = @CurrentObjectType, @IndexName = @CurrentIndexName, @IndexType = @CurrentIndexType, @PartitionNumber = @CurrentPartitionNumber, @ExtendedInfo = @CurrentExtendedInfo, @LockMessageSeverity = @LockMessageSeverity, @ExecuteAsUser = @ExecuteAsUser, @LogToTable = @LogToTable, @Execute = @Execute
+            SET @Error = @@ERROR
+            IF @Error <> 0 SET @CurrentCommandOutput = @Error
+            IF @CurrentCommandOutput <> 0 SET @ReturnCode = @CurrentCommandOutput
+
+            IF @Delay > 0
+            BEGIN
+              SET @CurrentDelay = DATEADD(ss,@Delay,'1900-01-01')
+              WAITFOR DELAY @CurrentDelay
+            END
           END
         END
 
         SET @CurrentMaxDOP = @MaxDOP
 
-        -- Should the statistics be updated? - Pre checks and final decision
-        IF @CurrentStatisticsID IS NOT NULL
+        -- Should the statistics be updated?
+        IF @CurrentUpdateStatisticsCompleted = 0
+        AND @CurrentStatisticsID IS NOT NULL
         AND ((@UpdateStatistics = 'ALL' AND (@CurrentIndexType IN (1,2,7) OR @CurrentIndexID IS NULL)) OR (@UpdateStatistics = 'INDEX' AND @CurrentIndexID IS NOT NULL AND @CurrentIndexType IN (1,2,7)) OR (@UpdateStatistics = 'COLUMNS' AND @CurrentIndexID IS NULL))
         AND ((@CurrentIsPartition = 0 AND (@CurrentAction NOT IN('INDEX_REBUILD_ONLINE','INDEX_REBUILD_OFFLINE') OR @CurrentAction IS NULL)) OR (@CurrentIsPartition = 1 AND (@CurrentPartitionNumber = @CurrentPartitionCount OR (@PartitionLevel = 'Y' AND @CurrentIsIncremental = 1))))
         BEGIN
@@ -9634,124 +9637,125 @@ BEGIN
           BEGIN
             SET @CurrentUpdateStatistics = 'N'
           END
-        END
 
-        SET @CurrentStatisticsSample = @StatisticsSample
-        SET @CurrentStatisticsPersistSample = @StatisticsPersistSample
-        SET @CurrentStatisticsResample = @StatisticsResample
+          SET @CurrentStatisticsSample = @StatisticsSample
+          SET @CurrentStatisticsPersistSample = @StatisticsPersistSample
+          SET @CurrentStatisticsResample = @StatisticsResample
 
-        -- Incremental statistics only supports RESAMPLE
-        IF @PartitionLevel = 'Y' AND @CurrentIsIncremental = 1
-        BEGIN
-          SET @CurrentStatisticsSample = NULL
-          SET @CurrentStatisticsPersistSample = NULL
-          SET @CurrentStatisticsResample = 'Y'
-        END
-
-        -- Create statistics comment
-        IF @CurrentUpdateStatistics = 'Y'
-        BEGIN
-          SET @CurrentComment = 'ObjectType: ' + CASE WHEN @CurrentObjectType = 'U' THEN 'Table' WHEN @CurrentObjectType = 'V' THEN 'View' ELSE 'N/A' END + ', '
-          SET @CurrentComment += 'StatisticsType: ' + CASE WHEN @CurrentIndexID IS NOT NULL THEN 'Index' ELSE 'Column' END + ', '
-          IF @CurrentIndexID IS NOT NULL SET @CurrentComment += 'IndexType: ' + CASE WHEN @CurrentIndexType = 1 THEN 'Clustered' WHEN @CurrentIndexType = 2 THEN 'NonClustered' WHEN @CurrentIndexType = 3 THEN 'XML' WHEN @CurrentIndexType = 4 THEN 'Spatial' WHEN @CurrentIndexType = 5 THEN 'Clustered Columnstore' WHEN @CurrentIndexType = 6 THEN 'NonClustered Columnstore' WHEN @CurrentIndexType = 7 THEN 'NonClustered Hash' ELSE 'N/A' END + ', '
-          SET @CurrentComment += 'Incremental: ' + CASE WHEN @CurrentIsIncremental = 1 THEN 'Yes' WHEN @CurrentIsIncremental = 0 THEN 'No' ELSE 'N/A' END + ', '
-          SET @CurrentComment += 'RowCount: ' + ISNULL(CAST(@CurrentRowCount AS nvarchar(max)),'N/A') + ', '
-          SET @CurrentComment += 'ModificationCounter: ' + ISNULL(CAST(@CurrentModificationCounter AS nvarchar(max)),'N/A')
-        END
-
-        IF @CurrentUpdateStatistics = 'Y' AND (@CurrentRowCount IS NOT NULL OR @CurrentModificationCounter IS NOT NULL)
-        BEGIN
-          SET @CurrentExtendedInfo = (SELECT *
-                                      FROM (SELECT CAST(@CurrentRowCount AS nvarchar(max)) AS [RowCount],
-                                                   CAST(@CurrentModificationCounter AS nvarchar(max)) AS ModificationCounter
-                                      ) ExtendedInfo FOR XML RAW('ExtendedInfo'), ELEMENTS)
-        END
-        ELSE
-        BEGIN
-          SET @CurrentExtendedInfo = NULL
-        END
-
-        IF @CurrentUpdateStatistics = 'Y' AND (SYSDATETIME() < DATEADD(SECOND,@TimeLimit,@StartTime) OR @TimeLimit IS NULL)
-        BEGIN
-          SET @CurrentDatabaseContext = @CurrentDatabaseName
-
-          SET @CurrentCommandType = 'UPDATE_STATISTICS'
-
-          SET @CurrentCommand = ''
-          IF @LockTimeout IS NOT NULL SET @CurrentCommand = 'SET LOCK_TIMEOUT ' + CAST(@LockTimeout * 1000 AS nvarchar(max)) + '; '
-          SET @CurrentCommand += 'UPDATE STATISTICS ' + QUOTENAME(@CurrentSchemaName) + '.' + QUOTENAME(@CurrentObjectName) + ' ' + QUOTENAME(@CurrentStatisticsName)
-
-          IF @CurrentMaxDOP IS NOT NULL AND (@Version >= 14.03015 OR @EngineEdition = 5 OR (@EngineEdition = 8 AND @ProductUpdateType = 'Continuous'))
+          -- Incremental statistics only supports RESAMPLE
+          IF @PartitionLevel = 'Y' AND @CurrentIsIncremental = 1
           BEGIN
-            INSERT INTO @CurrentUpdateStatisticsWithClauseArguments (Argument)
-            VALUES('MAXDOP = ' + CAST(@CurrentMaxDOP AS nvarchar(max)))
+            SET @CurrentStatisticsSample = NULL
+            SET @CurrentStatisticsPersistSample = NULL
+            SET @CurrentStatisticsResample = 'Y'
           END
 
-          IF @CurrentStatisticsSample = 100
+          -- Create statistics comment
+          IF @CurrentUpdateStatistics = 'Y'
           BEGIN
-            INSERT INTO @CurrentUpdateStatisticsWithClauseArguments (Argument)
-            VALUES('FULLSCAN')
+            SET @CurrentComment = 'ObjectType: ' + CASE WHEN @CurrentObjectType = 'U' THEN 'Table' WHEN @CurrentObjectType = 'V' THEN 'View' ELSE 'N/A' END + ', '
+            SET @CurrentComment += 'StatisticsType: ' + CASE WHEN @CurrentIndexID IS NOT NULL THEN 'Index' ELSE 'Column' END + ', '
+            IF @CurrentIndexID IS NOT NULL SET @CurrentComment += 'IndexType: ' + CASE WHEN @CurrentIndexType = 1 THEN 'Clustered' WHEN @CurrentIndexType = 2 THEN 'NonClustered' WHEN @CurrentIndexType = 3 THEN 'XML' WHEN @CurrentIndexType = 4 THEN 'Spatial' WHEN @CurrentIndexType = 5 THEN 'Clustered Columnstore' WHEN @CurrentIndexType = 6 THEN 'NonClustered Columnstore' WHEN @CurrentIndexType = 7 THEN 'NonClustered Hash' ELSE 'N/A' END + ', '
+            SET @CurrentComment += 'Incremental: ' + CASE WHEN @CurrentIsIncremental = 1 THEN 'Yes' WHEN @CurrentIsIncremental = 0 THEN 'No' ELSE 'N/A' END + ', '
+            SET @CurrentComment += 'RowCount: ' + ISNULL(CAST(@CurrentRowCount AS nvarchar(max)),'N/A') + ', '
+            SET @CurrentComment += 'ModificationCounter: ' + ISNULL(CAST(@CurrentModificationCounter AS nvarchar(max)),'N/A')
           END
 
-          IF @CurrentStatisticsSample IS NOT NULL AND @CurrentStatisticsSample <> 100
+          IF @CurrentUpdateStatistics = 'Y' AND (@CurrentRowCount IS NOT NULL OR @CurrentModificationCounter IS NOT NULL)
           BEGIN
-            INSERT INTO @CurrentUpdateStatisticsWithClauseArguments (Argument)
-            VALUES('SAMPLE ' + CAST(@CurrentStatisticsSample AS nvarchar(max)) + ' PERCENT')
+            SET @CurrentExtendedInfo = (SELECT *
+                                        FROM (SELECT CAST(@CurrentRowCount AS nvarchar(max)) AS [RowCount],
+                                                     CAST(@CurrentModificationCounter AS nvarchar(max)) AS ModificationCounter
+                                        ) ExtendedInfo FOR XML RAW('ExtendedInfo'), ELEMENTS)
+          END
+          ELSE
+          BEGIN
+            SET @CurrentExtendedInfo = NULL
           END
 
-          IF @CurrentStatisticsPersistSample = 'Y'
+          IF @CurrentUpdateStatistics = 'Y' AND (SYSDATETIME() < DATEADD(SECOND,@TimeLimit,@StartTime) OR @TimeLimit IS NULL)
           BEGIN
-            INSERT INTO @CurrentUpdateStatisticsWithClauseArguments (Argument)
-            VALUES('PERSIST_SAMPLE_PERCENT = ON')
+            SET @CurrentDatabaseContext = @CurrentDatabaseName
+
+            SET @CurrentCommandType = 'UPDATE_STATISTICS'
+
+            SET @CurrentCommand = ''
+            IF @LockTimeout IS NOT NULL SET @CurrentCommand = 'SET LOCK_TIMEOUT ' + CAST(@LockTimeout * 1000 AS nvarchar(max)) + '; '
+            SET @CurrentCommand += 'UPDATE STATISTICS ' + QUOTENAME(@CurrentSchemaName) + '.' + QUOTENAME(@CurrentObjectName) + ' ' + QUOTENAME(@CurrentStatisticsName)
+
+            IF @CurrentMaxDOP IS NOT NULL AND (@Version >= 14.03015 OR @EngineEdition = 5 OR (@EngineEdition = 8 AND @ProductUpdateType = 'Continuous'))
+            BEGIN
+              INSERT INTO @CurrentUpdateStatisticsWithClauseArguments (Argument)
+              VALUES('MAXDOP = ' + CAST(@CurrentMaxDOP AS nvarchar(max)))
+            END
+
+            IF @CurrentStatisticsSample = 100
+            BEGIN
+              INSERT INTO @CurrentUpdateStatisticsWithClauseArguments (Argument)
+              VALUES('FULLSCAN')
+            END
+
+            IF @CurrentStatisticsSample IS NOT NULL AND @CurrentStatisticsSample <> 100
+            BEGIN
+              INSERT INTO @CurrentUpdateStatisticsWithClauseArguments (Argument)
+              VALUES('SAMPLE ' + CAST(@CurrentStatisticsSample AS nvarchar(max)) + ' PERCENT')
+            END
+
+            IF @CurrentStatisticsPersistSample = 'Y'
+            BEGIN
+              INSERT INTO @CurrentUpdateStatisticsWithClauseArguments (Argument)
+              VALUES('PERSIST_SAMPLE_PERCENT = ON')
+            END
+
+            IF @CurrentStatisticsPersistSample = 'N'
+            BEGIN
+              INSERT INTO @CurrentUpdateStatisticsWithClauseArguments (Argument)
+              VALUES('PERSIST_SAMPLE_PERCENT = OFF')
+            END
+
+            IF @CurrentNoRecompute = 1
+            BEGIN
+              INSERT INTO @CurrentUpdateStatisticsWithClauseArguments (Argument)
+              VALUES('NORECOMPUTE')
+            END
+
+            IF @CurrentStatisticsResample = 'Y'
+            BEGIN
+              INSERT INTO @CurrentUpdateStatisticsWithClauseArguments (Argument)
+              VALUES('RESAMPLE')
+            END
+
+            IF EXISTS (SELECT * FROM @CurrentUpdateStatisticsWithClauseArguments)
+            BEGIN
+              SELECT @CurrentCommand += ' WITH ' + STRING_AGG(Argument, ', ') WITHIN GROUP (ORDER BY ID ASC)
+              FROM @CurrentUpdateStatisticsWithClauseArguments
+            END
+
+            IF @PartitionLevel = 'Y' AND @CurrentIsIncremental = 1 AND @CurrentPartitionNumber IS NOT NULL SET @CurrentCommand += ' ON PARTITIONS(' + CAST(@CurrentPartitionNumber AS nvarchar(max)) + ')'
+
+            EXECUTE @CurrentCommandOutput = dbo.CommandExecute @DatabaseContext = @CurrentDatabaseContext, @Command = @CurrentCommand, @CommandType = @CurrentCommandType, @Mode = 2, @Comment = @CurrentComment, @DatabaseName = @CurrentDatabaseName, @SchemaName = @CurrentSchemaName, @ObjectName = @CurrentObjectName, @ObjectType = @CurrentObjectType, @IndexName = @CurrentIndexName, @IndexType = @CurrentIndexType, @StatisticsName = @CurrentStatisticsName, @PartitionNumber = @CurrentPartitionNumber, @ExtendedInfo = @CurrentExtendedInfo, @LockMessageSeverity = @LockMessageSeverity, @ExecuteAsUser = @ExecuteAsUser, @LogToTable = @LogToTable, @Execute = @Execute
+            SET @Error = @@ERROR
+            IF @Error <> 0 SET @CurrentCommandOutput = @Error
+            IF @CurrentCommandOutput <> 0 SET @ReturnCode = @CurrentCommandOutput
           END
-
-          IF @CurrentStatisticsPersistSample = 'N'
-          BEGIN
-            INSERT INTO @CurrentUpdateStatisticsWithClauseArguments (Argument)
-            VALUES('PERSIST_SAMPLE_PERCENT = OFF')
-          END
-
-          IF @CurrentNoRecompute = 1
-          BEGIN
-            INSERT INTO @CurrentUpdateStatisticsWithClauseArguments (Argument)
-            VALUES('NORECOMPUTE')
-          END
-
-          IF @CurrentStatisticsResample = 'Y'
-          BEGIN
-            INSERT INTO @CurrentUpdateStatisticsWithClauseArguments (Argument)
-            VALUES('RESAMPLE')
-          END
-
-          IF EXISTS (SELECT * FROM @CurrentUpdateStatisticsWithClauseArguments)
-          BEGIN
-            SELECT @CurrentCommand += ' WITH ' + STRING_AGG(Argument, ', ') WITHIN GROUP (ORDER BY ID ASC)
-            FROM @CurrentUpdateStatisticsWithClauseArguments
-          END
-
-          IF @PartitionLevel = 'Y' AND @CurrentIsIncremental = 1 AND @CurrentPartitionNumber IS NOT NULL SET @CurrentCommand += ' ON PARTITIONS(' + CAST(@CurrentPartitionNumber AS nvarchar(max)) + ')'
-
-          EXECUTE @CurrentCommandOutput = dbo.CommandExecute @DatabaseContext = @CurrentDatabaseContext, @Command = @CurrentCommand, @CommandType = @CurrentCommandType, @Mode = 2, @Comment = @CurrentComment, @DatabaseName = @CurrentDatabaseName, @SchemaName = @CurrentSchemaName, @ObjectName = @CurrentObjectName, @ObjectType = @CurrentObjectType, @IndexName = @CurrentIndexName, @IndexType = @CurrentIndexType, @StatisticsName = @CurrentStatisticsName, @PartitionNumber = @CurrentPartitionNumber, @ExtendedInfo = @CurrentExtendedInfo, @LockMessageSeverity = @LockMessageSeverity, @ExecuteAsUser = @ExecuteAsUser, @LogToTable = @LogToTable, @Execute = @Execute
-          SET @Error = @@ERROR
-          IF @Error <> 0 SET @CurrentCommandOutput = @Error
-          IF @CurrentCommandOutput <> 0 SET @ReturnCode = @CurrentCommandOutput
         END
 
         NoAction:
 
         -- Update that the index or statistics is completed
         UPDATE @tmpIndexesStatistics
-        SET Completed = 1
+        SET AlterIndexCompleted = 1,
+            UpdateStatisticsCompleted = 1
         WHERE Selected = 1
         AND Completed = 0
         AND [Order] = @CurrentIxOrder
         AND ID = @CurrentIxID
 
         -- Update that statistics on remaining partitions are completed where no update is needed
-        IF (NOT EXISTS(SELECT * FROM @ActionsPreferred) OR @CurrentIndexID IS NULL) AND NOT (@OnlyModifiedStatistics = 'N' AND @StatisticsModificationLevel IS NULL) AND @CurrentStatisticsID IS NOT NULL
+        IF NOT (@OnlyModifiedStatistics = 'N' AND @StatisticsModificationLevel IS NULL) AND @CurrentStatisticsID IS NOT NULL
         BEGIN
           UPDATE tmpIndexesStatistics
-          SET Completed = 1
+          SET UpdateStatisticsCompleted = 1
           FROM @tmpIndexesStatistics tmpIndexesStatistics
           INNER JOIN @IncrementalStatsProperties IncrementalStatsProperties ON tmpIndexesStatistics.ObjectID = IncrementalStatsProperties.ObjectID AND tmpIndexesStatistics.StatisticsID = IncrementalStatsProperties.StatisticsID AND tmpIndexesStatistics.PartitionNumber = IncrementalStatsProperties.PartitionNumber
           WHERE tmpIndexesStatistics.ObjectID = @CurrentObjectID
@@ -9789,6 +9793,8 @@ BEGIN
         SET @CurrentPartitionNumber = NULL
         SET @CurrentPartitionCount = NULL
         SET @CurrentInRowDataPageCount = NULL
+        SET @CurrentAlterIndexCompleted = NULL
+        SET @CurrentUpdateStatisticsCompleted = NULL
         SET @CurrentIsPartition = NULL
         SET @CurrentIndexExists = NULL
         SET @CurrentStatisticsExists = NULL
