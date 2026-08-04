@@ -1,4 +1,3 @@
-*.sql linguist-language=TSQL
-*.sql -text
+*.sql linguist-language=TSQL -text
 .github export-ignore
 .gitattributes export-ignore
