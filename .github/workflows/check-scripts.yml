@@ -1,0 +1,65 @@
+name: Check scripts
+
+# Verifies that the scripts in the repository are consistent with each other before a pull request can be merged.
+
+on:
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:              # adds a manual "Run workflow" button, handy for testing
+
+jobs:
+  checksums:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v5
+
+      - name: Check that every script is listed in SHA256SUMS.txt
+        run: |
+          ls *.sql | sort > /tmp/scripts.txt
+          awk '{print $2}' SHA256SUMS.txt | sort > /tmp/listed.txt
+          if ! diff /tmp/scripts.txt /tmp/listed.txt; then
+            echo "The scripts in the repository and the files listed in SHA256SUMS.txt do not match."
+            echo "Lines starting with < are scripts that are not listed; lines starting with > are listed files that do not exist."
+            exit 1
+          fi
+          echo "All scripts are listed."
+
+      - name: Check that the checksums are current
+        run: sha256sum -c SHA256SUMS.txt
+
+  versions:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v5
+
+      - name: Check that every script has the same version timestamp
+        run: |
+          set -u
+
+          # Every script in a release is built at the same time and stamped with that time.
+          # The installation scripts contain one stamp per stored procedure they include, so this also detects an installation script built from an outdated procedure.
+          PATTERN='Version: [0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}'
+
+          echo "Version timestamps found in each script:"
+          for f in *.sql; do
+            STAMPS=$(grep -hoE "$PATTERN" "$f" | sed 's/^Version: //' | sort -u | tr '\n' ' ')
+            printf '  %-42s %s\n' "$f" "${STAMPS:-(none)}"
+          done
+
+          ALL=$(grep -hoE "$PATTERN" *.sql | sed 's/^Version: //' | sort -u)
+          COUNT=$(printf '%s\n' "$ALL" | grep -c . || true)
+
+          echo
+          if [ "$COUNT" -eq 0 ]; then
+            echo "No version timestamps were found. The scripts are expected to carry one."
+            exit 1
+          fi
+          if [ "$COUNT" -ne 1 ]; then
+            echo "The scripts do not all have the same version timestamp:"
+            printf '%s\n' "$ALL" | sed 's/^/  /'
+            exit 1
+          fi
+          echo "All scripts have the same version timestamp: $ALL"
