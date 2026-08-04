@@ -64,6 +64,50 @@ jobs:
           fi
           echo "All scripts have the same version timestamp: $ALL"
 
+  timestamp:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0          # the base commit is needed to read the previous version timestamp
+
+      - name: Check that the version timestamp moves forward
+        if: github.event_name == 'pull_request'
+        run: |
+          set -u
+
+          # Every release is built from scratch and stamped with the time of the build, so the timestamp always moves forward.
+          # A timestamp that has gone backwards means the scripts were copied from an older build folder.
+          BASE='${{ github.event.pull_request.base.sha }}'
+          PATTERN='Version: [0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}'
+
+          OLD=$(git show "$BASE:DatabaseBackup.sql" | grep -m1 -oE "$PATTERN" | sed 's/^Version: //')
+          NEW=$(grep -m1 -oE "$PATTERN" DatabaseBackup.sql | sed 's/^Version: //')
+
+          if [ -z "$OLD" ] || [ -z "$NEW" ]; then
+            echo "A version timestamp could not be read from DatabaseBackup.sql."
+            exit 1
+          fi
+
+          if [ "$NEW" = "$OLD" ]; then
+            if git diff --quiet "$BASE" -- '*.sql'; then
+              echo "The scripts have not changed. Version timestamp $NEW."
+              exit 0
+            fi
+            echo "The scripts have changed but the version timestamp is still $NEW."
+            echo "Every change to the scripts should come from a build."
+            exit 1
+          fi
+
+          if [ "$NEW" \< "$OLD" ]; then
+            echo "The version timestamp has gone backwards: $OLD -> $NEW."
+            echo "This usually means the scripts were copied from an older build folder."
+            exit 1
+          fi
+
+          echo "The version timestamp has moved forward: $OLD -> $NEW"
+
   installers:
     runs-on: ubuntu-latest
     steps:
