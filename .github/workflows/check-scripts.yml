@@ -63,3 +63,65 @@ jobs:
             exit 1
           fi
           echo "All scripts have the same version timestamp: $ALL"
+
+  installers:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v5
+
+      - name: Check that the installation scripts contain the same code as the separate scripts
+        run: |
+          python3 - << 'EOF'
+          import sys
+
+          BOM = b"\xef\xbb\xbf"
+
+          # Which separate scripts each installation script is built from, in order.
+          INSTALLERS = {
+              "MaintenanceSolution.sql": [
+                  "CommandLog.sql", "CommandExecute.sql", "DatabaseBackup.sql",
+                  "DatabaseIntegrityCheck.sql", "IndexOptimize.sql"],
+              "MaintenanceSolutionAzureSQLDatabase.sql": [
+                  "CommandLog.sql", "CommandExecute.sql",
+                  "DatabaseIntegrityCheck.sql", "IndexOptimize.sql"],
+          }
+
+          def read(path):
+              data = open(path, "rb").read()
+              return data[len(BOM):] if data.startswith(BOM) else data
+
+          def body(path):
+              # The separate scripts have one line terminator appended after they have been merged into the installation scripts, so the merged copy is the file without it.
+              return read(path).rstrip(b"\r\n")
+
+          failures = 0
+          for installer, objects in INSTALLERS.items():
+              data = read(installer)
+              print("%s (%d bytes)" % (installer, len(data)))
+              position = None
+              for name in objects:
+                  part = body(name)
+                  found = data.find(part)
+                  if found < 0:
+                      print("  FAIL %s: the code is not in the installation script" % name)
+                      failures += 1
+                      break
+                  if position is not None and found != position:
+                      print("  FAIL %s: starts at byte %d, but the previous script ends at byte %d"
+                            % (name, found, position))
+                      failures += 1
+                      break
+                  print("  OK   %-28s %8d bytes at byte %d" % (name, len(part), found))
+                  position = found + len(part) + 2      # one line terminator between the scripts
+              else:
+                  # The header and the footer are not in the repository, so the bytes before the first script and after the last one are not checked.
+                  print("       (%d bytes before the first script, %d bytes after the last)"
+                        % (data.find(body(objects[0])), len(data) - position))
+              print()
+
+          if failures:
+              print("Rebuild the installation scripts so that every file comes from the same build.")
+              sys.exit(1)
+          print("The installation scripts contain the same code as the separate scripts.")
+          EOF
