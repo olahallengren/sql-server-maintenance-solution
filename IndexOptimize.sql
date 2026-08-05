@@ -56,7 +56,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-08-05 01:52:35                                                               //--
+  --// Version: 2026-08-05 02:19:20                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -994,6 +994,14 @@ BEGIN
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
     VALUES('The value for the parameter @MaxNumberOfPages is not supported.', 16, 1)
+  END
+
+  ----------------------------------------------------------------------------------------------------
+
+  IF @MinNumberOfPages > @MaxNumberOfPages
+  BEGIN
+    INSERT INTO @Errors ([Message], Severity, [State])
+    VALUES('The value for the parameter @MaxNumberOfPages has to be greater than or equal to the value for @MinNumberOfPages.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
