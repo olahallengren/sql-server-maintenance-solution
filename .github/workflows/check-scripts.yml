@@ -6,6 +6,9 @@ on:
   pull_request:
     branches:
       - main
+  push:
+    branches:
+      - main                      # confirms that main itself is consistent after a merge
   workflow_dispatch:              # adds a manual "Run workflow" button, handy for testing
 
 jobs:
