@@ -10,7 +10,7 @@ License: https://ola.hallengren.com/license.html
 
 GitHub: https://github.com/olahallengren/sql-server-maintenance-solution
 
-Version: 2026-08-05 02:19:20
+Version: 2026-08-05 21:02:49
 
 You can contact me by e-mail at ola@hallengren.com.
 
@@ -133,7 +133,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-08-05 02:19:20                                                               //--
+  --// Version: 2026-08-05 21:02:49                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -493,7 +493,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-08-05 02:19:20                                                               //--
+  --// Version: 2026-08-05 21:02:49                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -4999,7 +4999,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-08-05 02:19:20                                                               //--
+  --// Version: 2026-08-05 21:02:49                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -7022,7 +7022,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-08-05 02:19:20                                                               //--
+  --// Version: 2026-08-05 21:02:49                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -8875,7 +8875,7 @@ BEGIN
                               + CASE WHEN @UpdateStatistics IN('ALL','INDEX') THEN ', Stats.IsIncremental AS IsIncremental' ELSE ', NULL AS IsIncremental' END
                               + ', ' + CASE WHEN @PartitionLevel = 'Y' THEN 'partitions.partition_id AS PartitionID' WHEN @PartitionLevel = 'N' THEN 'NULL AS PartitionID' END
                               + ', ' + CASE WHEN @PartitionLevel = 'Y' THEN 'partitions.partition_number AS PartitionNumber' WHEN @PartitionLevel = 'N' THEN 'NULL AS PartitionNumber' END
-                              + ', ' + CASE WHEN @PartitionLevel = 'Y' AND (@MinNumberOfPages > 0 OR @MaxNumberOfPages IS NOT NULL) THEN 'dm_db_partition_stats.in_row_data_page_count AS InRowDataPageCount' ELSE 'NULL AS InRowDataPageCount' END
+                              + ', ' + CASE WHEN (@MinNumberOfPages > 0 OR @MaxNumberOfPages IS NOT NULL) THEN 'dm_db_partition_stats.in_row_data_page_count AS InRowDataPageCount' ELSE 'NULL AS InRowDataPageCount' END
                               + ' FROM #Indexes Indexes'
                               + ' INNER JOIN #Objects Objects ON Indexes.ObjectID = Objects.ObjectID'
                               + CASE WHEN @UpdateStatistics IN('ALL','INDEX') THEN ' INNER JOIN #Stats Stats ON Indexes.ObjectID = Stats.ObjectID AND Indexes.IndexID = Stats.StatisticsID' ELSE '' END
@@ -8887,10 +8887,14 @@ BEGIN
           BEGIN
             SET @CurrentCommand += ' INNER JOIN sys.dm_db_partition_stats dm_db_partition_stats ON partitions.object_id = dm_db_partition_stats.object_id AND partitions.index_id = dm_db_partition_stats.index_id AND partitions.partition_number = dm_db_partition_stats.partition_number'
           END
+          IF @PartitionLevel = 'N' AND (@MinNumberOfPages > 0 OR @MaxNumberOfPages IS NOT NULL)
+          BEGIN
+            SET @CurrentCommand += ' INNER JOIN (SELECT object_id, index_id, SUM(in_row_data_page_count) AS in_row_data_page_count FROM sys.dm_db_partition_stats GROUP BY object_id, index_id) dm_db_partition_stats ON Indexes.ObjectID = dm_db_partition_stats.object_id AND Indexes.IndexID = dm_db_partition_stats.index_id'
+          END
           SET @CurrentCommand += ' WHERE Objects.ObjectType IN(''U'',''V'')'
                                + ' AND Indexes.IndexType IN(1,2,7)'
-                               + CASE WHEN @PartitionLevel = 'Y' AND (@UpdateStatistics = 'COLUMNS' OR @UpdateStatistics IS NULL) AND @MinNumberOfPages > 0 THEN ' AND dm_db_partition_stats.in_row_data_page_count >= @ParamMinNumberOfPages' ELSE '' END
-                               + CASE WHEN @PartitionLevel = 'Y' AND (@UpdateStatistics = 'COLUMNS' OR @UpdateStatistics IS NULL) AND @MaxNumberOfPages IS NOT NULL THEN ' AND dm_db_partition_stats.in_row_data_page_count <= @ParamMaxNumberOfPages' ELSE '' END
+                               + CASE WHEN (@UpdateStatistics = 'COLUMNS' OR @UpdateStatistics IS NULL) AND @MinNumberOfPages > 0 THEN ' AND dm_db_partition_stats.in_row_data_page_count >= @ParamMinNumberOfPages' ELSE '' END
+                               + CASE WHEN (@UpdateStatistics = 'COLUMNS' OR @UpdateStatistics IS NULL) AND @MaxNumberOfPages IS NOT NULL THEN ' AND dm_db_partition_stats.in_row_data_page_count <= @ParamMaxNumberOfPages' ELSE '' END
 
           INSERT INTO @tmpIndexesStatistics (SchemaID, SchemaName, ObjectID, ObjectName, ObjectType, IsMemoryOptimized, IndexID, IndexName, IndexType, AllowPageLocks, HasFilter, IsImageText, IsFileStream, HasClusteredColumnstore, IsColumnstoreOrdered, IsComputed, IsClusteredIndexComputed, IsTimestamp, OnReadOnlyFileGroup, ResumableIndexOperation, StatisticsID, StatisticsName, [NoRecompute], IsIncremental, PartitionID, PartitionNumber, InRowDataPageCount)
           EXECUTE @CurrentDatabase_sp_executesql @stmt = @CurrentCommand, @params = N'@ParamMinNumberOfPages int, @ParamMaxNumberOfPages int', @ParamMinNumberOfPages = @MinNumberOfPages, @ParamMaxNumberOfPages = @MaxNumberOfPages
@@ -8966,7 +8970,7 @@ BEGIN
                               + ', NULL AS IsIncremental'
                               + ', ' + CASE WHEN @PartitionLevel = 'Y' THEN 'partitions.partition_id AS PartitionID' WHEN @PartitionLevel = 'N' THEN 'NULL AS PartitionID' END
                               + ', ' + CASE WHEN @PartitionLevel = 'Y' THEN 'partitions.partition_number AS PartitionNumber' WHEN @PartitionLevel = 'N' THEN 'NULL AS PartitionNumber' END
-                              + ', ' + CASE WHEN @PartitionLevel = 'Y' AND (@MinNumberOfPages > 0 OR @MaxNumberOfPages IS NOT NULL) THEN 'dm_db_partition_stats.in_row_data_page_count AS InRowDataPageCount' ELSE 'NULL AS InRowDataPageCount' END
+                              + ', ' + CASE WHEN (@MinNumberOfPages > 0 OR @MaxNumberOfPages IS NOT NULL) THEN 'dm_db_partition_stats.in_row_data_page_count AS InRowDataPageCount' ELSE 'NULL AS InRowDataPageCount' END
                               + ' FROM #Indexes Indexes'
                               + ' INNER JOIN #Objects Objects ON Indexes.ObjectID = Objects.ObjectID'
           IF @PartitionLevel = 'Y'
@@ -8977,10 +8981,14 @@ BEGIN
           BEGIN
             SET @CurrentCommand += ' INNER JOIN sys.dm_db_partition_stats dm_db_partition_stats ON partitions.object_id = dm_db_partition_stats.object_id AND partitions.index_id = dm_db_partition_stats.index_id AND partitions.partition_number = dm_db_partition_stats.partition_number'
           END
+          IF @PartitionLevel = 'N' AND (@MinNumberOfPages > 0 OR @MaxNumberOfPages IS NOT NULL)
+          BEGIN
+            SET @CurrentCommand += ' INNER JOIN (SELECT object_id, index_id, SUM(in_row_data_page_count) AS in_row_data_page_count FROM sys.dm_db_partition_stats GROUP BY object_id, index_id) dm_db_partition_stats ON Indexes.ObjectID = dm_db_partition_stats.object_id AND Indexes.IndexID = dm_db_partition_stats.index_id'
+          END
           SET @CurrentCommand += ' WHERE Objects.ObjectType = ''U'''
                                + ' AND Indexes.IndexType IN(5,6)'
-                               + CASE WHEN @PartitionLevel = 'Y' AND (@UpdateStatistics = 'COLUMNS' OR @UpdateStatistics IS NULL) AND @MinNumberOfPages > 0 THEN ' AND dm_db_partition_stats.in_row_data_page_count >= @ParamMinNumberOfPages' ELSE '' END
-                               + CASE WHEN @PartitionLevel = 'Y' AND (@UpdateStatistics = 'COLUMNS' OR @UpdateStatistics IS NULL) AND @MaxNumberOfPages IS NOT NULL THEN ' AND dm_db_partition_stats.in_row_data_page_count <= @ParamMaxNumberOfPages' ELSE '' END
+                               + CASE WHEN (@UpdateStatistics = 'COLUMNS' OR @UpdateStatistics IS NULL) AND @MinNumberOfPages > 0 THEN ' AND dm_db_partition_stats.in_row_data_page_count >= @ParamMinNumberOfPages' ELSE '' END
+                               + CASE WHEN (@UpdateStatistics = 'COLUMNS' OR @UpdateStatistics IS NULL) AND @MaxNumberOfPages IS NOT NULL THEN ' AND dm_db_partition_stats.in_row_data_page_count <= @ParamMaxNumberOfPages' ELSE '' END
 
           INSERT INTO @tmpIndexesStatistics (SchemaID, SchemaName, ObjectID, ObjectName, ObjectType, IsMemoryOptimized, IndexID, IndexName, IndexType, AllowPageLocks, HasFilter, IsImageText, IsFileStream, HasClusteredColumnstore, IsColumnstoreOrdered, IsComputed, IsClusteredIndexComputed, IsTimestamp, OnReadOnlyFileGroup, ResumableIndexOperation, StatisticsID, StatisticsName, [NoRecompute], IsIncremental, PartitionID, PartitionNumber, InRowDataPageCount)
           EXECUTE @CurrentDatabase_sp_executesql @stmt = @CurrentCommand, @params = N'@ParamMinNumberOfPages int, @ParamMaxNumberOfPages int', @ParamMinNumberOfPages = @MinNumberOfPages, @ParamMaxNumberOfPages = @MaxNumberOfPages
@@ -9126,6 +9134,7 @@ BEGIN
         UPDATE @tmpIndexesStatistics
         SET UpdateStatisticsCompleted = 1
         WHERE StatisticsID IS NULL
+        OR (IndexID IS NOT NULL AND @PartitionLevel = 'Y' AND IsIncremental = 0 AND PartitionNumber <> PartitionCount AND PartitionNumber IS NOT NULL)
 
         SET @CurrentCommand = 'SELECT schemas.[name] AS SchemaName, objects.[name] AS ObjectName'
                             + ' FROM sys.objects objects'
@@ -9610,12 +9619,15 @@ BEGIN
             END CATCH
           END
 
-          SELECT @CurrentRowCount = [Rows],
-                 @CurrentModificationCounter = [ModificationCounter]
-          FROM @IncrementalStatsProperties
-          WHERE ObjectID = @CurrentObjectID
-          AND StatisticsID = @CurrentStatisticsID
-          AND PartitionNumber = @CurrentPartitionNumber
+          IF NOT (@OnlyModifiedStatistics = 'N' AND @StatisticsModificationLevel IS NULL) AND @PartitionLevel = 'Y' AND @CurrentIsIncremental = 1
+          BEGIN
+            SELECT @CurrentRowCount = [Rows],
+                   @CurrentModificationCounter = [ModificationCounter]
+            FROM @IncrementalStatsProperties
+            WHERE ObjectID = @CurrentObjectID
+            AND StatisticsID = @CurrentStatisticsID
+            AND PartitionNumber = @CurrentPartitionNumber
+          END
 
           -- Check partition statistics
           IF NOT (@OnlyModifiedStatistics = 'N' AND @StatisticsModificationLevel IS NULL) AND @CurrentModificationCounter IS NULL
@@ -9772,7 +9784,7 @@ BEGIN
         AND ID = @CurrentIxID
 
         -- Update that statistics on remaining partitions are completed where no update is needed
-        IF NOT (@OnlyModifiedStatistics = 'N' AND @StatisticsModificationLevel IS NULL) AND @CurrentStatisticsID IS NOT NULL
+        IF @CurrentStatisticsID IS NOT NULL AND @PartitionLevel = 'Y' AND @CurrentIsIncremental = 1 AND NOT (@OnlyModifiedStatistics = 'N' AND @StatisticsModificationLevel IS NULL)
         BEGIN
           UPDATE tmpIndexesStatistics
           SET UpdateStatisticsCompleted = 1
