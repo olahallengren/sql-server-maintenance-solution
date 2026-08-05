@@ -94,7 +94,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-08-04 21:29:03                                                               //--
+  --// Version: 2026-08-05 01:52:35                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -1095,12 +1095,24 @@ BEGIN
     VALUES('The number of URLs for the parameters @URL and @MirrorURL has to be the same.', 16, 3)
   END
 
+  IF EXISTS(SELECT * FROM @URLs WHERE Mirror = 0 AND DirectoryPath LIKE 's3://%/%') AND @Version < 16
+  BEGIN
+    INSERT INTO @Errors ([Message], Severity, [State])
+    VALUES('Backup to S3-compatible storage is not supported in this version of SQL Server.', 16, 4)
+  END
+
   ----------------------------------------------------------------------------------------------------
 
   IF EXISTS(SELECT * FROM @URLs WHERE Mirror = 1 AND NOT (DirectoryPath LIKE 'https://%/%' OR DirectoryPath LIKE 's3://%/%'))
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
     VALUES('The value for the parameter @MirrorURL is not supported.', 16, 1)
+  END
+
+  IF EXISTS(SELECT * FROM @URLs WHERE Mirror = 1 AND DirectoryPath LIKE 's3://%/%') AND @Version < 16
+  BEGIN
+    INSERT INTO @Errors ([Message], Severity, [State])
+    VALUES('Mirrored backups to S3-compatible storage are not supported in this version of SQL Server.', 16, 2)
   END
 
   ----------------------------------------------------------------------------------------------------
