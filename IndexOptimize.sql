@@ -56,7 +56,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-08-07 12:41:25                                                               //--
+  --// Version: 2026-08-07 22:55:53                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -239,6 +239,7 @@ BEGIN
                                        UpdateStatisticsCompleted bit DEFAULT 0,
                                        Completed AS CASE WHEN AlterIndexCompleted = 1 AND UpdateStatisticsCompleted = 1 THEN 1 ELSE 0 END,
                                        PRIMARY KEY (Selected, Completed, [Order], ID),
+                                       INDEX IX_ObjectID_IndexID_PartitionNumber NONCLUSTERED (ObjectID, IndexID, PartitionNumber),
                                        INDEX IX_ObjectID_StatisticsID_PartitionNumber NONCLUSTERED (ObjectID, StatisticsID, PartitionNumber))
 
   DROP TABLE IF EXISTS #SelectedIndexes
@@ -969,11 +970,6 @@ BEGIN
     VALUES('The value for the parameter @FragmentationLevel1 is not supported.', 16, 1)
   END
 
-  IF @FragmentationLevel1 >= @FragmentationLevel2
-  BEGIN
-    INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @FragmentationLevel1 is not supported.', 16, 2)
-  END
 
   ----------------------------------------------------------------------------------------------------
 
@@ -983,10 +979,12 @@ BEGIN
     VALUES('The value for the parameter @FragmentationLevel2 is not supported.', 16, 1)
   END
 
+  ----------------------------------------------------------------------------------------------------
+
   IF @FragmentationLevel2 <= @FragmentationLevel1
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @FragmentationLevel2 is not supported.', 16, 2)
+    VALUES('The value for the parameter @FragmentationLevel2 has to be greater than the value for @FragmentationLevel1.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -2865,7 +2863,7 @@ BEGIN
         AND ID = @CurrentIxID
 
         -- Update that index operations on remaining partitions are completed where no action is needed
-        IF @CurrentIndexID IS NOT NULL AND @PartitionLevel = 'Y' AND @CurrentIsPartition = 1 AND (SELECT COUNT(DISTINCT FragmentationGroup) FROM @ActionsPreferred) < 3
+        IF @CurrentAlterIndexCompleted = 0 AND @CurrentIndexID IS NOT NULL AND @PartitionLevel = 'Y' AND @CurrentIsPartition = 1 AND (SELECT COUNT(DISTINCT FragmentationGroup) FROM @ActionsPreferred) < 3
         BEGIN
           UPDATE tmpIndexesStatistics
           SET AlterIndexCompleted = 1
@@ -2874,6 +2872,7 @@ BEGIN
           WHERE tmpIndexesStatistics.ObjectID = @CurrentObjectID
           AND tmpIndexesStatistics.IndexID = @CurrentIndexID
           AND tmpIndexesStatistics.AlterIndexCompleted = 0
+          AND tmpIndexesStatistics.ResumableIndexOperation = 0
           AND NOT EXISTS (SELECT *
                           FROM @ActionsPreferred ActionsPreferred
                           WHERE ActionsPreferred.FragmentationGroup = CASE
@@ -2884,7 +2883,7 @@ BEGIN
         END
 
         -- Update that statistics on remaining partitions are completed where no update is needed
-        IF @CurrentStatisticsID IS NOT NULL AND @PartitionLevel = 'Y' AND @CurrentIsIncremental = 1 AND NOT (@OnlyModifiedStatistics = 'N' AND @StatisticsModificationLevel IS NULL)
+        IF @CurrentUpdateStatisticsCompleted = 0 AND @CurrentStatisticsID IS NOT NULL AND @PartitionLevel = 'Y' AND @CurrentIsIncremental = 1 AND NOT (@OnlyModifiedStatistics = 'N' AND @StatisticsModificationLevel IS NULL)
         BEGIN
           UPDATE tmpIndexesStatistics
           SET UpdateStatisticsCompleted = 1

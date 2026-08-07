@@ -10,7 +10,7 @@ License: https://ola.hallengren.com/license.html
 
 GitHub: https://github.com/olahallengren/sql-server-maintenance-solution
 
-Version: 2026-08-07 12:41:25
+Version: 2026-08-07 22:55:53
 
 You can contact me by e-mail at ola@hallengren.com.
 
@@ -133,7 +133,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-08-07 12:41:25                                                               //--
+  --// Version: 2026-08-07 22:55:53                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -493,7 +493,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-08-07 12:41:25                                                               //--
+  --// Version: 2026-08-07 22:55:53                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -1494,10 +1494,17 @@ BEGIN
     VALUES('The number of URLs for the parameters @URL and @MirrorURL has to be the same.', 16, 3)
   END
 
-  IF EXISTS(SELECT * FROM @URLs WHERE Mirror = 0 AND DirectoryPath LIKE 's3://%/%') AND @Version < 16
+  IF EXISTS(SELECT * FROM @URLs WHERE DirectoryPath LIKE 's3://%/%') AND NOT ((@Version >= 16 OR (@EngineEdition = 8 AND @ProductUpdateType = 'Continuous')) AND @EngineEdition IN(2, 3, 8))
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('Backup to S3-compatible storage is not supported in this version of SQL Server.', 16, 4)
+    VALUES('Backup to S3-compatible storage is not supported in this version and edition of SQL Server.', 16, 4)
+  END
+
+  IF EXISTS(SELECT * FROM @URLs WHERE Mirror = 0 AND DirectoryPath LIKE 's3://%/%')
+  AND EXISTS(SELECT * FROM @URLs WHERE Mirror = 0 AND DirectoryPath LIKE 'https://%/%')
+  BEGIN
+    INSERT INTO @Errors ([Message], Severity, [State])
+    VALUES('Striped backups across S3-compatible storage and Azure Blob storage are not supported.', 16, 4)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -1508,10 +1515,11 @@ BEGIN
     VALUES('The value for the parameter @MirrorURL is not supported.', 16, 1)
   END
 
-  IF EXISTS(SELECT * FROM @URLs WHERE Mirror = 1 AND DirectoryPath LIKE 's3://%/%') AND @Version < 16
+  IF (EXISTS(SELECT * FROM @URLs WHERE Mirror = 0 AND DirectoryPath LIKE 'https://%/%') AND EXISTS(SELECT * FROM @URLs WHERE Mirror = 1 AND DirectoryPath LIKE 's3://%/%'))
+  OR (EXISTS(SELECT * FROM @URLs WHERE Mirror = 0 AND DirectoryPath LIKE 's3://%/%') AND EXISTS(SELECT * FROM @URLs WHERE Mirror = 1 AND DirectoryPath LIKE 'https://%/%'))
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('Mirrored backups to S3-compatible storage are not supported in this version of SQL Server.', 16, 2)
+    VALUES('Mirrored backups across S3-compatible storage and Azure Blob storage are not supported.', 16, 2)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -1783,6 +1791,12 @@ BEGIN
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
     VALUES('The value for the parameter @CopyOnly is not supported.', 16, 1)
+  END
+
+  IF @CopyOnly = 'Y' AND @BackupType = 'DIFF'
+  BEGIN
+    INSERT INTO @Errors ([Message], Severity, [State])
+    VALUES('Differential copy-only backups are not supported.', 16, 2)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -2763,6 +2777,12 @@ BEGIN
     VALUES('The value for the parameter @Init is not supported.', 16, 3)
   END
 
+  IF @Init = 'Y' AND EXISTS(SELECT * FROM @URLs WHERE Mirror = 0 AND DirectoryPath LIKE 's3://%/%')
+  BEGIN
+    INSERT INTO @Errors ([Message], Severity, [State])
+    VALUES('The value for the parameter @Init is not supported.', 16, 4)
+  END
+
   ----------------------------------------------------------------------------------------------------
 
   IF @Format NOT IN('Y','N') OR @Format IS NULL
@@ -2841,7 +2861,7 @@ BEGIN
 
   ----------------------------------------------------------------------------------------------------
 
-  IF @BackupOptions IS NOT NULL AND @URL IS NULL
+  IF @BackupOptions IS NOT NULL AND NOT EXISTS(SELECT * FROM @URLs WHERE DirectoryPath LIKE 's3://%/%')
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
     VALUES('The value for the parameter @BackupOptions is not supported.', 16, 1)
@@ -4999,7 +5019,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-08-07 12:41:25                                                               //--
+  --// Version: 2026-08-07 22:55:53                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -7022,7 +7042,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-08-07 12:41:25                                                               //--
+  --// Version: 2026-08-07 22:55:53                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -7205,6 +7225,7 @@ BEGIN
                                        UpdateStatisticsCompleted bit DEFAULT 0,
                                        Completed AS CASE WHEN AlterIndexCompleted = 1 AND UpdateStatisticsCompleted = 1 THEN 1 ELSE 0 END,
                                        PRIMARY KEY (Selected, Completed, [Order], ID),
+                                       INDEX IX_ObjectID_IndexID_PartitionNumber NONCLUSTERED (ObjectID, IndexID, PartitionNumber),
                                        INDEX IX_ObjectID_StatisticsID_PartitionNumber NONCLUSTERED (ObjectID, StatisticsID, PartitionNumber))
 
   DROP TABLE IF EXISTS #SelectedIndexes
@@ -7935,11 +7956,6 @@ BEGIN
     VALUES('The value for the parameter @FragmentationLevel1 is not supported.', 16, 1)
   END
 
-  IF @FragmentationLevel1 >= @FragmentationLevel2
-  BEGIN
-    INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @FragmentationLevel1 is not supported.', 16, 2)
-  END
 
   ----------------------------------------------------------------------------------------------------
 
@@ -7949,10 +7965,12 @@ BEGIN
     VALUES('The value for the parameter @FragmentationLevel2 is not supported.', 16, 1)
   END
 
+  ----------------------------------------------------------------------------------------------------
+
   IF @FragmentationLevel2 <= @FragmentationLevel1
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @FragmentationLevel2 is not supported.', 16, 2)
+    VALUES('The value for the parameter @FragmentationLevel2 has to be greater than the value for @FragmentationLevel1.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -9831,7 +9849,7 @@ BEGIN
         AND ID = @CurrentIxID
 
         -- Update that index operations on remaining partitions are completed where no action is needed
-        IF @CurrentIndexID IS NOT NULL AND @PartitionLevel = 'Y' AND @CurrentIsPartition = 1 AND (SELECT COUNT(DISTINCT FragmentationGroup) FROM @ActionsPreferred) < 3
+        IF @CurrentAlterIndexCompleted = 0 AND @CurrentIndexID IS NOT NULL AND @PartitionLevel = 'Y' AND @CurrentIsPartition = 1 AND (SELECT COUNT(DISTINCT FragmentationGroup) FROM @ActionsPreferred) < 3
         BEGIN
           UPDATE tmpIndexesStatistics
           SET AlterIndexCompleted = 1
@@ -9840,6 +9858,7 @@ BEGIN
           WHERE tmpIndexesStatistics.ObjectID = @CurrentObjectID
           AND tmpIndexesStatistics.IndexID = @CurrentIndexID
           AND tmpIndexesStatistics.AlterIndexCompleted = 0
+          AND tmpIndexesStatistics.ResumableIndexOperation = 0
           AND NOT EXISTS (SELECT *
                           FROM @ActionsPreferred ActionsPreferred
                           WHERE ActionsPreferred.FragmentationGroup = CASE
@@ -9850,7 +9869,7 @@ BEGIN
         END
 
         -- Update that statistics on remaining partitions are completed where no update is needed
-        IF @CurrentStatisticsID IS NOT NULL AND @PartitionLevel = 'Y' AND @CurrentIsIncremental = 1 AND NOT (@OnlyModifiedStatistics = 'N' AND @StatisticsModificationLevel IS NULL)
+        IF @CurrentUpdateStatisticsCompleted = 0 AND @CurrentStatisticsID IS NOT NULL AND @PartitionLevel = 'Y' AND @CurrentIsIncremental = 1 AND NOT (@OnlyModifiedStatistics = 'N' AND @StatisticsModificationLevel IS NULL)
         BEGIN
           UPDATE tmpIndexesStatistics
           SET UpdateStatisticsCompleted = 1
