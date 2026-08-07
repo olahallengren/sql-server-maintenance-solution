@@ -94,7 +94,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-08-07 12:41:25                                                               //--
+  --// Version: 2026-08-07 22:55:53                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -1095,10 +1095,17 @@ BEGIN
     VALUES('The number of URLs for the parameters @URL and @MirrorURL has to be the same.', 16, 3)
   END
 
-  IF EXISTS(SELECT * FROM @URLs WHERE Mirror = 0 AND DirectoryPath LIKE 's3://%/%') AND @Version < 16
+  IF EXISTS(SELECT * FROM @URLs WHERE DirectoryPath LIKE 's3://%/%') AND NOT ((@Version >= 16 OR (@EngineEdition = 8 AND @ProductUpdateType = 'Continuous')) AND @EngineEdition IN(2, 3, 8))
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('Backup to S3-compatible storage is not supported in this version of SQL Server.', 16, 4)
+    VALUES('Backup to S3-compatible storage is not supported in this version and edition of SQL Server.', 16, 4)
+  END
+
+  IF EXISTS(SELECT * FROM @URLs WHERE Mirror = 0 AND DirectoryPath LIKE 's3://%/%')
+  AND EXISTS(SELECT * FROM @URLs WHERE Mirror = 0 AND DirectoryPath LIKE 'https://%/%')
+  BEGIN
+    INSERT INTO @Errors ([Message], Severity, [State])
+    VALUES('Striped backups across S3-compatible storage and Azure Blob storage are not supported.', 16, 4)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -1109,10 +1116,11 @@ BEGIN
     VALUES('The value for the parameter @MirrorURL is not supported.', 16, 1)
   END
 
-  IF EXISTS(SELECT * FROM @URLs WHERE Mirror = 1 AND DirectoryPath LIKE 's3://%/%') AND @Version < 16
+  IF (EXISTS(SELECT * FROM @URLs WHERE Mirror = 0 AND DirectoryPath LIKE 'https://%/%') AND EXISTS(SELECT * FROM @URLs WHERE Mirror = 1 AND DirectoryPath LIKE 's3://%/%'))
+  OR (EXISTS(SELECT * FROM @URLs WHERE Mirror = 0 AND DirectoryPath LIKE 's3://%/%') AND EXISTS(SELECT * FROM @URLs WHERE Mirror = 1 AND DirectoryPath LIKE 'https://%/%'))
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('Mirrored backups to S3-compatible storage are not supported in this version of SQL Server.', 16, 2)
+    VALUES('Mirrored backups across S3-compatible storage and Azure Blob storage are not supported.', 16, 2)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -1384,6 +1392,12 @@ BEGIN
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
     VALUES('The value for the parameter @CopyOnly is not supported.', 16, 1)
+  END
+
+  IF @CopyOnly = 'Y' AND @BackupType = 'DIFF'
+  BEGIN
+    INSERT INTO @Errors ([Message], Severity, [State])
+    VALUES('Differential copy-only backups are not supported.', 16, 2)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -2364,6 +2378,12 @@ BEGIN
     VALUES('The value for the parameter @Init is not supported.', 16, 3)
   END
 
+  IF @Init = 'Y' AND EXISTS(SELECT * FROM @URLs WHERE Mirror = 0 AND DirectoryPath LIKE 's3://%/%')
+  BEGIN
+    INSERT INTO @Errors ([Message], Severity, [State])
+    VALUES('The value for the parameter @Init is not supported.', 16, 4)
+  END
+
   ----------------------------------------------------------------------------------------------------
 
   IF @Format NOT IN('Y','N') OR @Format IS NULL
@@ -2442,7 +2462,7 @@ BEGIN
 
   ----------------------------------------------------------------------------------------------------
 
-  IF @BackupOptions IS NOT NULL AND @URL IS NULL
+  IF @BackupOptions IS NOT NULL AND NOT EXISTS(SELECT * FROM @URLs WHERE DirectoryPath LIKE 's3://%/%')
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
     VALUES('The value for the parameter @BackupOptions is not supported.', 16, 1)
