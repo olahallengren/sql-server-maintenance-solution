@@ -10,7 +10,7 @@ License: https://ola.hallengren.com/license.html
 
 GitHub: https://github.com/olahallengren/sql-server-maintenance-solution
 
-Version: 2026-08-08 22:31:52
+Version: 2026-08-08 22:47:49
 
 You can contact me by e-mail at ola@hallengren.com.
 
@@ -133,7 +133,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-08-08 22:31:52                                                               //--
+  --// Version: 2026-08-08 22:47:49                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -493,7 +493,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-08-08 22:31:52                                                               //--
+  --// Version: 2026-08-08 22:47:49                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -1956,7 +1956,7 @@ BEGIN
     VALUES('The parameter @MaxTransferSize is not supported with Data Domain Boost. See https://ola.hallengren.com/sql-server-backup.html#MaxTransferSize.', 16, 1)
   END
 
-  IF @MaxTransferSize > 4194304 AND @Directory IS NOT NULL AND @BackupSoftware IS NULL
+  IF @MaxTransferSize > 4194304 AND @URL IS NULL AND @BackupSoftware IS NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
     VALUES('The value for the parameter @MaxTransferSize is not supported. The maximum value for SQL Server native backups to disk is 4194304. See https://ola.hallengren.com/sql-server-backup.html#MaxTransferSize.', 16, 1)
@@ -5019,7 +5019,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-08-08 22:31:52                                                               //--
+  --// Version: 2026-08-08 22:47:49                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -7059,7 +7059,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-08-08 22:31:52                                                               //--
+  --// Version: 2026-08-08 22:47:49                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -8245,7 +8245,7 @@ BEGIN
   IF @LockTimeout < 0 OR @LockTimeout > 86400
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @LockTimeout is not supported. The value has to be between 0 and 86400. See https://ola.hallengren.com/sql-server-integrity-check.html#LockTimeout.', 16, 1)
+    VALUES('The value for the parameter @LockTimeout is not supported. The value has to be between 0 and 86400. See https://ola.hallengren.com/sql-server-index-and-statistics-maintenance.html#LockTimeout.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------

@@ -94,7 +94,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-08-08 22:31:52                                                               //--
+  --// Version: 2026-08-08 22:47:49                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -1557,7 +1557,7 @@ BEGIN
     VALUES('The parameter @MaxTransferSize is not supported with Data Domain Boost. See https://ola.hallengren.com/sql-server-backup.html#MaxTransferSize.', 16, 1)
   END
 
-  IF @MaxTransferSize > 4194304 AND @Directory IS NOT NULL AND @BackupSoftware IS NULL
+  IF @MaxTransferSize > 4194304 AND @URL IS NULL AND @BackupSoftware IS NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
     VALUES('The value for the parameter @MaxTransferSize is not supported. The maximum value for SQL Server native backups to disk is 4194304. See https://ola.hallengren.com/sql-server-backup.html#MaxTransferSize.', 16, 1)
