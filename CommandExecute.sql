@@ -38,7 +38,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-08-08 16:00:55                                                               //--
+  --// Version: 2026-08-08 22:47:49                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -103,25 +103,25 @@ BEGIN
   IF @DatabaseContext IS NULL OR NOT EXISTS (SELECT * FROM sys.databases WHERE name = @DatabaseContext)
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @DatabaseContext is not supported.', 16, 1)
+    VALUES('The value for the parameter @DatabaseContext is not supported. Specify the name of an existing database.', 16, 1)
   END
 
   IF @Command IS NULL OR @Command = ''
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @Command is not supported.', 16, 1)
+    VALUES('The value for the parameter @Command is not supported. The value cannot be NULL or empty.', 16, 1)
   END
 
   IF @CommandType IS NULL OR @CommandType = '' OR LEN(@CommandType) > 60
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @CommandType is not supported.', 16, 1)
+    VALUES('The value for the parameter @CommandType is not supported. The value cannot be NULL or empty, and the maximum length is 60 characters.', 16, 1)
   END
 
   IF @Mode NOT IN(1,2) OR @Mode IS NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @Mode is not supported.', 16, 1)
+    VALUES('The value for the parameter @Mode is not supported. Supported values are 1 and 2.', 16, 1)
   END
 
   IF (@EncryptionKey IS NULL AND @EncryptionKeyPlaceholder IS NOT NULL) OR (@EncryptionKey IS NOT NULL AND @EncryptionKeyPlaceholder IS NULL)
@@ -133,25 +133,25 @@ BEGIN
   IF @LockMessageSeverity NOT IN(10,16) OR @LockMessageSeverity IS NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @LockMessageSeverity is not supported.', 16, 1)
+    VALUES('The value for the parameter @LockMessageSeverity is not supported. Supported values are 10 and 16.', 16, 1)
   END
 
   IF LEN(@ExecuteAsUser) > 128
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @ExecuteAsUser is not supported.', 16, 1)
+    VALUES('The value for the parameter @ExecuteAsUser is not supported. The maximum length is 128 characters.', 16, 1)
   END
 
   IF @LogToTable NOT IN('Y','N') OR @LogToTable IS NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @LogToTable is not supported.', 16, 1)
+    VALUES('The value for the parameter @LogToTable is not supported. Supported values are ''Y'' and ''N''.', 16, 1)
   END
 
   IF @Execute NOT IN('Y','N') OR @Execute IS NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @Execute is not supported.', 16, 1)
+    VALUES('The value for the parameter @Execute is not supported. Supported values are ''Y'' and ''N''.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
