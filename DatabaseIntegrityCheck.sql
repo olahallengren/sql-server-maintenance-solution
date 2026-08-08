@@ -40,7 +40,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-08-07 22:55:53                                                               //--
+  --// Version: 2026-08-08 16:00:55                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -91,6 +91,8 @@ BEGIN
   DECLARE @CurrentAvailabilityGroupID uniqueidentifier
   DECLARE @CurrentAvailabilityGroup nvarchar(max)
   DECLARE @CurrentAvailabilityGroupRole nvarchar(max)
+  DECLARE @CurrentAvailabilityGroupDatabaseReplicaSynchronizationState nvarchar(max)
+  DECLARE @CurrentAvailabilityGroupDatabaseReplicaSynchronizationHealth nvarchar(max)
   DECLARE @CurrentAvailabilityGroupBackupPreference nvarchar(max)
   DECLARE @CurrentSecondaryRoleAllowConnections nvarchar(max)
   DECLARE @CurrentIsPreferredBackupReplica bit
@@ -1470,6 +1472,21 @@ BEGIN
       FROM sys.dm_hadr_availability_replica_states
       WHERE replica_id = @CurrentAvailabilityGroupReplicaID
 
+      SELECT @CurrentAvailabilityGroupDatabaseReplicaSynchronizationState = synchronization_state_desc,
+             @CurrentAvailabilityGroupDatabaseReplicaSynchronizationHealth = synchronization_health_desc
+      FROM sys.dm_hadr_database_replica_states
+      WHERE replica_id = @CurrentAvailabilityGroupReplicaID
+      AND database_id = DB_ID(@CurrentDatabaseName)
+
+      IF @CurrentAvailabilityGroupDatabaseReplicaSynchronizationState IS NULL AND @ContainedAvailabilityGroupListenerConnection = 1
+      BEGIN
+        SELECT @CurrentAvailabilityGroupDatabaseReplicaSynchronizationState = synchronization_state_desc,
+               @CurrentAvailabilityGroupDatabaseReplicaSynchronizationHealth = synchronization_health_desc
+        FROM sys.dm_hadr_database_replica_states
+        WHERE replica_id = @CurrentAvailabilityGroupReplicaID
+        AND DB_NAME(database_id) = @CurrentDatabaseName
+      END
+
       SELECT @CurrentAvailabilityGroup = [name],
              @CurrentAvailabilityGroupBackupPreference = UPPER(automated_backup_preference_desc)
       FROM sys.availability_groups
@@ -1510,6 +1527,12 @@ BEGIN
       RAISERROR('%s',10,1,@DatabaseMessage) WITH NOWAIT
 
       SET @DatabaseMessage = 'Availability group role: ' + ISNULL(@CurrentAvailabilityGroupRole,'N/A')
+      RAISERROR('%s',10,1,@DatabaseMessage) WITH NOWAIT
+
+      SET @DatabaseMessage = 'Availability group database replica synchronization state: ' + ISNULL(@CurrentAvailabilityGroupDatabaseReplicaSynchronizationState,'N/A')
+      RAISERROR('%s',10,1,@DatabaseMessage) WITH NOWAIT
+
+      SET @DatabaseMessage = 'Availability group database replica synchronization health: ' + ISNULL(@CurrentAvailabilityGroupDatabaseReplicaSynchronizationHealth,'N/A')
       RAISERROR('%s',10,1,@DatabaseMessage) WITH NOWAIT
 
       IF @CurrentAvailabilityGroupRole = 'SECONDARY'
@@ -1967,6 +1990,8 @@ BEGIN
     SET @CurrentAvailabilityGroupID = NULL
     SET @CurrentAvailabilityGroup = NULL
     SET @CurrentAvailabilityGroupRole = NULL
+    SET @CurrentAvailabilityGroupDatabaseReplicaSynchronizationState = NULL
+    SET @CurrentAvailabilityGroupDatabaseReplicaSynchronizationHealth = NULL
     SET @CurrentAvailabilityGroupBackupPreference = NULL
     SET @CurrentSecondaryRoleAllowConnections = NULL
     SET @CurrentIsPreferredBackupReplica = NULL
