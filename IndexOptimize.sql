@@ -56,7 +56,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-08-08 23:29:24                                                               //--
+  --// Version: 2026-08-09 00:40:19                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -130,7 +130,7 @@ BEGIN
   DECLARE @Errors TABLE (ID int IDENTITY PRIMARY KEY,
                          [Message] nvarchar(max) NOT NULL,
                          Severity int NOT NULL,
-                         [State] int)
+                         [State] int NOT NULL)
 
   DECLARE @CurrentMessage nvarchar(max)
   DECLARE @CurrentSeverity int
