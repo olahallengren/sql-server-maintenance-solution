@@ -10,7 +10,7 @@ License: https://ola.hallengren.com/license.html
 
 GitHub: https://github.com/olahallengren/sql-server-maintenance-solution
 
-Version: 2026-08-08 16:00:55
+Version: 2026-08-08 22:31:52
 
 You can contact me by e-mail at ola@hallengren.com.
 
@@ -133,7 +133,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-08-08 16:00:55                                                               //--
+  --// Version: 2026-08-08 22:31:52                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -198,25 +198,25 @@ BEGIN
   IF @DatabaseContext IS NULL OR NOT EXISTS (SELECT * FROM sys.databases WHERE name = @DatabaseContext)
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @DatabaseContext is not supported.', 16, 1)
+    VALUES('The value for the parameter @DatabaseContext is not supported. Specify the name of an existing database.', 16, 1)
   END
 
   IF @Command IS NULL OR @Command = ''
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @Command is not supported.', 16, 1)
+    VALUES('The value for the parameter @Command is not supported. The value cannot be NULL or empty.', 16, 1)
   END
 
   IF @CommandType IS NULL OR @CommandType = '' OR LEN(@CommandType) > 60
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @CommandType is not supported.', 16, 1)
+    VALUES('The value for the parameter @CommandType is not supported. The value cannot be NULL or empty, and the maximum length is 60 characters.', 16, 1)
   END
 
   IF @Mode NOT IN(1,2) OR @Mode IS NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @Mode is not supported.', 16, 1)
+    VALUES('The value for the parameter @Mode is not supported. Supported values are 1 and 2.', 16, 1)
   END
 
   IF (@EncryptionKey IS NULL AND @EncryptionKeyPlaceholder IS NOT NULL) OR (@EncryptionKey IS NOT NULL AND @EncryptionKeyPlaceholder IS NULL)
@@ -228,25 +228,25 @@ BEGIN
   IF @LockMessageSeverity NOT IN(10,16) OR @LockMessageSeverity IS NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @LockMessageSeverity is not supported.', 16, 1)
+    VALUES('The value for the parameter @LockMessageSeverity is not supported. Supported values are 10 and 16.', 16, 1)
   END
 
   IF LEN(@ExecuteAsUser) > 128
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @ExecuteAsUser is not supported.', 16, 1)
+    VALUES('The value for the parameter @ExecuteAsUser is not supported. The maximum length is 128 characters.', 16, 1)
   END
 
   IF @LogToTable NOT IN('Y','N') OR @LogToTable IS NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @LogToTable is not supported.', 16, 1)
+    VALUES('The value for the parameter @LogToTable is not supported. Supported values are ''Y'' and ''N''.', 16, 1)
   END
 
   IF @Execute NOT IN('Y','N') OR @Execute IS NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @Execute is not supported.', 16, 1)
+    VALUES('The value for the parameter @Execute is not supported. Supported values are ''Y'' and ''N''.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -493,7 +493,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-08-08 16:00:55                                                               //--
+  --// Version: 2026-08-08 22:31:52                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -895,13 +895,13 @@ BEGIN
   IF NOT (SELECT uses_ansi_nulls FROM sys.sql_modules WHERE [object_id] = @@PROCID) = 1
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('ANSI_NULLS has to be set to ON for the stored procedure.', 16, 1)
+    VALUES('ANSI_NULLS has to be set to ON for the stored procedure. See https://ola.hallengren.com/sql-server-backup.html.', 16, 1)
   END
 
   IF NOT (SELECT uses_quoted_identifier FROM sys.sql_modules WHERE [object_id] = @@PROCID) = 1
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('QUOTED_IDENTIFIER has to be set to ON for the stored procedure.', 16, 1)
+    VALUES('QUOTED_IDENTIFIER has to be set to ON for the stored procedure. See https://ola.hallengren.com/sql-server-backup.html.', 16, 1)
   END
 
   IF NOT EXISTS (SELECT * FROM sys.objects objects INNER JOIN sys.schemas schemas ON objects.[schema_id] = schemas.[schema_id] WHERE objects.[type] = 'P' AND schemas.[name] = 'dbo' AND objects.[name] = 'CommandExecute')
@@ -925,25 +925,25 @@ BEGIN
   IF @DatabasesInParallel = 'Y' AND NOT EXISTS (SELECT * FROM sys.objects objects INNER JOIN sys.schemas schemas ON objects.[schema_id] = schemas.[schema_id] WHERE objects.[type] = 'U' AND schemas.[name] = 'dbo' AND objects.[name] = 'Queue')
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The table Queue is missing. Download https://ola.hallengren.com/scripts/Queue.sql.', 16, 1)
+    VALUES('The table Queue is missing. It is required when @DatabasesInParallel = ''Y''. Download https://ola.hallengren.com/scripts/Queue.sql.', 16, 1)
   END
 
   IF @DatabasesInParallel = 'Y' AND NOT EXISTS (SELECT * FROM sys.objects objects INNER JOIN sys.schemas schemas ON objects.[schema_id] = schemas.[schema_id] WHERE objects.[type] = 'U' AND schemas.[name] = 'dbo' AND objects.[name] = 'QueueDatabase')
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The table QueueDatabase is missing. Download https://ola.hallengren.com/scripts/QueueDatabase.sql.', 16, 1)
+    VALUES('The table QueueDatabase is missing. It is required when @DatabasesInParallel = ''Y''. Download https://ola.hallengren.com/scripts/QueueDatabase.sql.', 16, 1)
   END
 
   IF @@TRANCOUNT <> 0
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The transaction count is not 0.', 16, 1)
+    VALUES('The stored procedure cannot be executed inside a transaction. The transaction count (@@TRANCOUNT) has to be 0. See https://ola.hallengren.com/sql-server-backup.html.', 16, 1)
   END
 
   IF @AmazonRDS = 1
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The stored procedure DatabaseBackup is not supported on Amazon RDS.', 16, 1)
+    VALUES('The stored procedure DatabaseBackup is not supported on Amazon RDS. See https://ola.hallengren.com/sql-server-backup.html.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -1067,7 +1067,7 @@ BEGIN
   IF @Databases IS NOT NULL AND (NOT EXISTS(SELECT * FROM @SelectedDatabases) OR EXISTS(SELECT * FROM @SelectedDatabases WHERE DatabaseName IS NULL OR DATALENGTH(DatabaseName) = 0))
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @Databases is not supported.', 16, 1)
+    VALUES('The value for the parameter @Databases is not supported. The value could not be parsed into a list of databases. See https://ola.hallengren.com/sql-server-backup.html#Databases.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -1159,22 +1159,28 @@ BEGIN
 
   END
 
-  IF @AvailabilityGroups IS NOT NULL AND (NOT EXISTS(SELECT * FROM @SelectedAvailabilityGroups) OR EXISTS(SELECT * FROM @SelectedAvailabilityGroups WHERE AvailabilityGroupName IS NULL OR AvailabilityGroupName = '') OR @IsHadrEnabled = 0)
+  IF @AvailabilityGroups IS NOT NULL AND (NOT EXISTS(SELECT * FROM @SelectedAvailabilityGroups) OR EXISTS(SELECT * FROM @SelectedAvailabilityGroups WHERE AvailabilityGroupName IS NULL OR AvailabilityGroupName = ''))
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @AvailabilityGroups is not supported.', 16, 1)
+    VALUES('The value for the parameter @AvailabilityGroups is not supported. The value could not be parsed into a list of availability groups. See https://ola.hallengren.com/sql-server-backup.html#AvailabilityGroups.', 16, 1)
+  END
+
+  IF @AvailabilityGroups IS NOT NULL AND @IsHadrEnabled = 0
+  BEGIN
+    INSERT INTO @Errors ([Message], Severity, [State])
+    VALUES('The parameter @AvailabilityGroups can only be used when availability groups are enabled on the instance. See https://ola.hallengren.com/sql-server-backup.html#AvailabilityGroups.', 16, 1)
   END
 
   IF (@Databases IS NULL AND @AvailabilityGroups IS NULL)
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('You need to specify one of the parameters @Databases and @AvailabilityGroups.', 16, 2)
+    VALUES('You need to specify one of the parameters @Databases and @AvailabilityGroups. See https://ola.hallengren.com/sql-server-backup.html.', 16, 1)
   END
 
   IF (@Databases IS NOT NULL AND @AvailabilityGroups IS NOT NULL)
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('You can only specify one of the parameters @Databases and @AvailabilityGroups.', 16, 3)
+    VALUES('You can only specify one of the parameters @Databases and @AvailabilityGroups. See https://ola.hallengren.com/sql-server-backup.html.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -1190,7 +1196,7 @@ BEGIN
   IF @ErrorMessage IS NOT NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The names of the following databases are not supported: ' + @ErrorMessage + '.', 16, 1)
+    VALUES('The names of the following databases are not supported: ' + @ErrorMessage + '. A database name has to contain at least one character that can be used in file names. See https://ola.hallengren.com/sql-server-backup.html#Databases.', 16, 1)
   END
 
   SELECT @ErrorMessage = STRING_AGG(CAST(QUOTENAME(DatabaseName) AS nvarchar(max)), ', ')
@@ -1203,7 +1209,7 @@ BEGIN
   IF @ErrorMessage IS NOT NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The names of the following databases are not unique in the file system: ' + @ErrorMessage + '.', 16, 1)
+    VALUES('The names of the following databases are not unique in the file system: ' + @ErrorMessage + '. See https://ola.hallengren.com/sql-server-backup.html#Databases.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -1301,43 +1307,49 @@ BEGIN
   IF EXISTS (SELECT * FROM @Directories WHERE Mirror = 0 AND (NOT (DirectoryPath LIKE '_:' OR DirectoryPath LIKE '_:\%' OR DirectoryPath LIKE '\\%\%' OR (DirectoryPath LIKE '/%' AND @HostPlatform = 'Linux') OR DirectoryPath = 'NUL') OR DirectoryPath IS NULL OR LEFT(DirectoryPath,1) = ' ' OR RIGHT(DirectoryPath,1) = ' '))
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @Directory is not supported.', 16, 1)
+    VALUES('The value for the parameter @Directory is not supported. Specify a local path (e.g. D:\Backup), a UNC path (e.g. \\Server\Share), a path starting with / on Linux, or NUL, without leading or trailing spaces. See https://ola.hallengren.com/sql-server-backup.html#Directory.', 16, 1)
   END
 
   IF EXISTS (SELECT * FROM @Directories GROUP BY DirectoryPath HAVING COUNT(*) <> 1)
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The same directory has been specified multiple times in the parameters @Directory and @MirrorDirectory.', 16, 2)
+    VALUES('The same directory has been specified multiple times in the parameters @Directory and @MirrorDirectory. See https://ola.hallengren.com/sql-server-backup.html.', 16, 1)
   END
 
   IF (SELECT COUNT(*) FROM @Directories WHERE Mirror = 0) <> (SELECT COUNT(*) FROM @Directories WHERE Mirror = 1) AND (SELECT COUNT(*) FROM @Directories WHERE Mirror = 1) > 0
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The number of directories for the parameters @Directory and @MirrorDirectory has to be the same.', 16, 3)
+    VALUES('The number of directories for the parameters @Directory and @MirrorDirectory has to be the same. See https://ola.hallengren.com/sql-server-backup.html.', 16, 1)
   END
 
-  IF (@Directory IS NOT NULL AND @EngineEdition = 8) OR (@Directory IS NOT NULL AND @BackupSoftware = 'DATA_DOMAIN_BOOST')
+  IF @Directory IS NOT NULL AND @EngineEdition = 8
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @Directory is not supported.', 16, 4)
+    VALUES('The parameter @Directory is not supported on Azure SQL Managed Instance. See https://ola.hallengren.com/sql-server-backup.html#Directory.', 16, 1)
+  END
+
+  IF @Directory IS NOT NULL AND @BackupSoftware = 'DATA_DOMAIN_BOOST'
+  BEGIN
+    INSERT INTO @Errors ([Message], Severity, [State])
+    VALUES('The parameter @Directory is not supported with Data Domain Boost. See https://ola.hallengren.com/sql-server-backup.html#Directory.', 16, 1)
   END
 
   IF EXISTS (SELECT * FROM @Directories WHERE Mirror = 0 AND DirectoryPath = 'NUL') AND EXISTS(SELECT * FROM @Directories WHERE Mirror = 0 AND DirectoryPath <> 'NUL')
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @Directory is not supported.', 16, 5)
+    VALUES('The value for the parameter @Directory is not supported. Backup to NUL cannot be combined with other directories. See https://ola.hallengren.com/sql-server-backup.html#Directory.', 16, 1)
   END
 
   IF EXISTS (SELECT * FROM @Directories WHERE Mirror = 0 AND DirectoryPath = 'NUL') AND EXISTS(SELECT * FROM @Directories WHERE Mirror = 1)
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('Mirrored backup is not supported when backing up to NUL.', 16, 6)
+    VALUES('Mirrored backup is not supported when backing up to NUL. See https://ola.hallengren.com/sql-server-backup.html.', 16, 1)
   END
 
   IF EXISTS (SELECT * FROM @Directories WHERE Mirror = 0 AND DirectoryPath = 'NUL') AND @BackupSoftware IS NOT NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('Backup to NUL is only supported with SQL Server native backups.', 16, 7)
+    VALUES('Backup to NUL is only supported with SQL Server native backups. See https://ola.hallengren.com/sql-server-backup.html#Directory.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -1345,31 +1357,31 @@ BEGIN
   IF EXISTS(SELECT * FROM @Directories WHERE Mirror = 1 AND (NOT (DirectoryPath LIKE '_:' OR DirectoryPath LIKE '_:\%' OR DirectoryPath LIKE '\\%\%' OR (DirectoryPath LIKE '/%' AND @HostPlatform = 'Linux')) OR DirectoryPath IS NULL OR LEFT(DirectoryPath,1) = ' ' OR RIGHT(DirectoryPath,1) = ' '))
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @MirrorDirectory is not supported.', 16, 1)
+    VALUES('The value for the parameter @MirrorDirectory is not supported. Specify a local path (e.g. D:\Backup), a UNC path (e.g. \\Server\Share), or a path starting with / on Linux, without leading or trailing spaces. See https://ola.hallengren.com/sql-server-backup.html#MirrorDirectory.', 16, 1)
   END
 
   IF @BackupSoftware IN('SQLBACKUP','SQLSAFE') AND (SELECT COUNT(*) FROM @Directories WHERE Mirror = 1) > 1
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @MirrorDirectory is not supported.', 16, 2)
+    VALUES('The value for the parameter @MirrorDirectory is not supported. Redgate SQL Backup Pro and Idera SQL Safe Backup support only one mirror directory. See https://ola.hallengren.com/sql-server-backup.html#MirrorDirectory.', 16, 1)
   END
 
   IF @MirrorDirectory IS NOT NULL AND @EngineEdition = 8
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @MirrorDirectory is not supported.', 16, 3)
+    VALUES('The value for the parameter @MirrorDirectory is not supported. Mirrored backup is not supported on Azure SQL Managed Instance. See https://ola.hallengren.com/sql-server-backup.html#MirrorDirectory.', 16, 1)
   END
 
   IF @MirrorDirectory IS NOT NULL AND @BackupSoftware = 'DATA_DOMAIN_BOOST'
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @MirrorDirectory is not supported.', 16, 4)
+    VALUES('The value for the parameter @MirrorDirectory is not supported. Mirrored backup is not supported with Data Domain Boost. See https://ola.hallengren.com/sql-server-backup.html#MirrorDirectory.', 16, 1)
   END
 
   IF (@BackupSoftware IS NULL AND EXISTS(SELECT * FROM @Directories WHERE Mirror = 1) AND @EngineEdition <> 3)
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @MirrorDirectory is not supported. Mirrored backup to disk is only available in Enterprise and Developer Edition.', 16, 5)
+    VALUES('The value for the parameter @MirrorDirectory is not supported. Mirrored backup to disk is not supported in this edition of SQL Server. See https://ola.hallengren.com/sql-server-backup.html#MirrorDirectory.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -1399,7 +1411,7 @@ BEGIN
       IF NOT EXISTS (SELECT * FROM @DirectoryInfo WHERE FileExists = 0 AND FileIsADirectory = 1 AND ParentDirectoryExists = 1)
       BEGIN
         INSERT INTO @Errors ([Message], Severity, [State])
-        VALUES('The directory ' + @CurrentRootDirectoryPath + ' does not exist.', 16, 1)
+        VALUES('The directory ' + @CurrentRootDirectoryPath + ' does not exist. See https://ola.hallengren.com/sql-server-backup.html.', 16, 1)
       END
 
       UPDATE @Directories
@@ -1480,32 +1492,32 @@ BEGIN
   IF EXISTS(SELECT * FROM @URLs WHERE Mirror = 0 AND NOT (DirectoryPath LIKE 'https://%/%' OR DirectoryPath LIKE 's3://%/%'))
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @URL is not supported.', 16, 1)
+    VALUES('The value for the parameter @URL is not supported. The URL has to start with https:// (Azure Blob Storage) or s3:// (S3-compatible storage). See https://ola.hallengren.com/sql-server-backup.html#URL.', 16, 1)
   END
 
   IF EXISTS (SELECT * FROM @URLs GROUP BY DirectoryPath HAVING COUNT(*) <> 1)
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The same URL has been specified multiple times in the parameters @URL and @MirrorURL.', 16, 2)
+    VALUES('The same URL has been specified multiple times in the parameters @URL and @MirrorURL. See https://ola.hallengren.com/sql-server-backup.html.', 16, 1)
   END
 
   IF (SELECT COUNT(*) FROM @URLs WHERE Mirror = 0) <> (SELECT COUNT(*) FROM @URLs WHERE Mirror = 1) AND (SELECT COUNT(*) FROM @URLs WHERE Mirror = 1) > 0
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The number of URLs for the parameters @URL and @MirrorURL has to be the same.', 16, 3)
+    VALUES('The number of URLs for the parameters @URL and @MirrorURL has to be the same. See https://ola.hallengren.com/sql-server-backup.html.', 16, 1)
   END
 
   IF EXISTS(SELECT * FROM @URLs WHERE DirectoryPath LIKE 's3://%/%') AND NOT ((@Version >= 16 OR (@EngineEdition = 8 AND @ProductUpdateType = 'Continuous')) AND @EngineEdition IN(2, 3, 8))
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('Backup to S3-compatible storage is not supported in this version and edition of SQL Server.', 16, 4)
+    VALUES('Backup to S3-compatible storage is not supported in this version and edition of SQL Server. See https://ola.hallengren.com/sql-server-backup.html#URL.', 16, 1)
   END
 
   IF EXISTS(SELECT * FROM @URLs WHERE Mirror = 0 AND DirectoryPath LIKE 's3://%/%')
   AND EXISTS(SELECT * FROM @URLs WHERE Mirror = 0 AND DirectoryPath LIKE 'https://%/%')
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('Striped backups across S3-compatible storage and Azure Blob storage are not supported.', 16, 4)
+    VALUES('Striped backups across S3-compatible storage and Azure Blob Storage are not supported. See https://ola.hallengren.com/sql-server-backup.html#URL.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -1513,14 +1525,14 @@ BEGIN
   IF EXISTS(SELECT * FROM @URLs WHERE Mirror = 1 AND NOT (DirectoryPath LIKE 'https://%/%' OR DirectoryPath LIKE 's3://%/%'))
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @MirrorURL is not supported.', 16, 1)
+    VALUES('The value for the parameter @MirrorURL is not supported. The URL has to start with https:// (Azure Blob Storage) or s3:// (S3-compatible storage). See https://ola.hallengren.com/sql-server-backup.html#MirrorURL.', 16, 1)
   END
 
   IF (EXISTS(SELECT * FROM @URLs WHERE Mirror = 0 AND DirectoryPath LIKE 'https://%/%') AND EXISTS(SELECT * FROM @URLs WHERE Mirror = 1 AND DirectoryPath LIKE 's3://%/%'))
   OR (EXISTS(SELECT * FROM @URLs WHERE Mirror = 0 AND DirectoryPath LIKE 's3://%/%') AND EXISTS(SELECT * FROM @URLs WHERE Mirror = 1 AND DirectoryPath LIKE 'https://%/%'))
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('Mirrored backups across S3-compatible storage and Azure Blob storage are not supported.', 16, 2)
+    VALUES('Mirrored backups across S3-compatible storage and Azure Blob Storage are not supported. See https://ola.hallengren.com/sql-server-backup.html#MirrorURL.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -1624,7 +1636,7 @@ BEGIN
   IF @BackupType NOT IN ('FULL','DIFF','LOG') OR @BackupType IS NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @BackupType is not supported.', 16, 1)
+    VALUES('The value for the parameter @BackupType is not supported. Supported values are FULL, DIFF and LOG. See https://ola.hallengren.com/sql-server-backup.html#BackupType.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -1632,7 +1644,7 @@ BEGIN
   IF @EngineEdition = 8 AND NOT (@BackupType = 'FULL' AND @CopyOnly = 'Y')
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('SQL Database Managed Instance only supports COPY_ONLY full backups.', 16, 1)
+    VALUES('Azure SQL Managed Instance only supports COPY_ONLY full backups. See https://ola.hallengren.com/sql-server-backup.html.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -1640,25 +1652,25 @@ BEGIN
   IF @Verify NOT IN ('Y','N') OR @Verify IS NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @Verify is not supported.', 16, 1)
+    VALUES('The value for the parameter @Verify is not supported. Supported values are ''Y'' and ''N''. See https://ola.hallengren.com/sql-server-backup.html#Verify.', 16, 1)
   END
 
   IF @BackupSoftware = 'SQLSAFE' AND @Encrypt = 'Y' AND @Verify = 'Y'
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @Verify is not supported. Verify is not supported with encrypted backups with Idera SQL Safe Backup.', 16, 2)
+    VALUES('Verify is not supported for encrypted backups with Idera SQL Safe Backup. See https://ola.hallengren.com/sql-server-backup.html#Verify.', 16, 1)
   END
 
   IF @Verify = 'Y' AND @BackupSoftware = 'DATA_DOMAIN_BOOST'
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @Verify is not supported. Verify is not supported with Data Domain Boost.', 16, 3)
+    VALUES('Verify is not supported with Data Domain Boost. See https://ola.hallengren.com/sql-server-backup.html#Verify.', 16, 1)
   END
 
   IF @Verify = 'Y' AND EXISTS(SELECT * FROM @Directories WHERE DirectoryPath = 'NUL')
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @Verify is not supported. Verify is not supported when backing up to NUL.', 16, 4)
+    VALUES('Verify is not supported when backing up to NUL. See https://ola.hallengren.com/sql-server-backup.html#Verify.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -1666,37 +1678,37 @@ BEGIN
   IF @CleanupTime < 0
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @CleanupTime is not supported.', 16, 1)
+    VALUES('The value for the parameter @CleanupTime is not supported. The value has to be greater than or equal to 0. See https://ola.hallengren.com/sql-server-backup.html#CleanupTime.', 16, 1)
   END
 
   IF @CleanupTime IS NOT NULL AND @URL IS NOT NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @CleanupTime is not supported. Cleanup is not supported on Azure Blob Storage.', 16, 2)
+    VALUES('The value for the parameter @CleanupTime is not supported. Cleanup is not supported on Azure Blob Storage. See https://ola.hallengren.com/sql-server-backup.html#CleanupTime.', 16, 1)
   END
 
   IF @CleanupTime IS NOT NULL AND EXISTS(SELECT * FROM @Directories WHERE DirectoryPath = 'NUL')
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @CleanupTime is not supported. Cleanup is not supported when backing up to NUL.', 16, 3)
+    VALUES('The value for the parameter @CleanupTime is not supported. Cleanup is not supported when backing up to NUL. See https://ola.hallengren.com/sql-server-backup.html#CleanupTime.', 16, 1)
   END
 
   IF @CleanupTime IS NOT NULL AND ((@DirectoryStructure NOT LIKE '%{DatabaseName}%' OR @DirectoryStructure IS NULL) OR (@IsHadrEnabled = 1 AND (@AvailabilityGroupDirectoryStructure NOT LIKE '%{DatabaseName}%' OR @AvailabilityGroupDirectoryStructure IS NULL)))
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @CleanupTime is not supported. Cleanup is not supported if the token {DatabaseName} is not part of the directory.', 16, 4)
+    VALUES('The value for the parameter @CleanupTime is not supported. Cleanup is not supported if the token {DatabaseName} is not part of the directory structure. See https://ola.hallengren.com/sql-server-backup.html#CleanupTime.', 16, 1)
   END
 
   IF @CleanupTime IS NOT NULL AND ((@DirectoryStructure NOT LIKE '%{BackupType}%' OR @DirectoryStructure IS NULL) OR (@IsHadrEnabled = 1 AND (@AvailabilityGroupDirectoryStructure NOT LIKE '%{BackupType}%' OR @AvailabilityGroupDirectoryStructure IS NULL))) AND (SELECT COUNT(*) FROM (SELECT @FileExtensionFull AS FileExtension UNION SELECT @FileExtensionDiff UNION SELECT @FileExtensionLog) FileExtension) <> 3
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @CleanupTime is not supported. Cleanup is not supported if the token {BackupType} is not part of the directory and the file extensions are not unique.', 16, 5)
+    VALUES('The value for the parameter @CleanupTime is not supported. Cleanup is not supported if the token {BackupType} is not part of the directory structure and the file extensions are not unique. See https://ola.hallengren.com/sql-server-backup.html#CleanupTime.', 16, 1)
   END
 
   IF @CleanupTime IS NOT NULL AND @CopyOnly = 'Y' AND ((@DirectoryStructure NOT LIKE '%{CopyOnly}%' OR @DirectoryStructure IS NULL) OR (@IsHadrEnabled = 1 AND (@AvailabilityGroupDirectoryStructure NOT LIKE '%{CopyOnly}%' OR @AvailabilityGroupDirectoryStructure IS NULL)))
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @CleanupTime is not supported. Cleanup is not supported if the token {CopyOnly} is not part of the directory.', 16, 6)
+    VALUES('The value for the parameter @CleanupTime is not supported. Cleanup is not supported if the token {CopyOnly} is not part of the directory structure. See https://ola.hallengren.com/sql-server-backup.html#CleanupTime.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -1704,7 +1716,7 @@ BEGIN
   IF @CleanupMode NOT IN('BEFORE_BACKUP','AFTER_BACKUP') OR @CleanupMode IS NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @CleanupMode is not supported.', 16, 1)
+    VALUES('The value for the parameter @CleanupMode is not supported. Supported values are BEFORE_BACKUP and AFTER_BACKUP. See https://ola.hallengren.com/sql-server-backup.html#CleanupMode.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -1712,26 +1724,26 @@ BEGIN
   IF @Compress NOT IN ('Y','N') OR @Compress IS NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @Compress is not supported.', 16, 1)
+    VALUES('The value for the parameter @Compress is not supported. Supported values are ''Y'' and ''N''. See https://ola.hallengren.com/sql-server-backup.html#Compress.', 16, 1)
   END
 
   IF @Compress = 'Y' AND @BackupSoftware IS NULL
   AND NOT (@EngineEdition IN (3, 8) OR @EditionID IN (-1534726760, -1785266663))
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @Compress is not supported. Backup compression is not supported in this edition of SQL Server.', 16, 2)
+    VALUES('Backup compression is not supported in this edition of SQL Server. See https://ola.hallengren.com/sql-server-backup.html#Compress.', 16, 1)
   END
 
   IF @Compress = 'N' AND @BackupSoftware IN ('LITESPEED','SQLBACKUP','SQLSAFE') AND (@CompressionLevelNumeric IS NULL OR @CompressionLevelNumeric >= 1)
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @Compress is not supported.', 16, 3)
+    VALUES('Setting @Compress to ''N'' with LiteSpeed for SQL Server, Redgate SQL Backup Pro or Idera SQL Safe Backup requires @CompressionLevelNumeric = 0. See https://ola.hallengren.com/sql-server-backup.html#Compress.', 16, 1)
   END
 
   IF @Compress = 'Y' AND @BackupSoftware IN ('LITESPEED','SQLBACKUP','SQLSAFE') AND @CompressionLevelNumeric = 0
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @Compress is not supported.', 16, 4)
+    VALUES('Setting @Compress to ''Y'' cannot be combined with @CompressionLevelNumeric = 0. See https://ola.hallengren.com/sql-server-backup.html#Compress.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -1739,31 +1751,31 @@ BEGIN
   IF @CompressionAlgorithm NOT IN ('MS_XPRESS','QAT_DEFLATE','ZSTD')
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @CompressionAlgorithm is not supported. The allowed values are MS_XPRESS, QAT_DEFLATE and ZSTD.', 16, 1)
+    VALUES('The value for the parameter @CompressionAlgorithm is not supported. Supported values are MS_XPRESS, QAT_DEFLATE and ZSTD. See https://ola.hallengren.com/sql-server-backup.html#CompressionAlgorithm.', 16, 1)
   END
 
   IF @CompressionAlgorithm IS NOT NULL AND NOT (@Version >= 16 OR (@EngineEdition = 8 AND @ProductUpdateType = 'Continuous'))
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @CompressionAlgorithm is not supported. Specifying the compression algorithm is only supported in SQL Server 2022 and later.', 16, 2)
+    VALUES('The parameter @CompressionAlgorithm is not supported in this version and edition of SQL Server. See https://ola.hallengren.com/sql-server-backup.html#CompressionAlgorithm.', 16, 1)
   END
 
   IF @CompressionAlgorithm = 'QAT_DEFLATE' AND NOT (@EngineEdition IN(2, 3))
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @CompressionAlgorithm is not supported. Setting the compression algorithm to QAT_DEFLATE is only supported in Standard and Enterprise Edition.', 16, 3)
+    VALUES('Setting @CompressionAlgorithm to QAT_DEFLATE is not supported in this edition of SQL Server. See https://ola.hallengren.com/sql-server-backup.html#CompressionAlgorithm.', 16, 1)
   END
 
   IF @CompressionAlgorithm = 'ZSTD' AND NOT (@Version >= 17 OR (@EngineEdition = 8 AND @ProductUpdateType = 'Continuous'))
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @CompressionAlgorithm is not supported. Setting the compression algorithm to ZSTD is only supported in SQL Server 2025 and later.', 16, 4)
+    VALUES('Setting @CompressionAlgorithm to ZSTD is not supported in this version and edition of SQL Server. See https://ola.hallengren.com/sql-server-backup.html#CompressionAlgorithm.', 16, 1)
   END
 
   IF @CompressionAlgorithm IS NOT NULL AND @BackupSoftware IS NOT NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @CompressionAlgorithm is not supported. Setting the compression algorithm is only supported with SQL Server native backup.', 16, 5)
+    VALUES('The parameter @CompressionAlgorithm is only supported with SQL Server native backups. See https://ola.hallengren.com/sql-server-backup.html#CompressionAlgorithm.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -1771,19 +1783,19 @@ BEGIN
   IF @CompressionLevel IS NOT NULL AND @BackupSoftware IS NOT NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @CompressionLevel is not supported. For third-party backup software, use the parameter @CompressionLevelNumeric.', 16, 1)
+    VALUES('The parameter @CompressionLevel is only supported with SQL Server native backups. For third-party backup software, use the parameter @CompressionLevelNumeric. See https://ola.hallengren.com/sql-server-backup.html#CompressionLevel.', 16, 1)
   END
 
   IF @CompressionLevel NOT IN ('LOW','MEDIUM','HIGH')
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @CompressionLevel is not supported. The supported values are LOW, MEDIUM and HIGH.', 16, 2)
+    VALUES('The value for the parameter @CompressionLevel is not supported. Supported values are LOW, MEDIUM and HIGH. See https://ola.hallengren.com/sql-server-backup.html#CompressionLevel.', 16, 1)
   END
 
   IF @CompressionLevel IS NOT NULL AND NOT (@Version >= 17 OR (@EngineEdition = 8 AND @ProductUpdateType = 'Continuous'))
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @CompressionLevel is not supported. Setting the compression level is only supported in SQL Server 2025 and later.', 16, 3)
+    VALUES('The parameter @CompressionLevel is not supported in this version and edition of SQL Server. See https://ola.hallengren.com/sql-server-backup.html#CompressionLevel.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -1791,13 +1803,13 @@ BEGIN
   IF @CopyOnly NOT IN ('Y','N') OR @CopyOnly IS NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @CopyOnly is not supported.', 16, 1)
+    VALUES('The value for the parameter @CopyOnly is not supported. Supported values are ''Y'' and ''N''. See https://ola.hallengren.com/sql-server-backup.html#CopyOnly.', 16, 1)
   END
 
   IF @CopyOnly = 'Y' AND @BackupType = 'DIFF'
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('Differential copy-only backups are not supported.', 16, 2)
+    VALUES('Differential copy-only backups are not supported. See https://ola.hallengren.com/sql-server-backup.html#CopyOnly.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -1805,13 +1817,13 @@ BEGIN
   IF @ChangeBackupType NOT IN ('Y','N') OR @ChangeBackupType IS NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @ChangeBackupType is not supported.', 16, 1)
+    VALUES('The value for the parameter @ChangeBackupType is not supported. Supported values are ''Y'' and ''N''. See https://ola.hallengren.com/sql-server-backup.html#ChangeBackupType.', 16, 1)
   END
 
   IF @ChangeBackupType = 'Y' AND NOT @BackupType IN ('DIFF', 'LOG')
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('Setting @ChangeBackupType to ''Y'' is only supported with differential and log backups.', 16, 2)
+    VALUES('Setting @ChangeBackupType to ''Y'' is only supported with differential and log backups. See https://ola.hallengren.com/sql-server-backup.html#ChangeBackupType.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -1819,37 +1831,37 @@ BEGIN
   IF @BackupSoftware NOT IN ('LITESPEED','SQLBACKUP','SQLSAFE','DATA_DOMAIN_BOOST')
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @BackupSoftware is not supported.', 16, 1)
+    VALUES('The value for the parameter @BackupSoftware is not supported. Supported values are LITESPEED, SQLBACKUP, SQLSAFE and DATA_DOMAIN_BOOST. See https://ola.hallengren.com/sql-server-backup.html#BackupSoftware.', 16, 1)
   END
 
   IF @BackupSoftware IS NOT NULL AND @HostPlatform = 'Linux'
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @BackupSoftware is not supported. Only native backups are supported on Linux.', 16, 2)
+    VALUES('The value for the parameter @BackupSoftware is not supported. Only native backups are supported on Linux. See https://ola.hallengren.com/sql-server-backup.html#BackupSoftware.', 16, 1)
   END
 
   IF @BackupSoftware = 'LITESPEED' AND NOT EXISTS (SELECT * FROM [master].sys.objects WHERE [type] = 'X' AND [name] = 'xp_backup_database')
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('LiteSpeed for SQL Server is not installed. Download https://www.quest.com/products/litespeed-for-sql-server/.', 16, 3)
+    VALUES('LiteSpeed for SQL Server is not installed. Download https://www.quest.com/products/litespeed-for-sql-server/.', 16, 1)
   END
 
   IF @BackupSoftware = 'SQLBACKUP' AND NOT EXISTS (SELECT * FROM [master].sys.objects WHERE [type] = 'X' AND [name] = 'sqlbackup')
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('Red Gate SQL Backup Pro is not installed. Download https://www.red-gate.com/products/sql-backup/.', 16, 4)
+    VALUES('Redgate SQL Backup Pro is not installed. Download https://www.red-gate.com/products/sql-backup/.', 16, 1)
   END
 
   IF @BackupSoftware = 'SQLSAFE' AND NOT EXISTS (SELECT * FROM [master].sys.objects WHERE [type] = 'X' AND [name] = 'xp_ss_backup')
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('Idera SQL Safe Backup is not installed. Download https://www.idera.com/products/sql-safe-backup/.', 16, 5)
+    VALUES('Idera SQL Safe Backup is not installed. Download https://www.idera.com/products/sql-safe-backup/.', 16, 1)
   END
 
   IF @BackupSoftware = 'DATA_DOMAIN_BOOST' AND NOT EXISTS (SELECT * FROM [master].sys.objects WHERE [type] = 'PC' AND [name] = 'emc_run_backup')
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('EMC Data Domain Boost is not installed. Download https://www.dell.com/en-us/shop/storage-servers-and-networking-for-business/sf/powerprotect-data-domain.', 16, 6)
+    VALUES('Data Domain Boost is not installed. Download https://www.dell.com/en-us/shop/storage-servers-and-networking-for-business/sf/powerprotect-data-domain.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -1857,7 +1869,7 @@ BEGIN
   IF @Checksum NOT IN ('Y','N') OR @Checksum IS NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @Checksum is not supported.', 16, 1)
+    VALUES('The value for the parameter @Checksum is not supported. Supported values are ''Y'' and ''N''. See https://ola.hallengren.com/sql-server-backup.html#Checksum.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -1865,31 +1877,31 @@ BEGIN
   IF @BlockSize NOT IN (512,1024,2048,4096,8192,16384,32768,65536)
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @BlockSize is not supported.', 16, 1)
+    VALUES('The value for the parameter @BlockSize is not supported. Supported values are 512, 1024, 2048, 4096, 8192, 16384, 32768 and 65536. See https://ola.hallengren.com/sql-server-backup.html#BlockSize.', 16, 1)
   END
 
   IF @BlockSize IS NOT NULL AND @BackupSoftware = 'SQLBACKUP'
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @BlockSize is not supported. This parameter is not supported with Redgate SQL Backup Pro.', 16, 2)
+    VALUES('The parameter @BlockSize is not supported with Redgate SQL Backup Pro. See https://ola.hallengren.com/sql-server-backup.html#BlockSize.', 16, 1)
   END
 
   IF @BlockSize IS NOT NULL AND @BackupSoftware = 'SQLSAFE'
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @BlockSize is not supported. This parameter is not supported with Idera SQL Safe.', 16, 3)
+    VALUES('The parameter @BlockSize is not supported with Idera SQL Safe Backup. See https://ola.hallengren.com/sql-server-backup.html#BlockSize.', 16, 1)
   END
 
   IF @BlockSize IS NOT NULL AND @URL IS NOT NULL AND @Credential IS NOT NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('BLOCKSIZE is not supported when backing up to URL with page blobs. See https://docs.microsoft.com/en-us/sql/relational-databases/backup-restore/sql-server-backup-to-url.', 16, 4)
+    VALUES('BLOCKSIZE is not supported when backing up to URL with page blobs. See https://learn.microsoft.com/en-us/sql/relational-databases/backup-restore/sql-server-backup-to-url.', 16, 1)
   END
 
   IF @BlockSize IS NOT NULL AND @BackupSoftware = 'DATA_DOMAIN_BOOST'
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @BlockSize is not supported. This parameter is not supported with Data Domain Boost.', 16, 5)
+    VALUES('The parameter @BlockSize is not supported with Data Domain Boost. See https://ola.hallengren.com/sql-server-backup.html#BlockSize.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -1897,19 +1909,19 @@ BEGIN
   IF @BufferCount <= 0
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @BufferCount is not supported.', 16, 1)
+    VALUES('The value for the parameter @BufferCount is not supported. The value has to be greater than 0. See https://ola.hallengren.com/sql-server-backup.html#BufferCount.', 16, 1)
   END
 
   IF @BufferCount IS NOT NULL AND @BackupSoftware = 'SQLBACKUP'
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @BufferCount is not supported.', 16, 2)
+    VALUES('The parameter @BufferCount is not supported with Redgate SQL Backup Pro. See https://ola.hallengren.com/sql-server-backup.html#BufferCount.', 16, 1)
   END
 
   IF @BufferCount IS NOT NULL AND @BackupSoftware = 'SQLSAFE'
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @BufferCount is not supported.', 16, 3)
+    VALUES('The parameter @BufferCount is not supported with Idera SQL Safe Backup. See https://ola.hallengren.com/sql-server-backup.html#BufferCount.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -1917,37 +1929,37 @@ BEGIN
   IF @MaxTransferSize < 65536 OR @MaxTransferSize > 20971520
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @MaxTransferSize is not supported.', 16, 1)
+    VALUES('The value for the parameter @MaxTransferSize is not supported. The value has to be between 65536 and 20971520. See https://ola.hallengren.com/sql-server-backup.html#MaxTransferSize.', 16, 1)
   END
 
   IF @MaxTransferSize > 1048576 AND @BackupSoftware = 'SQLBACKUP'
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @MaxTransferSize is not supported.', 16, 2)
+    VALUES('The value for the parameter @MaxTransferSize is not supported. The maximum value with Redgate SQL Backup Pro is 1048576. See https://ola.hallengren.com/sql-server-backup.html#MaxTransferSize.', 16, 1)
   END
 
   IF @MaxTransferSize IS NOT NULL AND @BackupSoftware = 'SQLSAFE'
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @MaxTransferSize is not supported.', 16, 3)
+    VALUES('The parameter @MaxTransferSize is not supported with Idera SQL Safe Backup. See https://ola.hallengren.com/sql-server-backup.html#MaxTransferSize.', 16, 1)
   END
 
   IF @MaxTransferSize IS NOT NULL AND @URL IS NOT NULL AND @Credential IS NOT NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('MAXTRANSFERSIZE is not supported when backing up to URL with page blobs. See https://docs.microsoft.com/en-us/sql/relational-databases/backup-restore/sql-server-backup-to-url.', 16, 4)
+    VALUES('MAXTRANSFERSIZE is not supported when backing up to URL with page blobs. See https://learn.microsoft.com/en-us/sql/relational-databases/backup-restore/sql-server-backup-to-url.', 16, 1)
   END
 
   IF @MaxTransferSize IS NOT NULL AND @BackupSoftware = 'DATA_DOMAIN_BOOST'
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @MaxTransferSize is not supported.', 16, 5)
+    VALUES('The parameter @MaxTransferSize is not supported with Data Domain Boost. See https://ola.hallengren.com/sql-server-backup.html#MaxTransferSize.', 16, 1)
   END
 
-  IF @MaxTransferSize > 4194304 AND @URL IS NULL AND @BackupSoftware IS NULL
+  IF @MaxTransferSize > 4194304 AND @Directory IS NOT NULL AND @BackupSoftware IS NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @MaxTransferSize is not supported.', 16, 6)
+    VALUES('The value for the parameter @MaxTransferSize is not supported. The maximum value for SQL Server native backups to disk is 4194304. See https://ola.hallengren.com/sql-server-backup.html#MaxTransferSize.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -1955,61 +1967,61 @@ BEGIN
   IF @NumberOfFiles < 1 OR @NumberOfFiles > 64
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @NumberOfFiles is not supported.', 16, 1)
+    VALUES('The value for the parameter @NumberOfFiles is not supported. The value has to be between 1 and 64. See https://ola.hallengren.com/sql-server-backup.html#NumberOfFiles.', 16, 1)
   END
 
   IF @NumberOfFiles > 32 AND @BackupSoftware = 'SQLBACKUP'
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @NumberOfFiles is not supported.', 16, 2)
+    VALUES('The value for the parameter @NumberOfFiles is not supported. The maximum number of files with Redgate SQL Backup Pro is 32. See https://ola.hallengren.com/sql-server-backup.html#NumberOfFiles.', 16, 1)
   END
 
   IF @NumberOfFiles < (SELECT COUNT(*) FROM @Directories WHERE Mirror = 0)
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @NumberOfFiles is not supported.', 16, 3)
+    VALUES('The value for the parameter @NumberOfFiles is not supported. The number of files has to be greater than or equal to the number of directories. See https://ola.hallengren.com/sql-server-backup.html#NumberOfFiles.', 16, 1)
   END
 
   IF @NumberOfFiles % (SELECT NULLIF(COUNT(*),0) FROM @Directories WHERE Mirror = 0) > 0
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @NumberOfFiles is not supported.', 16, 4)
+    VALUES('The value for the parameter @NumberOfFiles is not supported. The number of files has to be evenly divisible by the number of directories. See https://ola.hallengren.com/sql-server-backup.html#NumberOfFiles.', 16, 1)
   END
 
   IF @URL IS NOT NULL AND @Credential IS NOT NULL AND @NumberOfFiles <> 1
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('Backup striping to URL with page blobs is not supported. See https://docs.microsoft.com/en-us/sql/relational-databases/backup-restore/sql-server-backup-to-url.', 16, 5)
+    VALUES('Backup striping to URL with page blobs is not supported. See https://learn.microsoft.com/en-us/sql/relational-databases/backup-restore/sql-server-backup-to-url.', 16, 1)
   END
 
   IF @NumberOfFiles > 1 AND @BackupSoftware IN('SQLBACKUP','SQLSAFE') AND EXISTS(SELECT * FROM @Directories WHERE Mirror = 1)
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @NumberOfFiles is not supported.', 16, 6)
+    VALUES('The value for the parameter @NumberOfFiles is not supported. Mirrored backups with multiple files are not supported with Redgate SQL Backup Pro and Idera SQL Safe Backup. See https://ola.hallengren.com/sql-server-backup.html#NumberOfFiles.', 16, 1)
   END
 
   IF @NumberOfFiles > 32 AND @BackupSoftware = 'DATA_DOMAIN_BOOST'
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @NumberOfFiles is not supported.', 16, 7)
+    VALUES('The value for the parameter @NumberOfFiles is not supported. The maximum number of files with Data Domain Boost is 32. See https://ola.hallengren.com/sql-server-backup.html#NumberOfFiles.', 16, 1)
   END
 
   IF @NumberOfFiles < (SELECT COUNT(*) FROM @URLs WHERE Mirror = 0)
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @NumberOfFiles is not supported.', 16, 8)
+    VALUES('The value for the parameter @NumberOfFiles is not supported. The number of files has to be greater than or equal to the number of URLs. See https://ola.hallengren.com/sql-server-backup.html#NumberOfFiles.', 16, 1)
   END
 
   IF @NumberOfFiles % (SELECT NULLIF(COUNT(*),0) FROM @URLs WHERE Mirror = 0) > 0
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @NumberOfFiles is not supported.', 16, 9)
+    VALUES('The value for the parameter @NumberOfFiles is not supported. The number of files has to be evenly divisible by the number of URLs. See https://ola.hallengren.com/sql-server-backup.html#NumberOfFiles.', 16, 1)
   END
 
   IF @NumberOfFiles > 32 AND @URL LIKE 's3%' AND @MirrorURL LIKE 's3%'
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @NumberOfFiles is not supported. The maximum number of files when performing mirrored backups to S3 storage is 32.', 16, 10)
+    VALUES('The value for the parameter @NumberOfFiles is not supported. The maximum number of files when performing mirrored backups to S3 storage is 32. See https://ola.hallengren.com/sql-server-backup.html#NumberOfFiles.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -2017,13 +2029,13 @@ BEGIN
   IF @MinBackupSizeForMultipleFiles <= 0
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @MinBackupSizeForMultipleFiles is not supported.', 16, 1)
+    VALUES('The value for the parameter @MinBackupSizeForMultipleFiles is not supported. The value has to be greater than 0. See https://ola.hallengren.com/sql-server-backup.html#MinBackupSizeForMultipleFiles.', 16, 1)
   END
 
   IF @MinBackupSizeForMultipleFiles IS NOT NULL AND @NumberOfFiles IS NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @MinBackupSizeForMultipleFiles is not supported. This parameter can only be used together with @NumberOfFiles.', 16, 2)
+    VALUES('The parameter @MinBackupSizeForMultipleFiles can only be used together with @NumberOfFiles. See https://ola.hallengren.com/sql-server-backup.html#MinBackupSizeForMultipleFiles.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -2031,13 +2043,13 @@ BEGIN
   IF @MaxFileSize <= 0
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @MaxFileSize is not supported.', 16, 1)
+    VALUES('The value for the parameter @MaxFileSize is not supported. The value has to be greater than 0. See https://ola.hallengren.com/sql-server-backup.html#MaxFileSize.', 16, 1)
   END
 
   IF @MaxFileSize IS NOT NULL AND @NumberOfFiles IS NOT NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The parameters @MaxFileSize and @NumberOfFiles cannot be used together.', 16, 2)
+    VALUES('The parameters @MaxFileSize and @NumberOfFiles cannot be used together. See https://ola.hallengren.com/sql-server-backup.html.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -2045,31 +2057,31 @@ BEGIN
   IF (@BackupSoftware IS NULL AND @CompressionLevelNumeric IS NOT NULL)
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @CompressionLevelNumeric is not supported.', 16, 1)
+    VALUES('The parameter @CompressionLevelNumeric is only supported with third-party backup software. For SQL Server native backups, use the parameter @CompressionLevel. See https://ola.hallengren.com/sql-server-backup.html#CompressionLevelNumeric.', 16, 1)
   END
 
   IF @BackupSoftware = 'LITESPEED' AND (@CompressionLevelNumeric < 0  OR @CompressionLevelNumeric > 8)
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @CompressionLevelNumeric is not supported.', 16, 2)
+    VALUES('The value for the parameter @CompressionLevelNumeric is not supported. With LiteSpeed for SQL Server, the value has to be between 0 and 8. See https://ola.hallengren.com/sql-server-backup.html#CompressionLevelNumeric.', 16, 1)
   END
 
   IF @BackupSoftware = 'SQLBACKUP' AND (@CompressionLevelNumeric < 0 OR @CompressionLevelNumeric > 4)
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @CompressionLevelNumeric is not supported.', 16, 3)
+    VALUES('The value for the parameter @CompressionLevelNumeric is not supported. With Redgate SQL Backup Pro, the value has to be between 0 and 4. See https://ola.hallengren.com/sql-server-backup.html#CompressionLevelNumeric.', 16, 1)
   END
 
   IF @BackupSoftware = 'SQLSAFE' AND (@CompressionLevelNumeric < 1 OR @CompressionLevelNumeric > 4)
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @CompressionLevelNumeric is not supported.', 16, 4)
+    VALUES('The value for the parameter @CompressionLevelNumeric is not supported. With Idera SQL Safe Backup, the value has to be between 1 and 4. See https://ola.hallengren.com/sql-server-backup.html#CompressionLevelNumeric.', 16, 1)
   END
 
   IF @CompressionLevelNumeric IS NOT NULL AND @BackupSoftware = 'DATA_DOMAIN_BOOST'
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @CompressionLevelNumeric is not supported.', 16, 5)
+    VALUES('The parameter @CompressionLevelNumeric is not supported with Data Domain Boost. See https://ola.hallengren.com/sql-server-backup.html#CompressionLevelNumeric.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -2077,25 +2089,25 @@ BEGIN
   IF LEN(@Description) > 255
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @Description is not supported.', 16, 1)
+    VALUES('The value for the parameter @Description is not supported. The maximum length is 255 characters. See https://ola.hallengren.com/sql-server-backup.html#Description.', 16, 1)
   END
 
   IF @BackupSoftware = 'LITESPEED' AND LEN(@Description) > 128
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @Description is not supported.', 16, 2)
+    VALUES('The value for the parameter @Description is not supported. The maximum length with LiteSpeed for SQL Server is 128 characters. See https://ola.hallengren.com/sql-server-backup.html#Description.', 16, 1)
   END
 
   IF @BackupSoftware = 'DATA_DOMAIN_BOOST' AND LEN(@Description) > 254
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @Description is not supported.', 16, 3)
+    VALUES('The value for the parameter @Description is not supported. The maximum length with Data Domain Boost is 254 characters. See https://ola.hallengren.com/sql-server-backup.html#Description.', 16, 1)
   END
 
   IF @BackupSoftware = 'DATA_DOMAIN_BOOST' AND @Description LIKE '%"%'
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @Description is not supported.', 16, 4)
+    VALUES('The value for the parameter @Description is not supported. Double quotes (") are not supported with Data Domain Boost. See https://ola.hallengren.com/sql-server-backup.html#Description.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -2103,13 +2115,13 @@ BEGIN
   IF LEN(@BackupSetName) > 128
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @BackupSetName is not supported.', 16, 1)
+    VALUES('The value for the parameter @BackupSetName is not supported. The maximum length is 128 characters. See https://ola.hallengren.com/sql-server-backup.html#BackupSetName.', 16, 1)
   END
 
   IF @BackupSoftware = 'DATA_DOMAIN_BOOST' AND @BackupSetName LIKE '%"%'
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @BackupSetName is not supported.', 16, 2)
+    VALUES('The value for the parameter @BackupSetName is not supported. Double quotes (") are not supported with Data Domain Boost. See https://ola.hallengren.com/sql-server-backup.html#BackupSetName.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -2117,25 +2129,25 @@ BEGIN
   IF @Threads IS NOT NULL AND (@BackupSoftware NOT IN('LITESPEED','SQLBACKUP','SQLSAFE') OR @BackupSoftware IS NULL)
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @Threads is not supported.', 16, 1)
+    VALUES('The parameter @Threads is only supported with LiteSpeed for SQL Server, Redgate SQL Backup Pro and Idera SQL Safe Backup. See https://ola.hallengren.com/sql-server-backup.html#Threads.', 16, 1)
   END
 
   IF @BackupSoftware = 'LITESPEED' AND (@Threads < 1 OR @Threads > 32)
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @Threads is not supported.', 16, 2)
+    VALUES('The value for the parameter @Threads is not supported. With LiteSpeed for SQL Server, the value has to be between 1 and 32. See https://ola.hallengren.com/sql-server-backup.html#Threads.', 16, 1)
   END
 
   IF @BackupSoftware = 'SQLBACKUP' AND (@Threads < 2 OR @Threads > 32)
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @Threads is not supported.', 16, 3)
+    VALUES('The value for the parameter @Threads is not supported. With Redgate SQL Backup Pro, the value has to be between 2 and 32. See https://ola.hallengren.com/sql-server-backup.html#Threads.', 16, 1)
   END
 
   IF @BackupSoftware = 'SQLSAFE' AND (@Threads < 1 OR @Threads > 64)
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @Threads is not supported.', 16, 4)
+    VALUES('The value for the parameter @Threads is not supported. With Idera SQL Safe Backup, the value has to be between 1 and 64. See https://ola.hallengren.com/sql-server-backup.html#Threads.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -2143,13 +2155,13 @@ BEGIN
   IF @Throttle < 1 OR @Throttle > 100
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @Throttle is not supported.', 16, 1)
+    VALUES('The value for the parameter @Throttle is not supported. The value has to be between 1 and 100. See https://ola.hallengren.com/sql-server-backup.html#Throttle.', 16, 1)
   END
 
   IF @Throttle IS NOT NULL AND (@BackupSoftware NOT IN('LITESPEED') OR @BackupSoftware IS NULL)
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @Throttle is not supported.', 16, 2)
+    VALUES('The parameter @Throttle is only supported with LiteSpeed for SQL Server. See https://ola.hallengren.com/sql-server-backup.html#Throttle.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -2157,19 +2169,19 @@ BEGIN
   IF @Encrypt NOT IN('Y','N') OR @Encrypt IS NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @Encrypt is not supported.', 16, 1)
+    VALUES('The value for the parameter @Encrypt is not supported. Supported values are ''Y'' and ''N''. See https://ola.hallengren.com/sql-server-backup.html#Encrypt.', 16, 1)
   END
 
   IF @Encrypt = 'Y' AND @BackupSoftware IS NULL AND NOT (@EngineEdition IN(3, 8) OR @EditionID IN(-1534726760, -1785266663))
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @Encrypt is not supported.', 16, 2)
+    VALUES('Backup encryption is not supported in this edition of SQL Server. See https://ola.hallengren.com/sql-server-backup.html#Encrypt.', 16, 1)
   END
 
   IF @Encrypt = 'Y' AND @BackupSoftware = 'DATA_DOMAIN_BOOST'
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @Encrypt is not supported.', 16, 3)
+    VALUES('The value for the parameter @Encrypt is not supported. Encrypted backups are not supported with Data Domain Boost. See https://ola.hallengren.com/sql-server-backup.html#Encrypt.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -2177,31 +2189,31 @@ BEGIN
   IF @BackupSoftware IS NULL AND @Encrypt = 'Y' AND (@EncryptionAlgorithm NOT IN('AES_128','AES_192','AES_256','TRIPLE_DES_3KEY') OR @EncryptionAlgorithm IS NULL)
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @EncryptionAlgorithm is not supported.', 16, 1)
+    VALUES('The value for the parameter @EncryptionAlgorithm is not supported. Supported values for SQL Server native backups are AES_128, AES_192, AES_256 and TRIPLE_DES_3KEY. See https://ola.hallengren.com/sql-server-backup.html#EncryptionAlgorithm.', 16, 1)
   END
 
   IF @BackupSoftware = 'LITESPEED' AND @Encrypt = 'Y' AND (@EncryptionAlgorithm NOT IN('RC2_40','RC2_56','RC2_112','RC2_128','TRIPLE_DES_3KEY','RC4_128','AES_128','AES_192','AES_256') OR @EncryptionAlgorithm IS NULL)
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @EncryptionAlgorithm is not supported.', 16, 2)
+    VALUES('The value for the parameter @EncryptionAlgorithm is not supported. Supported values with LiteSpeed for SQL Server are RC2_40, RC2_56, RC2_112, RC2_128, TRIPLE_DES_3KEY, RC4_128, AES_128, AES_192 and AES_256. See https://ola.hallengren.com/sql-server-backup.html#EncryptionAlgorithm.', 16, 1)
   END
 
   IF @BackupSoftware = 'SQLBACKUP' AND @Encrypt = 'Y' AND (@EncryptionAlgorithm NOT IN('AES_128','AES_256') OR @EncryptionAlgorithm IS NULL)
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @EncryptionAlgorithm is not supported.', 16, 3)
+    VALUES('The value for the parameter @EncryptionAlgorithm is not supported. Supported values with Redgate SQL Backup Pro are AES_128 and AES_256. See https://ola.hallengren.com/sql-server-backup.html#EncryptionAlgorithm.', 16, 1)
   END
 
   IF @BackupSoftware = 'SQLSAFE' AND @Encrypt = 'Y' AND (@EncryptionAlgorithm NOT IN('AES_128','AES_256') OR @EncryptionAlgorithm IS NULL)
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @EncryptionAlgorithm is not supported.', 16, 4)
+    VALUES('The value for the parameter @EncryptionAlgorithm is not supported. Supported values with Idera SQL Safe Backup are AES_128 and AES_256. See https://ola.hallengren.com/sql-server-backup.html#EncryptionAlgorithm.', 16, 1)
   END
 
   IF @EncryptionAlgorithm IS NOT NULL AND @BackupSoftware = 'DATA_DOMAIN_BOOST'
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @EncryptionAlgorithm is not supported.', 16, 5)
+    VALUES('The parameter @EncryptionAlgorithm is not supported with Data Domain Boost. See https://ola.hallengren.com/sql-server-backup.html#EncryptionAlgorithm.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -2209,25 +2221,25 @@ BEGIN
   IF (NOT (@BackupSoftware IS NULL AND @Encrypt = 'Y') AND @ServerCertificate IS NOT NULL)
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @ServerCertificate is not supported.', 16, 1)
+    VALUES('The parameter @ServerCertificate can only be used together with @Encrypt = ''Y'' and SQL Server native backups. See https://ola.hallengren.com/sql-server-backup.html#ServerCertificate.', 16, 1)
   END
 
   IF @BackupSoftware IS NULL AND @Encrypt = 'Y' AND @ServerCertificate IS NULL AND @ServerAsymmetricKey IS NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @ServerCertificate is not supported.', 16, 2)
+    VALUES('You need to specify one of the parameters @ServerCertificate and @ServerAsymmetricKey when performing encrypted SQL Server native backups. See https://ola.hallengren.com/sql-server-backup.html.', 16, 1)
   END
 
   IF @BackupSoftware IS NULL AND @Encrypt = 'Y' AND @ServerCertificate IS NOT NULL AND @ServerAsymmetricKey IS NOT NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @ServerCertificate is not supported.', 16, 3)
+    VALUES('You can only specify one of the parameters @ServerCertificate and @ServerAsymmetricKey. See https://ola.hallengren.com/sql-server-backup.html.', 16, 1)
   END
 
   IF @ServerCertificate IS NOT NULL AND NOT EXISTS(SELECT * FROM master.sys.certificates WHERE name = @ServerCertificate)
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @ServerCertificate is not supported.', 16, 4)
+    VALUES('The value for the parameter @ServerCertificate is not supported. The certificate does not exist in the master database. See https://ola.hallengren.com/sql-server-backup.html#ServerCertificate.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -2235,25 +2247,13 @@ BEGIN
   IF NOT (@BackupSoftware IS NULL AND @Encrypt = 'Y') AND @ServerAsymmetricKey IS NOT NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @ServerAsymmetricKey is not supported.', 16, 1)
-  END
-
-  IF @BackupSoftware IS NULL AND @Encrypt = 'Y' AND @ServerAsymmetricKey IS NULL AND @ServerCertificate IS NULL
-  BEGIN
-    INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @ServerAsymmetricKey is not supported.', 16, 2)
-  END
-
-  IF @BackupSoftware IS NULL AND @Encrypt = 'Y' AND @ServerAsymmetricKey IS NOT NULL AND @ServerCertificate IS NOT NULL
-  BEGIN
-    INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @ServerAsymmetricKey is not supported.', 16, 3)
+    VALUES('The parameter @ServerAsymmetricKey can only be used together with @Encrypt = ''Y'' and SQL Server native backups. See https://ola.hallengren.com/sql-server-backup.html#ServerAsymmetricKey.', 16, 1)
   END
 
   IF @ServerAsymmetricKey IS NOT NULL AND NOT EXISTS(SELECT * FROM master.sys.asymmetric_keys WHERE name = @ServerAsymmetricKey)
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @ServerAsymmetricKey is not supported.', 16, 4)
+    VALUES('The value for the parameter @ServerAsymmetricKey is not supported. The asymmetric key does not exist in the master database. See https://ola.hallengren.com/sql-server-backup.html#ServerAsymmetricKey.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -2261,25 +2261,25 @@ BEGIN
   IF @EncryptionKey IS NOT NULL AND @BackupSoftware IS NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @EncryptionKey is not supported.', 16, 1)
+    VALUES('The parameter @EncryptionKey is only supported with third-party backup software. For SQL Server native backups, use @ServerCertificate or @ServerAsymmetricKey. See https://ola.hallengren.com/sql-server-backup.html#EncryptionKey.', 16, 1)
   END
 
   IF @EncryptionKey IS NOT NULL AND @Encrypt = 'N'
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @EncryptionKey is not supported.', 16, 2)
+    VALUES('The parameter @EncryptionKey can only be used together with @Encrypt = ''Y''. See https://ola.hallengren.com/sql-server-backup.html#EncryptionKey.', 16, 1)
   END
 
   IF @EncryptionKey IS NULL AND @Encrypt = 'Y' AND @BackupSoftware IN('LITESPEED','SQLBACKUP','SQLSAFE')
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @EncryptionKey is not supported.', 16, 3)
+    VALUES('You need to specify @EncryptionKey when performing encrypted backups with LiteSpeed for SQL Server, Redgate SQL Backup Pro or Idera SQL Safe Backup. See https://ola.hallengren.com/sql-server-backup.html#EncryptionKey.', 16, 1)
   END
 
   IF @EncryptionKey IS NOT NULL AND @BackupSoftware = 'DATA_DOMAIN_BOOST'
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @EncryptionKey is not supported.', 16, 4)
+    VALUES('The parameter @EncryptionKey is not supported with Data Domain Boost. See https://ola.hallengren.com/sql-server-backup.html#EncryptionKey.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -2287,13 +2287,13 @@ BEGIN
   IF @ReadWriteFileGroups NOT IN('Y','N') OR @ReadWriteFileGroups IS NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @ReadWriteFileGroups is not supported.', 16, 1)
+    VALUES('The value for the parameter @ReadWriteFileGroups is not supported. Supported values are ''Y'' and ''N''. See https://ola.hallengren.com/sql-server-backup.html#ReadWriteFileGroups.', 16, 1)
   END
 
   IF @ReadWriteFileGroups = 'Y' AND @BackupType = 'LOG'
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @ReadWriteFileGroups is not supported.', 16, 2)
+    VALUES('Setting @ReadWriteFileGroups to ''Y'' is not supported for transaction log backups. See https://ola.hallengren.com/sql-server-backup.html#ReadWriteFileGroups.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -2301,7 +2301,7 @@ BEGIN
   IF @OverrideBackupPreference NOT IN('Y','N') OR @OverrideBackupPreference IS NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @OverrideBackupPreference is not supported.', 16, 1)
+    VALUES('The value for the parameter @OverrideBackupPreference is not supported. Supported values are ''Y'' and ''N''. See https://ola.hallengren.com/sql-server-backup.html#OverrideBackupPreference.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -2309,19 +2309,19 @@ BEGIN
   IF @NoRecovery NOT IN('Y','N') OR @NoRecovery IS NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @NoRecovery is not supported.', 16, 1)
+    VALUES('The value for the parameter @NoRecovery is not supported. Supported values are ''Y'' and ''N''. See https://ola.hallengren.com/sql-server-backup.html#NoRecovery.', 16, 1)
   END
 
   IF @NoRecovery = 'Y' AND @BackupType <> 'LOG'
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @NoRecovery is not supported.', 16, 2)
+    VALUES('Setting @NoRecovery to ''Y'' is only supported for transaction log backups. See https://ola.hallengren.com/sql-server-backup.html#NoRecovery.', 16, 1)
   END
 
   IF @NoRecovery = 'Y' AND @BackupSoftware = 'SQLSAFE'
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @NoRecovery is not supported.', 16, 3)
+    VALUES('Setting @NoRecovery to ''Y'' is not supported with Idera SQL Safe Backup. See https://ola.hallengren.com/sql-server-backup.html#NoRecovery.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -2329,19 +2329,19 @@ BEGIN
   IF @URL IS NOT NULL AND @Directory IS NOT NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @URL is not supported.', 16, 1)
+    VALUES('The parameters @URL and @Directory cannot be used together. See https://ola.hallengren.com/sql-server-backup.html.', 16, 1)
   END
 
   IF @URL IS NOT NULL AND @MirrorDirectory IS NOT NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @URL is not supported.', 16, 2)
+    VALUES('The parameters @URL and @MirrorDirectory cannot be used together. See https://ola.hallengren.com/sql-server-backup.html.', 16, 1)
   END
 
   IF @URL IS NOT NULL AND @BackupSoftware IS NOT NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @URL is not supported.', 16, 3)
+    VALUES('Backup to URL is only supported with SQL Server native backups. See https://ola.hallengren.com/sql-server-backup.html#URL.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -2349,19 +2349,19 @@ BEGIN
   IF @Credential IS NOT NULL AND @URL IS NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @Credential is not supported.', 16, 1)
+    VALUES('The parameter @Credential can only be used together with @URL. See https://ola.hallengren.com/sql-server-backup.html#Credential.', 16, 1)
   END
 
   IF @URL IS NOT NULL AND @Credential IS NULL AND NOT EXISTS(SELECT * FROM sys.credentials WHERE UPPER(credential_identity) IN('SHARED ACCESS SIGNATURE','MANAGED IDENTITY','S3 ACCESS KEY'))
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @Credential is not supported.', 16, 2)
+    VALUES('When backing up to URL, you need to specify @Credential or create a credential with the identity SHARED ACCESS SIGNATURE, MANAGED IDENTITY or S3 ACCESS KEY. See https://ola.hallengren.com/sql-server-backup.html#Credential.', 16, 1)
   END
 
   IF @Credential IS NOT NULL AND NOT EXISTS(SELECT * FROM sys.credentials WHERE name = @Credential)
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @Credential is not supported.', 16, 3)
+    VALUES('The value for the parameter @Credential is not supported. The credential does not exist. See https://ola.hallengren.com/sql-server-backup.html#Credential.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -2369,13 +2369,13 @@ BEGIN
   IF @MirrorCleanupTime < 0
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @MirrorCleanupTime is not supported.', 16, 1)
+    VALUES('The value for the parameter @MirrorCleanupTime is not supported. The value has to be greater than or equal to 0. See https://ola.hallengren.com/sql-server-backup.html#MirrorCleanupTime.', 16, 1)
   END
 
   IF @MirrorCleanupTime IS NOT NULL AND @MirrorDirectory IS NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @MirrorCleanupTime is not supported.', 16, 2)
+    VALUES('The parameter @MirrorCleanupTime can only be used together with @MirrorDirectory. See https://ola.hallengren.com/sql-server-backup.html#MirrorCleanupTime.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -2383,7 +2383,7 @@ BEGIN
   IF @MirrorCleanupMode NOT IN('BEFORE_BACKUP','AFTER_BACKUP') OR @MirrorCleanupMode IS NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @MirrorCleanupMode is not supported.', 16, 1)
+    VALUES('The value for the parameter @MirrorCleanupMode is not supported. Supported values are BEFORE_BACKUP and AFTER_BACKUP. See https://ola.hallengren.com/sql-server-backup.html#MirrorCleanupMode.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -2391,25 +2391,25 @@ BEGIN
   IF @MirrorURL IS NOT NULL AND @Directory IS NOT NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @MirrorURL is not supported.', 16, 1)
+    VALUES('The parameters @MirrorURL and @Directory cannot be used together. See https://ola.hallengren.com/sql-server-backup.html.', 16, 1)
   END
 
   IF @MirrorURL IS NOT NULL AND @MirrorDirectory IS NOT NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @MirrorURL is not supported.', 16, 2)
+    VALUES('The parameters @MirrorURL and @MirrorDirectory cannot be used together. See https://ola.hallengren.com/sql-server-backup.html.', 16, 1)
   END
 
   IF @MirrorURL IS NOT NULL AND @BackupSoftware IS NOT NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @MirrorURL is not supported.', 16, 3)
+    VALUES('Mirrored backup to URL is only supported with SQL Server native backups. See https://ola.hallengren.com/sql-server-backup.html#MirrorURL.', 16, 1)
   END
 
   IF @MirrorURL IS NOT NULL AND @URL IS NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @MirrorURL is not supported.', 16, 4)
+    VALUES('The parameter @MirrorURL can only be used together with @URL. See https://ola.hallengren.com/sql-server-backup.html#MirrorURL.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -2417,7 +2417,7 @@ BEGIN
   IF @Updateability NOT IN('READ_ONLY','READ_WRITE','ALL') OR @Updateability IS NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @Updateability is not supported.', 16, 1)
+    VALUES('The value for the parameter @Updateability is not supported. Supported values are ALL, READ_ONLY and READ_WRITE. See https://ola.hallengren.com/sql-server-backup.html#Updateability.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -2425,13 +2425,13 @@ BEGIN
   IF @AdaptiveCompression NOT IN('SIZE','SPEED')
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @AdaptiveCompression is not supported.', 16, 1)
+    VALUES('The value for the parameter @AdaptiveCompression is not supported. Supported values are SIZE and SPEED. See https://ola.hallengren.com/sql-server-backup.html#AdaptiveCompression.', 16, 1)
   END
 
   IF @AdaptiveCompression IS NOT NULL AND (@BackupSoftware NOT IN('LITESPEED') OR @BackupSoftware IS NULL)
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @AdaptiveCompression is not supported.', 16, 2)
+    VALUES('The parameter @AdaptiveCompression is only supported with LiteSpeed for SQL Server. See https://ola.hallengren.com/sql-server-backup.html#AdaptiveCompression.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -2439,19 +2439,19 @@ BEGIN
   IF @MinModificationLevel <= 0 OR @MinModificationLevel > 100
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @MinModificationLevel is not supported.', 16, 1)
+    VALUES('The value for the parameter @MinModificationLevel is not supported. The value has to be greater than 0 and less than or equal to 100. See https://ola.hallengren.com/sql-server-backup.html#MinModificationLevel.', 16, 1)
   END
 
   IF @MinModificationLevel IS NOT NULL AND @ChangeBackupType = 'N'
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The parameter @MinModificationLevel can only be used together with @ChangeBackupType = ''Y''.', 16, 2)
+    VALUES('The parameter @MinModificationLevel can only be used together with @ChangeBackupType = ''Y''. See https://ola.hallengren.com/sql-server-backup.html#MinModificationLevel.', 16, 1)
   END
 
   IF @MinModificationLevel IS NOT NULL AND @BackupType NOT IN('DIFF','LOG')
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The parameter @MinModificationLevel can only be used for differential and transaction log backups.', 16, 3)
+    VALUES('The parameter @MinModificationLevel can only be used for differential and transaction log backups. See https://ola.hallengren.com/sql-server-backup.html#MinModificationLevel.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -2459,13 +2459,13 @@ BEGIN
   IF @MinDatabaseSizeForDifferentialBackup <= 0
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @MinDatabaseSizeForDifferentialBackup is not supported.', 16, 1)
+    VALUES('The value for the parameter @MinDatabaseSizeForDifferentialBackup is not supported. The value has to be greater than 0. See https://ola.hallengren.com/sql-server-backup.html#MinDatabaseSizeForDifferentialBackup.', 16, 1)
   END
 
   IF @MinDatabaseSizeForDifferentialBackup IS NOT NULL AND @BackupType <> 'DIFF'
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The parameter @MinDatabaseSizeForDifferentialBackup can only be used for differential backups.', 16, 2)
+    VALUES('The parameter @MinDatabaseSizeForDifferentialBackup can only be used for differential backups. See https://ola.hallengren.com/sql-server-backup.html#MinDatabaseSizeForDifferentialBackup.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -2473,7 +2473,7 @@ BEGIN
   IF @MinLogSizeSinceLastLogBackup IS NOT NULL AND @BackupType <> 'LOG'
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @MinLogSizeSinceLastLogBackup is not supported.', 16, 1)
+    VALUES('The parameter @MinLogSizeSinceLastLogBackup can only be used for transaction log backups. See https://ola.hallengren.com/sql-server-backup.html#MinLogSizeSinceLastLogBackup.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -2481,7 +2481,7 @@ BEGIN
   IF @MinTimeSinceLastLogBackup IS NOT NULL AND @BackupType <> 'LOG'
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @MinTimeSinceLastLogBackup is not supported.', 16, 1)
+    VALUES('The parameter @MinTimeSinceLastLogBackup can only be used for transaction log backups. See https://ola.hallengren.com/sql-server-backup.html#MinTimeSinceLastLogBackup.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -2489,7 +2489,7 @@ BEGIN
   IF (@MinTimeSinceLastLogBackup IS NOT NULL AND @MinLogSizeSinceLastLogBackup IS NULL) OR (@MinTimeSinceLastLogBackup IS NULL AND @MinLogSizeSinceLastLogBackup IS NOT NULL)
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The parameters @MinTimeSinceLastLogBackup and @MinLogSizeSinceLastLogBackup can only be used together.', 16, 1)
+    VALUES('The parameters @MinTimeSinceLastLogBackup and @MinLogSizeSinceLastLogBackup can only be used together. See https://ola.hallengren.com/sql-server-backup.html.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -2497,19 +2497,19 @@ BEGIN
   IF @DataDomainBoostHost IS NOT NULL AND (@BackupSoftware <> 'DATA_DOMAIN_BOOST' OR @BackupSoftware IS NULL)
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @DataDomainBoostHost is not supported.', 16, 1)
+    VALUES('The parameter @DataDomainBoostHost can only be used together with @BackupSoftware = ''DATA_DOMAIN_BOOST''. See https://ola.hallengren.com/sql-server-backup.html#DataDomainBoostHost.', 16, 1)
   END
 
   IF @DataDomainBoostHost IS NULL AND @BackupSoftware = 'DATA_DOMAIN_BOOST'
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @DataDomainBoostHost is not supported.', 16, 2)
+    VALUES('You need to specify @DataDomainBoostHost when @BackupSoftware = ''DATA_DOMAIN_BOOST''. See https://ola.hallengren.com/sql-server-backup.html#DataDomainBoostHost.', 16, 1)
   END
 
   IF @DataDomainBoostHost LIKE '%"%'
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @DataDomainBoostHost is not supported.', 16, 3)
+    VALUES('The value for the parameter @DataDomainBoostHost is not supported. Double quotes (") are not supported. See https://ola.hallengren.com/sql-server-backup.html#DataDomainBoostHost.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -2517,19 +2517,19 @@ BEGIN
   IF @DataDomainBoostUser IS NOT NULL AND (@BackupSoftware <> 'DATA_DOMAIN_BOOST' OR @BackupSoftware IS NULL)
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @DataDomainBoostUser is not supported.', 16, 1)
+    VALUES('The parameter @DataDomainBoostUser can only be used together with @BackupSoftware = ''DATA_DOMAIN_BOOST''. See https://ola.hallengren.com/sql-server-backup.html#DataDomainBoostUser.', 16, 1)
   END
 
   IF @DataDomainBoostUser IS NULL AND @BackupSoftware = 'DATA_DOMAIN_BOOST'
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @DataDomainBoostUser is not supported.', 16, 2)
+    VALUES('You need to specify @DataDomainBoostUser when @BackupSoftware = ''DATA_DOMAIN_BOOST''. See https://ola.hallengren.com/sql-server-backup.html#DataDomainBoostUser.', 16, 1)
   END
 
   IF @DataDomainBoostUser LIKE '%"%'
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @DataDomainBoostUser is not supported.', 16, 3)
+    VALUES('The value for the parameter @DataDomainBoostUser is not supported. Double quotes (") are not supported. See https://ola.hallengren.com/sql-server-backup.html#DataDomainBoostUser.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -2537,19 +2537,19 @@ BEGIN
   IF @DataDomainBoostDevicePath IS NOT NULL AND (@BackupSoftware <> 'DATA_DOMAIN_BOOST' OR @BackupSoftware IS NULL)
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @DataDomainBoostDevicePath is not supported.', 16, 1)
+    VALUES('The parameter @DataDomainBoostDevicePath can only be used together with @BackupSoftware = ''DATA_DOMAIN_BOOST''. See https://ola.hallengren.com/sql-server-backup.html#DataDomainBoostDevicePath.', 16, 1)
   END
 
   IF @DataDomainBoostDevicePath IS NULL AND @BackupSoftware = 'DATA_DOMAIN_BOOST'
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @DataDomainBoostDevicePath is not supported.', 16, 2)
+    VALUES('You need to specify @DataDomainBoostDevicePath when @BackupSoftware = ''DATA_DOMAIN_BOOST''. See https://ola.hallengren.com/sql-server-backup.html#DataDomainBoostDevicePath.', 16, 1)
   END
 
   IF @DataDomainBoostDevicePath LIKE '%"%'
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @DataDomainBoostDevicePath is not supported.', 16, 3)
+    VALUES('The value for the parameter @DataDomainBoostDevicePath is not supported. Double quotes (") are not supported. See https://ola.hallengren.com/sql-server-backup.html#DataDomainBoostDevicePath.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -2557,13 +2557,13 @@ BEGIN
   IF @DataDomainBoostLockboxPath IS NOT NULL AND (@BackupSoftware <> 'DATA_DOMAIN_BOOST' OR @BackupSoftware IS NULL)
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @DataDomainBoostLockboxPath is not supported.', 16, 1)
+    VALUES('The parameter @DataDomainBoostLockboxPath can only be used together with @BackupSoftware = ''DATA_DOMAIN_BOOST''. See https://ola.hallengren.com/sql-server-backup.html#DataDomainBoostLockboxPath.', 16, 1)
   END
 
   IF @DataDomainBoostLockboxPath LIKE '%"%'
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @DataDomainBoostLockboxPath is not supported.', 16, 2)
+    VALUES('The value for the parameter @DataDomainBoostLockboxPath is not supported. Double quotes (") are not supported. See https://ola.hallengren.com/sql-server-backup.html#DataDomainBoostLockboxPath.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -2571,13 +2571,13 @@ BEGIN
   IF @DataDomainBoostNoOutputTable NOT IN('Y','N') OR @DataDomainBoostNoOutputTable IS NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @DataDomainBoostNoOutputTable is not supported.', 16, 1)
+    VALUES('The value for the parameter @DataDomainBoostNoOutputTable is not supported. Supported values are ''Y'' and ''N''. See https://ola.hallengren.com/sql-server-backup.html#DataDomainBoostNoOutputTable.', 16, 1)
   END
 
   IF @DataDomainBoostNoOutputTable = 'Y' AND (@BackupSoftware <> 'DATA_DOMAIN_BOOST' OR @BackupSoftware IS NULL)
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @DataDomainBoostNoOutputTable is not supported.', 16, 2)
+    VALUES('The parameter @DataDomainBoostNoOutputTable can only be used together with @BackupSoftware = ''DATA_DOMAIN_BOOST''. See https://ola.hallengren.com/sql-server-backup.html#DataDomainBoostNoOutputTable.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -2585,7 +2585,7 @@ BEGIN
   IF @DirectoryStructure = ''
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @DirectoryStructure is not supported.', 16, 1)
+    VALUES('The value for the parameter @DirectoryStructure is not supported. The value cannot be an empty string. See https://ola.hallengren.com/sql-server-backup.html#DirectoryStructure.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -2593,7 +2593,7 @@ BEGIN
   IF @AvailabilityGroupDirectoryStructure = ''
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @AvailabilityGroupDirectoryStructure is not supported.', 16, 1)
+    VALUES('The value for the parameter @AvailabilityGroupDirectoryStructure is not supported. The value cannot be an empty string. See https://ola.hallengren.com/sql-server-backup.html#AvailabilityGroupDirectoryStructure.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -2601,7 +2601,7 @@ BEGIN
   IF @DirectoryStructureCase NOT IN('LOWER','UPPER')
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @DirectoryStructureCase is not supported.', 16, 1)
+    VALUES('The value for the parameter @DirectoryStructureCase is not supported. Supported values are LOWER and UPPER. See https://ola.hallengren.com/sql-server-backup.html#DirectoryStructureCase.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -2609,37 +2609,37 @@ BEGIN
   IF @FileName IS NULL OR @FileName = ''
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @FileName is not supported.', 16, 1)
+    VALUES('The value for the parameter @FileName is not supported. The value cannot be NULL or empty. See https://ola.hallengren.com/sql-server-backup.html#FileName.', 16, 1)
   END
 
   IF @FileName NOT LIKE '%.{FileExtension}'
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @FileName is not supported.', 16, 2)
+    VALUES('The value for the parameter @FileName is not supported. The file name has to end with .{FileExtension}. See https://ola.hallengren.com/sql-server-backup.html#FileName.', 16, 1)
   END
 
   IF (@NumberOfFiles > 1 AND @FileName NOT LIKE '%{FileNumber}%')
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @FileName is not supported.', 16, 3)
+    VALUES('The value for the parameter @FileName is not supported. The token {FileNumber} is required when @NumberOfFiles is greater than 1. See https://ola.hallengren.com/sql-server-backup.html#FileName.', 16, 1)
   END
 
   IF @FileName LIKE '%{DirectorySeparator}%'
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @FileName is not supported.', 16, 4)
+    VALUES('The value for the parameter @FileName is not supported. The token {DirectorySeparator} cannot be used in the file name. See https://ola.hallengren.com/sql-server-backup.html#FileName.', 16, 1)
   END
 
   IF @FileName LIKE '%/%'
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @FileName is not supported.', 16, 5)
+    VALUES('The value for the parameter @FileName is not supported. The character / cannot be used in the file name. See https://ola.hallengren.com/sql-server-backup.html#FileName.', 16, 1)
   END
 
   IF @FileName LIKE '%\%'
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @FileName is not supported.', 16, 6)
+    VALUES('The value for the parameter @FileName is not supported. The character \ cannot be used in the file name. See https://ola.hallengren.com/sql-server-backup.html#FileName.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -2647,43 +2647,43 @@ BEGIN
   IF (@IsHadrEnabled = 1 AND @AvailabilityGroupFileName IS NULL)
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @AvailabilityGroupFileName is not supported.', 16, 1)
+    VALUES('The value for the parameter @AvailabilityGroupFileName is not supported. The value cannot be NULL when the server is part of an availability group. See https://ola.hallengren.com/sql-server-backup.html#AvailabilityGroupFileName.', 16, 1)
   END
 
   IF @AvailabilityGroupFileName = ''
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @AvailabilityGroupFileName is not supported.', 16, 2)
+    VALUES('The value for the parameter @AvailabilityGroupFileName is not supported. The value cannot be an empty string. See https://ola.hallengren.com/sql-server-backup.html#AvailabilityGroupFileName.', 16, 1)
   END
 
   IF @AvailabilityGroupFileName NOT LIKE '%.{FileExtension}'
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @AvailabilityGroupFileName is not supported.', 16, 3)
+    VALUES('The value for the parameter @AvailabilityGroupFileName is not supported. The file name has to end with .{FileExtension}. See https://ola.hallengren.com/sql-server-backup.html#AvailabilityGroupFileName.', 16, 1)
   END
 
   IF (@NumberOfFiles > 1 AND @AvailabilityGroupFileName NOT LIKE '%{FileNumber}%')
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @AvailabilityGroupFileName is not supported.', 16, 4)
+    VALUES('The value for the parameter @AvailabilityGroupFileName is not supported. The token {FileNumber} is required when @NumberOfFiles is greater than 1. See https://ola.hallengren.com/sql-server-backup.html#AvailabilityGroupFileName.', 16, 1)
   END
 
   IF @AvailabilityGroupFileName LIKE '%{DirectorySeparator}%'
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @AvailabilityGroupFileName is not supported.', 16, 5)
+    VALUES('The value for the parameter @AvailabilityGroupFileName is not supported. The token {DirectorySeparator} cannot be used in the file name. See https://ola.hallengren.com/sql-server-backup.html#AvailabilityGroupFileName.', 16, 1)
   END
 
   IF @AvailabilityGroupFileName LIKE '%/%'
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @AvailabilityGroupFileName is not supported.', 16, 6)
+    VALUES('The value for the parameter @AvailabilityGroupFileName is not supported. The character / cannot be used in the file name. See https://ola.hallengren.com/sql-server-backup.html#AvailabilityGroupFileName.', 16, 1)
   END
 
   IF @AvailabilityGroupFileName LIKE '%\%'
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @AvailabilityGroupFileName is not supported.', 16, 7)
+    VALUES('The value for the parameter @AvailabilityGroupFileName is not supported. The character \ cannot be used in the file name. See https://ola.hallengren.com/sql-server-backup.html#AvailabilityGroupFileName.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -2691,7 +2691,7 @@ BEGIN
   IF @FileNameCase NOT IN('LOWER','UPPER')
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @FileNameCase is not supported.', 16, 1)
+    VALUES('The value for the parameter @FileNameCase is not supported. Supported values are LOWER and UPPER. See https://ola.hallengren.com/sql-server-backup.html#FileNameCase.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -2699,7 +2699,7 @@ BEGIN
   IF EXISTS (SELECT * FROM (SELECT REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(@DirectoryStructure,'{DirectorySeparator}',''),'{ServerName}',''),'{InstanceName}',''),'{ServiceName}',''),'{ClusterName}',''),'{AvailabilityGroupName}',''),'{DatabaseName}',''),'{BackupType}',''),'{Partial}',''),'{CopyOnly}',''),'{Description}',''),'{BackupSetName}',''),'{Year}',''),'{Month}',''),'{Day}',''),'{Week}',''),'{Weekday}',''),'{Hour}',''),'{Minute}',''),'{Second}',''),'{Millisecond}',''),'{Microsecond}',''),'{MajorVersion}',''),'{MinorVersion}','') AS DirectoryStructure) Temp WHERE DirectoryStructure LIKE '%{%' OR DirectoryStructure LIKE '%}%')
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The parameter @DirectoryStructure contains one or more tokens that are not supported.', 16, 1)
+    VALUES('The parameter @DirectoryStructure contains one or more tokens that are not supported. See https://ola.hallengren.com/sql-server-backup.html#DirectoryStructure.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -2707,7 +2707,7 @@ BEGIN
   IF EXISTS (SELECT * FROM (SELECT REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(@AvailabilityGroupDirectoryStructure,'{DirectorySeparator}',''),'{ServerName}',''),'{InstanceName}',''),'{ServiceName}',''),'{ClusterName}',''),'{AvailabilityGroupName}',''),'{DatabaseName}',''),'{BackupType}',''),'{Partial}',''),'{CopyOnly}',''),'{Description}',''),'{BackupSetName}',''),'{Year}',''),'{Month}',''),'{Day}',''),'{Week}',''),'{Weekday}',''),'{Hour}',''),'{Minute}',''),'{Second}',''),'{Millisecond}',''),'{Microsecond}',''),'{MajorVersion}',''),'{MinorVersion}','') AS AvailabilityGroupDirectoryStructure) Temp WHERE AvailabilityGroupDirectoryStructure LIKE '%{%' OR AvailabilityGroupDirectoryStructure LIKE '%}%')
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The parameter @AvailabilityGroupDirectoryStructure contains one or more tokens that are not supported.', 16, 1)
+    VALUES('The parameter @AvailabilityGroupDirectoryStructure contains one or more tokens that are not supported. See https://ola.hallengren.com/sql-server-backup.html#AvailabilityGroupDirectoryStructure.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -2715,7 +2715,7 @@ BEGIN
   IF EXISTS (SELECT * FROM (SELECT REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(@FileName,'{DirectorySeparator}',''),'{ServerName}',''),'{InstanceName}',''),'{ServiceName}',''),'{ClusterName}',''),'{AvailabilityGroupName}',''),'{DatabaseName}',''),'{BackupType}',''),'{Partial}',''),'{CopyOnly}',''),'{Description}',''),'{BackupSetName}',''),'{Year}',''),'{Month}',''),'{Day}',''),'{Week}',''),'{Weekday}',''),'{Hour}',''),'{Minute}',''),'{Second}',''),'{Millisecond}',''),'{Microsecond}',''),'{FileNumber}',''),'{NumberOfFiles}',''),'{FileExtension}',''),'{MajorVersion}',''),'{MinorVersion}','') AS [FileName]) Temp WHERE [FileName] LIKE '%{%' OR [FileName] LIKE '%}%')
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The parameter @FileName contains one or more tokens that are not supported.', 16, 1)
+    VALUES('The parameter @FileName contains one or more tokens that are not supported. See https://ola.hallengren.com/sql-server-backup.html#FileName.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -2723,7 +2723,7 @@ BEGIN
   IF EXISTS (SELECT * FROM (SELECT REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(@AvailabilityGroupFileName,'{DirectorySeparator}',''),'{ServerName}',''),'{InstanceName}',''),'{ServiceName}',''),'{ClusterName}',''),'{AvailabilityGroupName}',''),'{DatabaseName}',''),'{BackupType}',''),'{Partial}',''),'{CopyOnly}',''),'{Description}',''),'{BackupSetName}',''),'{Year}',''),'{Month}',''),'{Day}',''),'{Week}',''),'{Weekday}',''),'{Hour}',''),'{Minute}',''),'{Second}',''),'{Millisecond}',''),'{Microsecond}',''),'{FileNumber}',''),'{NumberOfFiles}',''),'{FileExtension}',''),'{MajorVersion}',''),'{MinorVersion}','') AS AvailabilityGroupFileName) Temp WHERE AvailabilityGroupFileName LIKE '%{%' OR AvailabilityGroupFileName LIKE '%}%')
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The parameter @AvailabilityGroupFileName contains one or more tokens that are not supported.', 16, 1)
+    VALUES('The parameter @AvailabilityGroupFileName contains one or more tokens that are not supported. See https://ola.hallengren.com/sql-server-backup.html#AvailabilityGroupFileName.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -2731,7 +2731,7 @@ BEGIN
   IF @TokenTimezone NOT IN('LOCAL','UTC') OR @TokenTimezone IS NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @TokenTimezone is not supported.', 16, 1)
+    VALUES('The value for the parameter @TokenTimezone is not supported. Supported values are LOCAL and UTC. See https://ola.hallengren.com/sql-server-backup.html#TokenTimezone.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -2739,7 +2739,7 @@ BEGIN
   IF @FileExtensionFull LIKE '%.%'
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @FileExtensionFull is not supported.', 16, 1)
+    VALUES('The value for the parameter @FileExtensionFull is not supported. Specify the file extension without a leading period. See https://ola.hallengren.com/sql-server-backup.html#FileExtensionFull.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -2747,7 +2747,7 @@ BEGIN
   IF @FileExtensionDiff LIKE '%.%'
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @FileExtensionDiff is not supported.', 16, 1)
+    VALUES('The value for the parameter @FileExtensionDiff is not supported. Specify the file extension without a leading period. See https://ola.hallengren.com/sql-server-backup.html#FileExtensionDiff.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -2755,7 +2755,7 @@ BEGIN
   IF @FileExtensionLog LIKE '%.%'
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @FileExtensionLog is not supported.', 16, 1)
+    VALUES('The value for the parameter @FileExtensionLog is not supported. Specify the file extension without a leading period. See https://ola.hallengren.com/sql-server-backup.html#FileExtensionLog.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -2763,25 +2763,25 @@ BEGIN
   IF @Init NOT IN('Y','N') OR @Init IS NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @Init is not supported.', 16, 1)
+    VALUES('The value for the parameter @Init is not supported. Supported values are ''Y'' and ''N''. See https://ola.hallengren.com/sql-server-backup.html#Init.', 16, 1)
   END
 
   IF @Init = 'Y' AND @BackupType = 'LOG'
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @Init is not supported.', 16, 2)
+    VALUES('Setting @Init to ''Y'' is not supported for transaction log backups. See https://ola.hallengren.com/sql-server-backup.html#Init.', 16, 1)
   END
 
   IF @Init = 'Y' AND @BackupSoftware = 'DATA_DOMAIN_BOOST'
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @Init is not supported.', 16, 3)
+    VALUES('Setting @Init to ''Y'' is not supported with Data Domain Boost. See https://ola.hallengren.com/sql-server-backup.html#Init.', 16, 1)
   END
 
   IF @Init = 'Y' AND EXISTS(SELECT * FROM @URLs WHERE Mirror = 0 AND DirectoryPath LIKE 's3://%/%')
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @Init is not supported.', 16, 4)
+    VALUES('Setting @Init to ''Y'' is not supported when backing up to S3-compatible storage. See https://ola.hallengren.com/sql-server-backup.html#Init.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -2789,19 +2789,19 @@ BEGIN
   IF @Format NOT IN('Y','N') OR @Format IS NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @Format is not supported.', 16, 1)
+    VALUES('The value for the parameter @Format is not supported. Supported values are ''Y'' and ''N''. See https://ola.hallengren.com/sql-server-backup.html#Format.', 16, 1)
   END
 
   IF @Format = 'Y' AND @BackupType = 'LOG'
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @Format is not supported.', 16, 2)
+    VALUES('Setting @Format to ''Y'' is not supported for transaction log backups. See https://ola.hallengren.com/sql-server-backup.html#Format.', 16, 1)
   END
 
   IF @Format = 'Y' AND @BackupSoftware = 'DATA_DOMAIN_BOOST'
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @Format is not supported.', 16, 3)
+    VALUES('Setting @Format to ''Y'' is not supported with Data Domain Boost. See https://ola.hallengren.com/sql-server-backup.html#Format.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -2809,25 +2809,19 @@ BEGIN
   IF @ObjectLevelRecoveryMap NOT IN('Y','N') OR @ObjectLevelRecoveryMap IS NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @ObjectLevelRecoveryMap is not supported.', 16, 1)
+    VALUES('The value for the parameter @ObjectLevelRecoveryMap is not supported. Supported values are ''Y'' and ''N''. See https://ola.hallengren.com/sql-server-backup.html#ObjectLevelRecoveryMap.', 16, 1)
   END
 
-  IF @ObjectLevelRecoveryMap = 'Y' AND @BackupSoftware IS NULL
+  IF @ObjectLevelRecoveryMap = 'Y' AND (@BackupSoftware NOT IN('LITESPEED') OR @BackupSoftware IS NULL)
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @ObjectLevelRecoveryMap is not supported.', 16, 2)
-  END
-
-  IF @ObjectLevelRecoveryMap = 'Y' AND @BackupSoftware <> 'LITESPEED'
-  BEGIN
-    INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @ObjectLevelRecoveryMap is not supported.', 16, 3)
+    VALUES('Setting @ObjectLevelRecoveryMap to ''Y'' is only supported with LiteSpeed for SQL Server. See https://ola.hallengren.com/sql-server-backup.html#ObjectLevelRecoveryMap.', 16, 1)
   END
 
   IF @ObjectLevelRecoveryMap = 'Y' AND @BackupType = 'LOG'
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @ObjectLevelRecoveryMap is not supported.', 16, 4)
+    VALUES('Setting @ObjectLevelRecoveryMap to ''Y'' is not supported for transaction log backups. See https://ola.hallengren.com/sql-server-backup.html#ObjectLevelRecoveryMap.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -2835,7 +2829,7 @@ BEGIN
   IF @ExcludeLogShippedFromLogBackup NOT IN('Y','N') OR @ExcludeLogShippedFromLogBackup IS NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @ExcludeLogShippedFromLogBackup is not supported.', 16, 1)
+    VALUES('The value for the parameter @ExcludeLogShippedFromLogBackup is not supported. Supported values are ''Y'' and ''N''. See https://ola.hallengren.com/sql-server-backup.html#ExcludeLogShippedFromLogBackup.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -2843,13 +2837,13 @@ BEGIN
   IF @ExcludeSeedingFromLogBackup NOT IN('Y','N') OR @ExcludeSeedingFromLogBackup IS NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @ExcludeSeedingFromLogBackup is not supported.', 16, 1)
+    VALUES('The value for the parameter @ExcludeSeedingFromLogBackup is not supported. Supported values are ''Y'' and ''N''. See https://ola.hallengren.com/sql-server-backup.html#ExcludeSeedingFromLogBackup.', 16, 1)
   END
 
   IF @ExcludeSeedingFromLogBackup = 'Y' AND @BackupType <> 'LOG'
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The parameter @ExcludeSeedingFromLogBackup can only be used for log backups.', 16, 2)
+    VALUES('The parameter @ExcludeSeedingFromLogBackup can only be used for log backups. See https://ola.hallengren.com/sql-server-backup.html#ExcludeSeedingFromLogBackup.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -2857,7 +2851,7 @@ BEGIN
   IF @DirectoryCheck NOT IN('Y','N') OR @DirectoryCheck IS NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @DirectoryCheck is not supported.', 16, 1)
+    VALUES('The value for the parameter @DirectoryCheck is not supported. Supported values are ''Y'' and ''N''. See https://ola.hallengren.com/sql-server-backup.html#DirectoryCheck.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -2865,7 +2859,7 @@ BEGIN
   IF @BackupOptions IS NOT NULL AND NOT EXISTS(SELECT * FROM @URLs WHERE DirectoryPath LIKE 's3://%/%')
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @BackupOptions is not supported.', 16, 1)
+    VALUES('The parameter @BackupOptions can only be used when backing up to S3-compatible storage. See https://ola.hallengren.com/sql-server-backup.html#BackupOptions.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -2873,7 +2867,7 @@ BEGIN
   IF @Stats <= 0 OR @Stats > 100
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @Stats is not supported.', 16, 1)
+    VALUES('The value for the parameter @Stats is not supported. The value has to be between 1 and 100. See https://ola.hallengren.com/sql-server-backup.html#Stats.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -2881,7 +2875,7 @@ BEGIN
   IF @ExpireDate IS NOT NULL AND @BackupSoftware <> 'LITESPEED'
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @ExpireDate is not supported.', 16, 1)
+    VALUES('The parameter @ExpireDate is only supported with SQL Server native backups and LiteSpeed for SQL Server. See https://ola.hallengren.com/sql-server-backup.html#ExpireDate.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -2889,13 +2883,13 @@ BEGIN
   IF @RetainDays < 0
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @RetainDays is not supported.', 16, 1)
+    VALUES('The value for the parameter @RetainDays is not supported. The value has to be greater than or equal to 0. See https://ola.hallengren.com/sql-server-backup.html#RetainDays.', 16, 1)
   END
 
   IF @RetainDays IS NOT NULL AND @BackupSoftware <> 'LITESPEED'
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @RetainDays is not supported.', 16, 2)
+    VALUES('The parameter @RetainDays is only supported with SQL Server native backups and LiteSpeed for SQL Server. See https://ola.hallengren.com/sql-server-backup.html#RetainDays.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -2903,7 +2897,7 @@ BEGIN
   IF @AllowNonCopyOnlyBackupsOnForwarder NOT IN('Y','N') OR @AllowNonCopyOnlyBackupsOnForwarder IS NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @AllowNonCopyOnlyBackupsOnForwarder is not supported.', 16, 1)
+    VALUES('The value for the parameter @AllowNonCopyOnlyBackupsOnForwarder is not supported. Supported values are ''Y'' and ''N''. See https://ola.hallengren.com/sql-server-backup.html#AllowNonCopyOnlyBackupsOnForwarder.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -2911,7 +2905,7 @@ BEGIN
   IF @StringDelimiter IS NULL OR LEN(@StringDelimiter) <> 1
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @StringDelimiter is not supported.', 16, 1)
+    VALUES('The value for the parameter @StringDelimiter is not supported. The value has to be exactly one character. See https://ola.hallengren.com/sql-server-backup.html#StringDelimiter.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -2919,13 +2913,13 @@ BEGIN
   IF @DatabaseOrder NOT IN('DATABASE_NAME_ASC','DATABASE_NAME_DESC','DATABASE_SIZE_ASC','DATABASE_SIZE_DESC','LOG_SIZE_SINCE_LAST_LOG_BACKUP_ASC','LOG_SIZE_SINCE_LAST_LOG_BACKUP_DESC')
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @DatabaseOrder is not supported.', 16, 1)
+    VALUES('The value for the parameter @DatabaseOrder is not supported. Supported values are DATABASE_NAME_ASC, DATABASE_NAME_DESC, DATABASE_SIZE_ASC, DATABASE_SIZE_DESC, LOG_SIZE_SINCE_LAST_LOG_BACKUP_ASC and LOG_SIZE_SINCE_LAST_LOG_BACKUP_DESC. See https://ola.hallengren.com/sql-server-backup.html#DatabaseOrder.', 16, 1)
   END
 
   IF @DatabaseOrder IS NOT NULL AND @EngineEdition = 5
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @DatabaseOrder is not supported.', 16, 2)
+    VALUES('The parameter @DatabaseOrder is not supported in Azure SQL Database. See https://ola.hallengren.com/sql-server-backup.html#DatabaseOrder.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -2933,13 +2927,13 @@ BEGIN
   IF @DatabasesInParallel NOT IN('Y','N') OR @DatabasesInParallel IS NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @DatabasesInParallel is not supported.', 16, 1)
+    VALUES('The value for the parameter @DatabasesInParallel is not supported. Supported values are ''Y'' and ''N''. See https://ola.hallengren.com/sql-server-backup.html#DatabasesInParallel.', 16, 1)
   END
 
   IF @DatabasesInParallel = 'Y' AND @EngineEdition = 5
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @DatabasesInParallel is not supported.', 16, 2)
+    VALUES('The parameter @DatabasesInParallel is not supported in Azure SQL Database. See https://ola.hallengren.com/sql-server-backup.html#DatabasesInParallel.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -2947,7 +2941,7 @@ BEGIN
   IF @LogToTable NOT IN('Y','N') OR @LogToTable IS NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @LogToTable is not supported.', 16, 1)
+    VALUES('The value for the parameter @LogToTable is not supported. Supported values are ''Y'' and ''N''. See https://ola.hallengren.com/sql-server-backup.html#LogToTable.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -2955,15 +2949,7 @@ BEGIN
   IF @Execute NOT IN('Y','N') OR @Execute IS NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @Execute is not supported.', 16, 1)
-  END
-
-  ----------------------------------------------------------------------------------------------------
-
-  IF EXISTS(SELECT * FROM @Errors)
-  BEGIN
-    INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The documentation is available at https://ola.hallengren.com/sql-server-backup.html.', 16, 1)
+    VALUES('The value for the parameter @Execute is not supported. Supported values are ''Y'' and ''N''. See https://ola.hallengren.com/sql-server-backup.html#Execute.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -2979,7 +2965,7 @@ BEGIN
   IF @ErrorMessage IS NOT NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The following databases in the @Databases parameter do not exist: ' + @ErrorMessage + '.', 10, 1)
+    VALUES('The following databases in the @Databases parameter do not exist: ' + @ErrorMessage + '. See https://ola.hallengren.com/sql-server-backup.html#Databases.', 10, 1)
   END
 
   SELECT @ErrorMessage = STRING_AGG(CAST(QUOTENAME(AvailabilityGroupName) AS nvarchar(max)), ', ')
@@ -2991,7 +2977,7 @@ BEGIN
   IF @ErrorMessage IS NOT NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The following availability groups do not exist: ' + @ErrorMessage + '.', 10, 1)
+    VALUES('The following availability groups do not exist: ' + @ErrorMessage + '. See https://ola.hallengren.com/sql-server-backup.html#AvailabilityGroups.', 10, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -3001,7 +2987,7 @@ BEGIN
   IF UPPER(@@SERVERNAME) <> UPPER(@ServerName) AND @IsHadrEnabled = 1
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The @@SERVERNAME does not match SERVERPROPERTY(''ServerName''). See ' + CASE WHEN @IsClustered = 0 THEN 'https://docs.microsoft.com/en-us/sql/database-engine/install-windows/rename-a-computer-that-hosts-a-stand-alone-instance-of-sql-server' WHEN @IsClustered = 1 THEN 'https://docs.microsoft.com/en-us/sql/sql-server/failover-clusters/install/rename-a-sql-server-failover-cluster-instance' END + '.', 16, 1)
+    VALUES('The @@SERVERNAME does not match SERVERPROPERTY(''ServerName''). See ' + CASE WHEN @IsClustered = 0 THEN 'https://learn.microsoft.com/en-us/sql/database-engine/install-windows/rename-a-computer-that-hosts-a-stand-alone-instance-of-sql-server' WHEN @IsClustered = 1 THEN 'https://learn.microsoft.com/en-us/sql/sql-server/failover-clusters/install/rename-a-sql-server-failover-cluster-instance' END + '.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -5033,7 +5019,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-08-08 16:00:55                                                               //--
+  --// Version: 2026-08-08 22:31:52                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -5331,13 +5317,13 @@ BEGIN
   IF NOT (SELECT uses_ansi_nulls FROM sys.sql_modules WHERE [object_id] = @@PROCID) = 1
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('ANSI_NULLS has to be set to ON for the stored procedure.', 16, 1)
+    VALUES('ANSI_NULLS has to be set to ON for the stored procedure. See https://ola.hallengren.com/sql-server-integrity-check.html.', 16, 1)
   END
 
   IF NOT (SELECT uses_quoted_identifier FROM sys.sql_modules WHERE [object_id] = @@PROCID) = 1
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('QUOTED_IDENTIFIER has to be set to ON for the stored procedure.', 16, 1)
+    VALUES('QUOTED_IDENTIFIER has to be set to ON for the stored procedure. See https://ola.hallengren.com/sql-server-integrity-check.html.', 16, 1)
   END
 
   IF NOT EXISTS (SELECT * FROM sys.objects objects INNER JOIN sys.schemas schemas ON objects.[schema_id] = schemas.[schema_id] WHERE objects.[type] = 'P' AND schemas.[name] = 'dbo' AND objects.[name] = 'CommandExecute')
@@ -5361,19 +5347,19 @@ BEGIN
   IF @DatabasesInParallel = 'Y' AND NOT EXISTS (SELECT * FROM sys.objects objects INNER JOIN sys.schemas schemas ON objects.[schema_id] = schemas.[schema_id] WHERE objects.[type] = 'U' AND schemas.[name] = 'dbo' AND objects.[name] = 'Queue')
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The table Queue is missing. Download https://ola.hallengren.com/scripts/Queue.sql.', 16, 1)
+    VALUES('The table Queue is missing. It is required when @DatabasesInParallel = ''Y''. Download https://ola.hallengren.com/scripts/Queue.sql.', 16, 1)
   END
 
   IF @DatabasesInParallel = 'Y' AND NOT EXISTS (SELECT * FROM sys.objects objects INNER JOIN sys.schemas schemas ON objects.[schema_id] = schemas.[schema_id] WHERE objects.[type] = 'U' AND schemas.[name] = 'dbo' AND objects.[name] = 'QueueDatabase')
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The table QueueDatabase is missing. Download https://ola.hallengren.com/scripts/QueueDatabase.sql.', 16, 1)
+    VALUES('The table QueueDatabase is missing. It is required when @DatabasesInParallel = ''Y''. Download https://ola.hallengren.com/scripts/QueueDatabase.sql.', 16, 1)
   END
 
   IF @@TRANCOUNT <> 0
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The transaction count is not 0.', 16, 1)
+    VALUES('The stored procedure cannot be executed inside a transaction. The transaction count (@@TRANCOUNT) has to be 0. See https://ola.hallengren.com/sql-server-integrity-check.html.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -5497,7 +5483,7 @@ BEGIN
   IF @Databases IS NOT NULL AND (NOT EXISTS(SELECT * FROM @SelectedDatabases) OR EXISTS(SELECT * FROM @SelectedDatabases WHERE DatabaseName IS NULL OR DATALENGTH(DatabaseName) = 0))
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @Databases is not supported.', 16, 1)
+    VALUES('The value for the parameter @Databases is not supported. The value could not be parsed into a list of databases. See https://ola.hallengren.com/sql-server-integrity-check.html#Databases.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -5589,22 +5575,28 @@ BEGIN
 
   END
 
-  IF @AvailabilityGroups IS NOT NULL AND (NOT EXISTS(SELECT * FROM @SelectedAvailabilityGroups) OR EXISTS(SELECT * FROM @SelectedAvailabilityGroups WHERE AvailabilityGroupName IS NULL OR AvailabilityGroupName = '') OR @IsHadrEnabled = 0)
+  IF @AvailabilityGroups IS NOT NULL AND (NOT EXISTS(SELECT * FROM @SelectedAvailabilityGroups) OR EXISTS(SELECT * FROM @SelectedAvailabilityGroups WHERE AvailabilityGroupName IS NULL OR AvailabilityGroupName = ''))
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @AvailabilityGroups is not supported.', 16, 1)
+    VALUES('The value for the parameter @AvailabilityGroups is not supported. The value could not be parsed into a list of availability groups. See https://ola.hallengren.com/sql-server-integrity-check.html#AvailabilityGroups.', 16, 1)
+  END
+
+  IF @AvailabilityGroups IS NOT NULL AND @IsHadrEnabled = 0
+  BEGIN
+    INSERT INTO @Errors ([Message], Severity, [State])
+    VALUES('The parameter @AvailabilityGroups can only be used when availability groups are enabled on the instance. See https://ola.hallengren.com/sql-server-integrity-check.html#AvailabilityGroups.', 16, 1)
   END
 
   IF (@Databases IS NULL AND @AvailabilityGroups IS NULL)
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('You need to specify one of the parameters @Databases and @AvailabilityGroups.', 16, 2)
+    VALUES('You need to specify one of the parameters @Databases and @AvailabilityGroups. See https://ola.hallengren.com/sql-server-integrity-check.html.', 16, 1)
   END
 
   IF (@Databases IS NOT NULL AND @AvailabilityGroups IS NOT NULL)
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('You can only specify one of the parameters @Databases and @AvailabilityGroups.', 16, 3)
+    VALUES('You can only specify one of the parameters @Databases and @AvailabilityGroups. See https://ola.hallengren.com/sql-server-integrity-check.html.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -5743,31 +5735,31 @@ BEGIN
   IF EXISTS (SELECT * FROM @SelectedCheckCommands WHERE CheckCommand NOT IN('CHECKDB','CHECKFILEGROUP','CHECKALLOC','CHECKTABLE','CHECKCATALOG'))
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @CheckCommands is not supported.', 16, 1)
+    VALUES('The value for the parameter @CheckCommands is not supported. Supported values are CHECKDB, CHECKFILEGROUP, CHECKALLOC, CHECKTABLE and CHECKCATALOG. See https://ola.hallengren.com/sql-server-integrity-check.html#CheckCommands.', 16, 1)
   END
 
   IF EXISTS (SELECT * FROM @SelectedCheckCommands GROUP BY CheckCommand HAVING COUNT(*) > 1)
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @CheckCommands is not supported.', 16, 2)
+    VALUES('The value for the parameter @CheckCommands is not supported. The same check command has been specified more than once. See https://ola.hallengren.com/sql-server-integrity-check.html#CheckCommands.', 16, 1)
   END
 
   IF NOT EXISTS (SELECT * FROM @SelectedCheckCommands)
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @CheckCommands is not supported.', 16, 3)
+    VALUES('The value for the parameter @CheckCommands is not supported. The value cannot be NULL or empty. See https://ola.hallengren.com/sql-server-integrity-check.html#CheckCommands.', 16, 1)
   END
 
   IF EXISTS (SELECT * FROM @SelectedCheckCommands WHERE CheckCommand IN('CHECKDB')) AND EXISTS (SELECT CheckCommand FROM @SelectedCheckCommands WHERE CheckCommand IN('CHECKFILEGROUP','CHECKALLOC','CHECKTABLE','CHECKCATALOG'))
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @CheckCommands is not supported.', 16, 4)
+    VALUES('The value for the parameter @CheckCommands is not supported. CHECKDB cannot be combined with CHECKFILEGROUP, CHECKALLOC, CHECKTABLE or CHECKCATALOG. See https://ola.hallengren.com/sql-server-integrity-check.html#CheckCommands.', 16, 1)
   END
 
   IF EXISTS (SELECT * FROM @SelectedCheckCommands WHERE CheckCommand IN('CHECKFILEGROUP')) AND EXISTS (SELECT CheckCommand FROM @SelectedCheckCommands WHERE CheckCommand IN('CHECKALLOC','CHECKTABLE'))
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @CheckCommands is not supported.', 16, 5)
+    VALUES('The value for the parameter @CheckCommands is not supported. CHECKFILEGROUP cannot be combined with CHECKALLOC or CHECKTABLE. See https://ola.hallengren.com/sql-server-integrity-check.html#CheckCommands.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -5775,7 +5767,7 @@ BEGIN
   IF @PhysicalOnly NOT IN ('Y','N') OR @PhysicalOnly IS NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @PhysicalOnly is not supported.', 16, 1)
+    VALUES('The value for the parameter @PhysicalOnly is not supported. Supported values are ''Y'' and ''N''. See https://ola.hallengren.com/sql-server-integrity-check.html#PhysicalOnly.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -5783,13 +5775,13 @@ BEGIN
   IF @DataPurity NOT IN ('Y','N') OR @DataPurity IS NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @DataPurity is not supported.', 16, 1)
+    VALUES('The value for the parameter @DataPurity is not supported. Supported values are ''Y'' and ''N''. See https://ola.hallengren.com/sql-server-integrity-check.html#DataPurity.', 16, 1)
   END
 
   IF @PhysicalOnly = 'Y' AND @DataPurity = 'Y'
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The parameters @PhysicalOnly and @DataPurity cannot be used together.', 16, 2)
+    VALUES('The parameters @PhysicalOnly and @DataPurity cannot be used together. See https://ola.hallengren.com/sql-server-integrity-check.html.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -5797,7 +5789,7 @@ BEGIN
   IF @NoIndex NOT IN ('Y','N') OR @NoIndex IS NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @NoIndex is not supported.', 16, 1)
+    VALUES('The value for the parameter @NoIndex is not supported. Supported values are ''Y'' and ''N''. See https://ola.hallengren.com/sql-server-integrity-check.html#NoIndex.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -5805,13 +5797,13 @@ BEGIN
   IF @ExtendedLogicalChecks NOT IN ('Y','N') OR @ExtendedLogicalChecks IS NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @ExtendedLogicalChecks is not supported.', 16, 1)
+    VALUES('The value for the parameter @ExtendedLogicalChecks is not supported. Supported values are ''Y'' and ''N''. See https://ola.hallengren.com/sql-server-integrity-check.html#ExtendedLogicalChecks.', 16, 1)
   END
 
   IF @PhysicalOnly = 'Y' AND @ExtendedLogicalChecks = 'Y'
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The parameters @PhysicalOnly and @ExtendedLogicalChecks cannot be used together.', 16, 2)
+    VALUES('The parameters @PhysicalOnly and @ExtendedLogicalChecks cannot be used together. See https://ola.hallengren.com/sql-server-integrity-check.html.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -5819,7 +5811,7 @@ BEGIN
   IF @NoInformationalMessages NOT IN ('Y','N') OR @NoInformationalMessages IS NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @NoInformationalMessages is not supported.', 16, 1)
+    VALUES('The value for the parameter @NoInformationalMessages is not supported. Supported values are ''Y'' and ''N''. See https://ola.hallengren.com/sql-server-integrity-check.html#NoInformationalMessages.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -5827,7 +5819,7 @@ BEGIN
   IF @TabLock NOT IN ('Y','N') OR @TabLock IS NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @TabLock is not supported.', 16, 1)
+    VALUES('The value for the parameter @TabLock is not supported. Supported values are ''Y'' and ''N''. See https://ola.hallengren.com/sql-server-integrity-check.html#TabLock.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -5835,19 +5827,19 @@ BEGIN
   IF EXISTS(SELECT * FROM @SelectedFileGroups WHERE DatabaseName IS NULL OR FileGroupName IS NULL)
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @FileGroups is not supported.', 16, 1)
+    VALUES('The value for the parameter @FileGroups is not supported. The value contains one or more items that could not be parsed. See https://ola.hallengren.com/sql-server-integrity-check.html#FileGroups.', 16, 1)
   END
 
   IF @FileGroups IS NOT NULL AND NOT EXISTS(SELECT * FROM @SelectedFileGroups)
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @FileGroups is not supported.', 16, 2)
+    VALUES('The value for the parameter @FileGroups is not supported. The value could not be parsed into a list of filegroups. See https://ola.hallengren.com/sql-server-integrity-check.html#FileGroups.', 16, 1)
   END
 
   IF @FileGroups IS NOT NULL AND NOT EXISTS (SELECT * FROM @SelectedCheckCommands WHERE CheckCommand = 'CHECKFILEGROUP')
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @FileGroups is not supported.', 16, 3)
+    VALUES('The parameter @FileGroups can only be used together with @CheckCommands = ''CHECKFILEGROUP''. See https://ola.hallengren.com/sql-server-integrity-check.html#FileGroups.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -5855,19 +5847,19 @@ BEGIN
   IF EXISTS(SELECT * FROM @SelectedObjects WHERE DatabaseName IS NULL OR SchemaName IS NULL OR ObjectName IS NULL)
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @Objects is not supported.', 16, 1)
+    VALUES('The value for the parameter @Objects is not supported. The value contains one or more items that could not be parsed. See https://ola.hallengren.com/sql-server-integrity-check.html#Objects.', 16, 1)
   END
 
   IF (@Objects IS NOT NULL AND NOT EXISTS(SELECT * FROM @SelectedObjects))
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @Objects is not supported.', 16, 2)
+    VALUES('The value for the parameter @Objects is not supported. The value could not be parsed into a list of objects. See https://ola.hallengren.com/sql-server-integrity-check.html#Objects.', 16, 1)
   END
 
   IF (@Objects IS NOT NULL AND NOT EXISTS (SELECT * FROM @SelectedCheckCommands WHERE CheckCommand = 'CHECKTABLE'))
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @Objects is not supported.', 16, 3)
+    VALUES('The parameter @Objects can only be used together with @CheckCommands = ''CHECKTABLE''. See https://ola.hallengren.com/sql-server-integrity-check.html#Objects.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -5875,7 +5867,7 @@ BEGIN
   IF @MaxDOP < 0 OR @MaxDOP > 64
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @MaxDOP is not supported.', 16, 1)
+    VALUES('The value for the parameter @MaxDOP is not supported. The value has to be between 0 and 64. See https://ola.hallengren.com/sql-server-integrity-check.html#MaxDOP.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -5883,7 +5875,7 @@ BEGIN
   IF @AvailabilityGroupReplicas NOT IN('ALL','PRIMARY','SECONDARY','PREFERRED_BACKUP_REPLICA') OR @AvailabilityGroupReplicas IS NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @AvailabilityGroupReplicas is not supported.', 16, 1)
+    VALUES('The value for the parameter @AvailabilityGroupReplicas is not supported. Supported values are ALL, PRIMARY, SECONDARY and PREFERRED_BACKUP_REPLICA. See https://ola.hallengren.com/sql-server-integrity-check.html#AvailabilityGroupReplicas.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -5891,7 +5883,7 @@ BEGIN
   IF @Updateability NOT IN('READ_ONLY','READ_WRITE','ALL') OR @Updateability IS NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @Updateability is not supported.', 16, 1)
+    VALUES('The value for the parameter @Updateability is not supported. Supported values are ALL, READ_ONLY and READ_WRITE. See https://ola.hallengren.com/sql-server-integrity-check.html#Updateability.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -5899,21 +5891,15 @@ BEGIN
   IF @TimeLimit < 0
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @TimeLimit is not supported.', 16, 1)
+    VALUES('The value for the parameter @TimeLimit is not supported. The value has to be greater than or equal to 0. See https://ola.hallengren.com/sql-server-integrity-check.html#TimeLimit.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
 
-  IF @LockTimeout < 0
+  IF @LockTimeout < 0 OR @LockTimeout > 86400
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @LockTimeout is not supported.', 16, 1)
-  END
-
-  IF @LockTimeout > 86400
-  BEGIN
-    INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @LockTimeout is not supported.', 16, 2)
+    VALUES('The value for the parameter @LockTimeout is not supported. The value has to be between 0 and 86400. See https://ola.hallengren.com/sql-server-integrity-check.html#LockTimeout.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -5921,7 +5907,7 @@ BEGIN
   IF @LockMessageSeverity NOT IN(10, 16) OR @LockMessageSeverity IS NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @LockMessageSeverity is not supported.', 16, 1)
+    VALUES('The value for the parameter @LockMessageSeverity is not supported. Supported values are 10 and 16. See https://ola.hallengren.com/sql-server-integrity-check.html#LockMessageSeverity.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -5929,7 +5915,7 @@ BEGIN
   IF @StringDelimiter IS NULL OR LEN(@StringDelimiter) <> 1
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @StringDelimiter is not supported.', 16, 1)
+    VALUES('The value for the parameter @StringDelimiter is not supported. The value has to be exactly one character. See https://ola.hallengren.com/sql-server-integrity-check.html#StringDelimiter.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -5937,31 +5923,31 @@ BEGIN
   IF @DatabaseOrder NOT IN('DATABASE_NAME_ASC','DATABASE_NAME_DESC','DATABASE_SIZE_ASC','DATABASE_SIZE_DESC','DATABASE_LAST_GOOD_CHECK_ASC','DATABASE_LAST_GOOD_CHECK_DESC','REPLICA_LAST_GOOD_CHECK_ASC','REPLICA_LAST_GOOD_CHECK_DESC')
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @DatabaseOrder is not supported.', 16, 1)
+    VALUES('The value for the parameter @DatabaseOrder is not supported. Supported values are DATABASE_NAME_ASC, DATABASE_NAME_DESC, DATABASE_SIZE_ASC, DATABASE_SIZE_DESC, DATABASE_LAST_GOOD_CHECK_ASC, DATABASE_LAST_GOOD_CHECK_DESC, REPLICA_LAST_GOOD_CHECK_ASC and REPLICA_LAST_GOOD_CHECK_DESC. See https://ola.hallengren.com/sql-server-integrity-check.html#DatabaseOrder.', 16, 1)
   END
 
   IF @DatabaseOrder IN('DATABASE_LAST_GOOD_CHECK_ASC','DATABASE_LAST_GOOD_CHECK_DESC') AND NOT (@Version >= 14.03029 OR (@EngineEdition = 8 AND @ProductUpdateType = 'Continuous'))
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @DatabaseOrder is not supported. DATABASEPROPERTYEX(''DatabaseName'', ''LastGoodCheckDbTime'') is not available in this version of SQL Server.', 16, 2)
+    VALUES('The value for the parameter @DatabaseOrder is not supported. DATABASEPROPERTYEX(''DatabaseName'', ''LastGoodCheckDbTime'') is not available in this version of SQL Server. See https://ola.hallengren.com/sql-server-integrity-check.html#DatabaseOrder.', 16, 1)
   END
 
   IF @DatabaseOrder IN('REPLICA_LAST_GOOD_CHECK_ASC','REPLICA_LAST_GOOD_CHECK_DESC') AND @LogToTable = 'N'
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @DatabaseOrder is not supported. You need to provide the parameter @LogToTable = ''Y''.', 16, 3)
+    VALUES('The value for the parameter @DatabaseOrder is not supported. You need to provide the parameter @LogToTable = ''Y''. See https://ola.hallengren.com/sql-server-integrity-check.html#DatabaseOrder.', 16, 1)
   END
 
   IF @DatabaseOrder IN('DATABASE_LAST_GOOD_CHECK_ASC','DATABASE_LAST_GOOD_CHECK_DESC','REPLICA_LAST_GOOD_CHECK_ASC','REPLICA_LAST_GOOD_CHECK_DESC') AND @CheckCommands <> 'CHECKDB'
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @DatabaseOrder is not supported. You need to provide the parameter @CheckCommands = ''CHECKDB''.', 16, 4)
+    VALUES('The value for the parameter @DatabaseOrder is not supported. You need to provide the parameter @CheckCommands = ''CHECKDB''. See https://ola.hallengren.com/sql-server-integrity-check.html#DatabaseOrder.', 16, 1)
   END
 
   IF @DatabaseOrder IS NOT NULL AND @EngineEdition = 5
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @DatabaseOrder is not supported. This parameter is not supported in Azure SQL Database.', 16, 5)
+    VALUES('The parameter @DatabaseOrder is not supported in Azure SQL Database. See https://ola.hallengren.com/sql-server-integrity-check.html#DatabaseOrder.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -5969,13 +5955,13 @@ BEGIN
   IF @DatabasesInParallel NOT IN('Y','N') OR @DatabasesInParallel IS NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @DatabasesInParallel is not supported.', 16, 1)
+    VALUES('The value for the parameter @DatabasesInParallel is not supported. Supported values are ''Y'' and ''N''. See https://ola.hallengren.com/sql-server-integrity-check.html#DatabasesInParallel.', 16, 1)
   END
 
   IF @DatabasesInParallel = 'Y' AND @EngineEdition = 5
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @DatabasesInParallel is not supported. This parameter is not supported in Azure SQL Database.', 16, 2)
+    VALUES('The parameter @DatabasesInParallel is not supported in Azure SQL Database. See https://ola.hallengren.com/sql-server-integrity-check.html#DatabasesInParallel.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -5983,7 +5969,7 @@ BEGIN
   IF @LogToTable NOT IN('Y','N') OR @LogToTable IS NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @LogToTable is not supported.', 16, 1)
+    VALUES('The value for the parameter @LogToTable is not supported. Supported values are ''Y'' and ''N''. See https://ola.hallengren.com/sql-server-integrity-check.html#LogToTable.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -5991,15 +5977,7 @@ BEGIN
   IF @Execute NOT IN('Y','N') OR @Execute IS NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @Execute is not supported.', 16, 1)
-  END
-
-  ----------------------------------------------------------------------------------------------------
-
-  IF EXISTS(SELECT * FROM @Errors)
-  BEGIN
-    INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The documentation is available at https://ola.hallengren.com/sql-server-integrity-check.html.', 16, 1)
+    VALUES('The value for the parameter @Execute is not supported. Supported values are ''Y'' and ''N''. See https://ola.hallengren.com/sql-server-integrity-check.html#Execute.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -6015,7 +5993,7 @@ BEGIN
   IF @ErrorMessage IS NOT NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The following databases in the @Databases parameter do not exist: ' + @ErrorMessage + '.', 10, 1)
+    VALUES('The following databases in the @Databases parameter do not exist: ' + @ErrorMessage + '. See https://ola.hallengren.com/sql-server-integrity-check.html#Databases.', 10, 1)
   END
 
   SELECT @ErrorMessage = STRING_AGG(CAST(QUOTENAME(DatabaseName) AS nvarchar(max)), ', ')
@@ -6027,7 +6005,7 @@ BEGIN
   IF @ErrorMessage IS NOT NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The following databases in the @FileGroups parameter do not exist: ' + @ErrorMessage + '.', 10, 1)
+    VALUES('The following databases in the @FileGroups parameter do not exist: ' + @ErrorMessage + '. See https://ola.hallengren.com/sql-server-integrity-check.html#FileGroups.', 10, 1)
   END
 
   SELECT @ErrorMessage = STRING_AGG(CAST(QUOTENAME(DatabaseName) AS nvarchar(max)), ', ')
@@ -6039,7 +6017,7 @@ BEGIN
   IF @ErrorMessage IS NOT NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The following databases in the @Objects parameter do not exist: ' + @ErrorMessage + '.', 10, 1)
+    VALUES('The following databases in the @Objects parameter do not exist: ' + @ErrorMessage + '. See https://ola.hallengren.com/sql-server-integrity-check.html#Objects.', 10, 1)
   END
 
   SELECT @ErrorMessage = STRING_AGG(CAST(QUOTENAME(AvailabilityGroupName) AS nvarchar(max)), ', ')
@@ -6051,7 +6029,7 @@ BEGIN
   IF @ErrorMessage IS NOT NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The following availability groups do not exist: ' + @ErrorMessage + '.', 10, 1)
+    VALUES('The following availability groups do not exist: ' + @ErrorMessage + '. See https://ola.hallengren.com/sql-server-integrity-check.html#AvailabilityGroups.', 10, 1)
   END
 
   SELECT @ErrorMessage = STRING_AGG(CAST(QUOTENAME(DatabaseName) AS nvarchar(max)), ', ')
@@ -6064,7 +6042,7 @@ BEGIN
   IF @ErrorMessage IS NOT NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The following databases have been selected in the @FileGroups parameter, but not in the @Databases or @AvailabilityGroups parameters: ' + @ErrorMessage + '.', 10, 1)
+    VALUES('The following databases have been selected in the @FileGroups parameter, but not in the @Databases or @AvailabilityGroups parameters: ' + @ErrorMessage + '. See https://ola.hallengren.com/sql-server-integrity-check.html#FileGroups.', 10, 1)
   END
 
   SELECT @ErrorMessage = STRING_AGG(CAST(QUOTENAME(DatabaseName) AS nvarchar(max)), ', ')
@@ -6077,7 +6055,7 @@ BEGIN
   IF @ErrorMessage IS NOT NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The following databases have been selected in the @Objects parameter, but not in the @Databases or @AvailabilityGroups parameters: ' + @ErrorMessage + '.', 10, 1)
+    VALUES('The following databases have been selected in the @Objects parameter, but not in the @Databases or @AvailabilityGroups parameters: ' + @ErrorMessage + '. See https://ola.hallengren.com/sql-server-integrity-check.html#Objects.', 10, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -6087,7 +6065,7 @@ BEGIN
   IF UPPER(@@SERVERNAME) <> UPPER(@ServerName) AND @IsHadrEnabled = 1
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The @@SERVERNAME does not match SERVERPROPERTY(''ServerName''). See ' + CASE WHEN @IsClustered = 0 THEN 'https://docs.microsoft.com/en-us/sql/database-engine/install-windows/rename-a-computer-that-hosts-a-stand-alone-instance-of-sql-server' WHEN @IsClustered = 1 THEN 'https://docs.microsoft.com/en-us/sql/sql-server/failover-clusters/install/rename-a-sql-server-failover-cluster-instance' END + '.', 16, 1)
+    VALUES('The @@SERVERNAME does not match SERVERPROPERTY(''ServerName''). See ' + CASE WHEN @IsClustered = 0 THEN 'https://learn.microsoft.com/en-us/sql/database-engine/install-windows/rename-a-computer-that-hosts-a-stand-alone-instance-of-sql-server' WHEN @IsClustered = 1 THEN 'https://learn.microsoft.com/en-us/sql/sql-server/failover-clusters/install/rename-a-sql-server-failover-cluster-instance' END + '.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -7081,7 +7059,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-08-08 16:00:55                                                               //--
+  --// Version: 2026-08-08 22:31:52                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -7542,13 +7520,13 @@ BEGIN
   IF NOT (SELECT uses_ansi_nulls FROM sys.sql_modules WHERE [object_id] = @@PROCID) = 1
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('ANSI_NULLS has to be set to ON for the stored procedure.', 16, 1)
+    VALUES('ANSI_NULLS has to be set to ON for the stored procedure. See https://ola.hallengren.com/sql-server-index-and-statistics-maintenance.html.', 16, 1)
   END
 
   IF NOT (SELECT uses_quoted_identifier FROM sys.sql_modules WHERE [object_id] = @@PROCID) = 1
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('QUOTED_IDENTIFIER has to be set to ON for the stored procedure.', 16, 1)
+    VALUES('QUOTED_IDENTIFIER has to be set to ON for the stored procedure. See https://ola.hallengren.com/sql-server-index-and-statistics-maintenance.html.', 16, 1)
   END
 
   IF NOT EXISTS (SELECT * FROM sys.objects objects INNER JOIN sys.schemas schemas ON objects.[schema_id] = schemas.[schema_id] WHERE objects.[type] = 'P' AND schemas.[name] = 'dbo' AND objects.[name] = 'CommandExecute')
@@ -7572,19 +7550,19 @@ BEGIN
   IF @DatabasesInParallel = 'Y' AND NOT EXISTS (SELECT * FROM sys.objects objects INNER JOIN sys.schemas schemas ON objects.[schema_id] = schemas.[schema_id] WHERE objects.[type] = 'U' AND schemas.[name] = 'dbo' AND objects.[name] = 'Queue')
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The table Queue is missing. Download https://ola.hallengren.com/scripts/Queue.sql.', 16, 1)
+    VALUES('The table Queue is missing. It is required when @DatabasesInParallel = ''Y''. Download https://ola.hallengren.com/scripts/Queue.sql.', 16, 1)
   END
 
   IF @DatabasesInParallel = 'Y' AND NOT EXISTS (SELECT * FROM sys.objects objects INNER JOIN sys.schemas schemas ON objects.[schema_id] = schemas.[schema_id] WHERE objects.[type] = 'U' AND schemas.[name] = 'dbo' AND objects.[name] = 'QueueDatabase')
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The table QueueDatabase is missing. Download https://ola.hallengren.com/scripts/QueueDatabase.sql.', 16, 1)
+    VALUES('The table QueueDatabase is missing. It is required when @DatabasesInParallel = ''Y''. Download https://ola.hallengren.com/scripts/QueueDatabase.sql.', 16, 1)
   END
 
   IF @@TRANCOUNT <> 0
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The transaction count is not 0.', 16, 1)
+    VALUES('The stored procedure cannot be executed inside a transaction. The transaction count (@@TRANCOUNT) has to be 0. See https://ola.hallengren.com/sql-server-index-and-statistics-maintenance.html.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -7707,7 +7685,7 @@ BEGIN
   IF @Databases IS NOT NULL AND (NOT EXISTS(SELECT * FROM @SelectedDatabases) OR EXISTS(SELECT * FROM @SelectedDatabases WHERE DatabaseName IS NULL OR DATALENGTH(DatabaseName) = 0))
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @Databases is not supported.', 16, 1)
+    VALUES('The value for the parameter @Databases is not supported. The value could not be parsed into a list of databases. See https://ola.hallengren.com/sql-server-index-and-statistics-maintenance.html#Databases.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -7799,22 +7777,28 @@ BEGIN
 
   END
 
-  IF @AvailabilityGroups IS NOT NULL AND (NOT EXISTS(SELECT * FROM @SelectedAvailabilityGroups) OR EXISTS(SELECT * FROM @SelectedAvailabilityGroups WHERE AvailabilityGroupName IS NULL OR AvailabilityGroupName = '') OR @IsHadrEnabled = 0)
+  IF @AvailabilityGroups IS NOT NULL AND (NOT EXISTS(SELECT * FROM @SelectedAvailabilityGroups) OR EXISTS(SELECT * FROM @SelectedAvailabilityGroups WHERE AvailabilityGroupName IS NULL OR AvailabilityGroupName = ''))
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @AvailabilityGroups is not supported.', 16, 1)
+    VALUES('The value for the parameter @AvailabilityGroups is not supported. The value could not be parsed into a list of availability groups. See https://ola.hallengren.com/sql-server-index-and-statistics-maintenance.html#AvailabilityGroups.', 16, 1)
+  END
+
+  IF @AvailabilityGroups IS NOT NULL AND @IsHadrEnabled = 0
+  BEGIN
+    INSERT INTO @Errors ([Message], Severity, [State])
+    VALUES('The parameter @AvailabilityGroups can only be used when availability groups are enabled on the instance. See https://ola.hallengren.com/sql-server-index-and-statistics-maintenance.html#AvailabilityGroups.', 16, 1)
   END
 
   IF (@Databases IS NULL AND @AvailabilityGroups IS NULL)
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('You need to specify one of the parameters @Databases and @AvailabilityGroups.', 16, 2)
+    VALUES('You need to specify one of the parameters @Databases and @AvailabilityGroups. See https://ola.hallengren.com/sql-server-index-and-statistics-maintenance.html.', 16, 1)
   END
 
   IF (@Databases IS NOT NULL AND @AvailabilityGroups IS NOT NULL)
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('You can only specify one of the parameters @Databases and @AvailabilityGroups.', 16, 3)
+    VALUES('You can only specify one of the parameters @Databases and @AvailabilityGroups. See https://ola.hallengren.com/sql-server-index-and-statistics-maintenance.html.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -7952,13 +7936,13 @@ BEGIN
   IF EXISTS (SELECT [Action] FROM @ActionsPreferred WHERE FragmentationGroup = 'Low' AND [Action] NOT IN(SELECT * FROM @Actions))
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @FragmentationLow is not supported.', 16, 1)
+    VALUES('The value for the parameter @FragmentationLow is not supported. Supported values are INDEX_REBUILD_ONLINE, INDEX_REBUILD_OFFLINE and INDEX_REORGANIZE. See https://ola.hallengren.com/sql-server-index-and-statistics-maintenance.html#FragmentationLow.', 16, 1)
   END
 
   IF EXISTS (SELECT * FROM @ActionsPreferred WHERE FragmentationGroup = 'Low' GROUP BY [Action] HAVING COUNT(*) > 1)
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @FragmentationLow is not supported.', 16, 2)
+    VALUES('The value for the parameter @FragmentationLow is not supported. The same action has been specified more than once. See https://ola.hallengren.com/sql-server-index-and-statistics-maintenance.html#FragmentationLow.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -7966,13 +7950,13 @@ BEGIN
   IF EXISTS (SELECT [Action] FROM @ActionsPreferred WHERE FragmentationGroup = 'Medium' AND [Action] NOT IN(SELECT * FROM @Actions))
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @FragmentationMedium is not supported.', 16, 1)
+    VALUES('The value for the parameter @FragmentationMedium is not supported. Supported values are INDEX_REBUILD_ONLINE, INDEX_REBUILD_OFFLINE and INDEX_REORGANIZE. See https://ola.hallengren.com/sql-server-index-and-statistics-maintenance.html#FragmentationMedium.', 16, 1)
   END
 
   IF EXISTS (SELECT * FROM @ActionsPreferred WHERE FragmentationGroup = 'Medium' GROUP BY [Action] HAVING COUNT(*) > 1)
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @FragmentationMedium is not supported.', 16, 2)
+    VALUES('The value for the parameter @FragmentationMedium is not supported. The same action has been specified more than once. See https://ola.hallengren.com/sql-server-index-and-statistics-maintenance.html#FragmentationMedium.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -7980,13 +7964,13 @@ BEGIN
   IF EXISTS (SELECT [Action] FROM @ActionsPreferred WHERE FragmentationGroup = 'High' AND [Action] NOT IN(SELECT * FROM @Actions))
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @FragmentationHigh is not supported.', 16, 1)
+    VALUES('The value for the parameter @FragmentationHigh is not supported. Supported values are INDEX_REBUILD_ONLINE, INDEX_REBUILD_OFFLINE and INDEX_REORGANIZE. See https://ola.hallengren.com/sql-server-index-and-statistics-maintenance.html#FragmentationHigh.', 16, 1)
   END
 
   IF EXISTS (SELECT * FROM @ActionsPreferred WHERE FragmentationGroup = 'High' GROUP BY [Action] HAVING COUNT(*) > 1)
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @FragmentationHigh is not supported.', 16, 2)
+    VALUES('The value for the parameter @FragmentationHigh is not supported. The same action has been specified more than once. See https://ola.hallengren.com/sql-server-index-and-statistics-maintenance.html#FragmentationHigh.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -7994,7 +7978,7 @@ BEGIN
   IF @FragmentationLevel1 <= 0 OR @FragmentationLevel1 >= 100 OR @FragmentationLevel1 IS NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @FragmentationLevel1 is not supported.', 16, 1)
+    VALUES('The value for the parameter @FragmentationLevel1 is not supported. The value has to be greater than 0 and less than 100. See https://ola.hallengren.com/sql-server-index-and-statistics-maintenance.html#FragmentationLevel1.', 16, 1)
   END
 
 
@@ -8003,7 +7987,7 @@ BEGIN
   IF @FragmentationLevel2 <= 0 OR @FragmentationLevel2 >= 100 OR @FragmentationLevel2 IS NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @FragmentationLevel2 is not supported.', 16, 1)
+    VALUES('The value for the parameter @FragmentationLevel2 is not supported. The value has to be greater than 0 and less than 100. See https://ola.hallengren.com/sql-server-index-and-statistics-maintenance.html#FragmentationLevel2.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -8011,7 +7995,7 @@ BEGIN
   IF @FragmentationLevel2 <= @FragmentationLevel1
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @FragmentationLevel2 has to be greater than the value for @FragmentationLevel1.', 16, 1)
+    VALUES('The value for the parameter @FragmentationLevel2 has to be greater than the value for @FragmentationLevel1. See https://ola.hallengren.com/sql-server-index-and-statistics-maintenance.html#FragmentationLevel2.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -8019,7 +8003,7 @@ BEGIN
   IF @MinNumberOfPages < 0 OR @MinNumberOfPages IS NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @MinNumberOfPages is not supported.', 16, 1)
+    VALUES('The value for the parameter @MinNumberOfPages is not supported. The value has to be greater than or equal to 0. See https://ola.hallengren.com/sql-server-index-and-statistics-maintenance.html#MinNumberOfPages.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -8027,7 +8011,7 @@ BEGIN
   IF @MaxNumberOfPages < 0
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @MaxNumberOfPages is not supported.', 16, 1)
+    VALUES('The value for the parameter @MaxNumberOfPages is not supported. The value has to be greater than or equal to 0. See https://ola.hallengren.com/sql-server-index-and-statistics-maintenance.html#MaxNumberOfPages.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -8035,7 +8019,7 @@ BEGIN
   IF @MinNumberOfPages > @MaxNumberOfPages
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @MaxNumberOfPages has to be greater than or equal to the value for @MinNumberOfPages.', 16, 1)
+    VALUES('The value for the parameter @MaxNumberOfPages has to be greater than or equal to the value for @MinNumberOfPages. See https://ola.hallengren.com/sql-server-index-and-statistics-maintenance.html#MaxNumberOfPages.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -8043,7 +8027,7 @@ BEGIN
   IF @SortInTempdb NOT IN('Y','N') OR @SortInTempdb IS NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @SortInTempdb is not supported.', 16, 1)
+    VALUES('The value for the parameter @SortInTempdb is not supported. Supported values are ''Y'' and ''N''. See https://ola.hallengren.com/sql-server-index-and-statistics-maintenance.html#SortInTempdb.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -8051,7 +8035,7 @@ BEGIN
   IF @MaxDOP < 0 OR @MaxDOP > 64
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @MaxDOP is not supported.', 16, 1)
+    VALUES('The value for the parameter @MaxDOP is not supported. The value has to be between 0 and 64. See https://ola.hallengren.com/sql-server-index-and-statistics-maintenance.html#MaxDOP.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -8059,7 +8043,7 @@ BEGIN
   IF @FillFactor <= 0 OR @FillFactor > 100
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @FillFactor is not supported.', 16, 1)
+    VALUES('The value for the parameter @FillFactor is not supported. The value has to be between 1 and 100. See https://ola.hallengren.com/sql-server-index-and-statistics-maintenance.html#FillFactor.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -8067,7 +8051,7 @@ BEGIN
   IF @PadIndex NOT IN('Y','N')
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @PadIndex is not supported.', 16, 1)
+    VALUES('The value for the parameter @PadIndex is not supported. Supported values are ''Y'' and ''N''. See https://ola.hallengren.com/sql-server-index-and-statistics-maintenance.html#PadIndex.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -8075,7 +8059,7 @@ BEGIN
   IF @DataCompression NOT IN('NONE', 'PAGE', 'ROW')
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @DataCompression is not supported.', 16, 1)
+    VALUES('The value for the parameter @DataCompression is not supported. Supported values are NONE, PAGE and ROW. See https://ola.hallengren.com/sql-server-index-and-statistics-maintenance.html#DataCompression.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -8083,13 +8067,13 @@ BEGIN
   IF @WaitAtLowPriorityMaxDuration < 0
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @WaitAtLowPriorityMaxDuration is not supported.', 16, 1)
+    VALUES('The value for the parameter @WaitAtLowPriorityMaxDuration is not supported. The value has to be greater than or equal to 0. See https://ola.hallengren.com/sql-server-index-and-statistics-maintenance.html#WaitAtLowPriorityMaxDuration.', 16, 1)
   END
 
   IF @WaitAtLowPriorityAbortAfterWait = 'SELF' AND @WaitAtLowPriorityMaxDuration = 0
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @WaitAtLowPriorityMaxDuration is not supported.', 16, 2)
+    VALUES('The value for the parameter @WaitAtLowPriorityMaxDuration is not supported. The value has to be greater than 0 when @WaitAtLowPriorityAbortAfterWait = ''SELF''. See https://ola.hallengren.com/sql-server-index-and-statistics-maintenance.html#WaitAtLowPriorityMaxDuration.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -8097,7 +8081,7 @@ BEGIN
   IF @WaitAtLowPriorityAbortAfterWait NOT IN('NONE','SELF','BLOCKERS')
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @WaitAtLowPriorityAbortAfterWait is not supported.', 16, 1)
+    VALUES('The value for the parameter @WaitAtLowPriorityAbortAfterWait is not supported. Supported values are NONE, SELF and BLOCKERS. See https://ola.hallengren.com/sql-server-index-and-statistics-maintenance.html#WaitAtLowPriorityAbortAfterWait.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -8105,7 +8089,7 @@ BEGIN
   IF (@WaitAtLowPriorityAbortAfterWait IS NOT NULL AND @WaitAtLowPriorityMaxDuration IS NULL) OR (@WaitAtLowPriorityAbortAfterWait IS NULL AND @WaitAtLowPriorityMaxDuration IS NOT NULL)
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The parameters @WaitAtLowPriorityMaxDuration and @WaitAtLowPriorityAbortAfterWait can only be used together.', 16, 1)
+    VALUES('The parameters @WaitAtLowPriorityMaxDuration and @WaitAtLowPriorityAbortAfterWait can only be used together. See https://ola.hallengren.com/sql-server-index-and-statistics-maintenance.html.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -8113,13 +8097,13 @@ BEGIN
   IF @Resumable NOT IN('Y','N') OR @Resumable IS NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @Resumable is not supported.', 16, 1)
+    VALUES('The value for the parameter @Resumable is not supported. Supported values are ''Y'' and ''N''. See https://ola.hallengren.com/sql-server-index-and-statistics-maintenance.html#Resumable.', 16, 1)
   END
 
   IF @Resumable = 'Y' AND @SortInTempdb = 'Y'
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('You can only specify one of the parameters @Resumable and @SortInTempdb.', 16, 2)
+    VALUES('You can only specify one of the parameters @Resumable and @SortInTempdb. See https://ola.hallengren.com/sql-server-index-and-statistics-maintenance.html.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -8127,7 +8111,7 @@ BEGIN
   IF @LOBCompaction NOT IN('Y','N') OR @LOBCompaction IS NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @LOBCompaction is not supported.', 16, 1)
+    VALUES('The value for the parameter @LOBCompaction is not supported. Supported values are ''Y'' and ''N''. See https://ola.hallengren.com/sql-server-index-and-statistics-maintenance.html#LOBCompaction.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -8135,7 +8119,7 @@ BEGIN
   IF @UpdateStatistics NOT IN('ALL','COLUMNS','INDEX')
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @UpdateStatistics is not supported.', 16, 1)
+    VALUES('The value for the parameter @UpdateStatistics is not supported. Supported values are ALL, COLUMNS and INDEX. See https://ola.hallengren.com/sql-server-index-and-statistics-maintenance.html#UpdateStatistics.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -8143,7 +8127,7 @@ BEGIN
   IF @OnlyModifiedStatistics NOT IN('Y','N') OR @OnlyModifiedStatistics IS NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @OnlyModifiedStatistics is not supported.', 16, 1)
+    VALUES('The value for the parameter @OnlyModifiedStatistics is not supported. Supported values are ''Y'' and ''N''. See https://ola.hallengren.com/sql-server-index-and-statistics-maintenance.html#OnlyModifiedStatistics.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -8151,7 +8135,7 @@ BEGIN
   IF @StatisticsModificationLevel <= 0 OR @StatisticsModificationLevel > 100
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @StatisticsModificationLevel is not supported.', 16, 1)
+    VALUES('The value for the parameter @StatisticsModificationLevel is not supported. The value has to be greater than 0 and less than or equal to 100. See https://ola.hallengren.com/sql-server-index-and-statistics-maintenance.html#StatisticsModificationLevel.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -8159,7 +8143,7 @@ BEGIN
   IF @OnlyModifiedStatistics = 'Y' AND @StatisticsModificationLevel IS NOT NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('You can only specify one of the parameters @OnlyModifiedStatistics and @StatisticsModificationLevel.', 16, 1)
+    VALUES('You can only specify one of the parameters @OnlyModifiedStatistics and @StatisticsModificationLevel. See https://ola.hallengren.com/sql-server-index-and-statistics-maintenance.html.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -8167,7 +8151,7 @@ BEGIN
   IF @StatisticsSample <= 0 OR @StatisticsSample  > 100
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @StatisticsSample is not supported.', 16, 1)
+    VALUES('The value for the parameter @StatisticsSample is not supported. The value has to be between 1 and 100. See https://ola.hallengren.com/sql-server-index-and-statistics-maintenance.html#StatisticsSample.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -8175,25 +8159,25 @@ BEGIN
   IF @StatisticsPersistSample NOT IN('Y','N')
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @StatisticsPersistSample is not supported.', 16, 1)
+    VALUES('The value for the parameter @StatisticsPersistSample is not supported. Supported values are ''Y'' and ''N''. See https://ola.hallengren.com/sql-server-index-and-statistics-maintenance.html#StatisticsPersistSample.', 16, 1)
   END
 
   IF @StatisticsPersistSample IS NOT NULL AND @StatisticsSample IS NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The parameter @StatisticsPersistSample can only be used together with @StatisticsSample.', 16, 2)
+    VALUES('The parameter @StatisticsPersistSample can only be used together with @StatisticsSample. See https://ola.hallengren.com/sql-server-index-and-statistics-maintenance.html#StatisticsPersistSample.', 16, 1)
   END
 
   IF @StatisticsPersistSample IS NOT NULL AND @StatisticsResample = 'Y'
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The parameters @StatisticsPersistSample and @StatisticsResample cannot be used together.', 16, 3)
+    VALUES('The parameters @StatisticsPersistSample and @StatisticsResample cannot be used together. See https://ola.hallengren.com/sql-server-index-and-statistics-maintenance.html.', 16, 1)
   END
 
   IF @StatisticsPersistSample IS NOT NULL AND NOT (@Version >= 14.03006 OR @EngineEdition = 5 OR (@EngineEdition = 8 AND @ProductUpdateType = 'Continuous'))
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @StatisticsPersistSample is not supported.', 16, 4)
+    VALUES('The value for the parameter @StatisticsPersistSample is not supported. PERSIST_SAMPLE_PERCENT is not supported in this version of SQL Server. See https://ola.hallengren.com/sql-server-index-and-statistics-maintenance.html#StatisticsPersistSample.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -8201,13 +8185,13 @@ BEGIN
   IF @StatisticsResample NOT IN('Y','N') OR @StatisticsResample IS NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @StatisticsResample is not supported.', 16, 1)
+    VALUES('The value for the parameter @StatisticsResample is not supported. Supported values are ''Y'' and ''N''. See https://ola.hallengren.com/sql-server-index-and-statistics-maintenance.html#StatisticsResample.', 16, 1)
   END
 
   IF @StatisticsResample = 'Y' AND @StatisticsSample IS NOT NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @StatisticsResample is not supported.', 16, 2)
+    VALUES('Setting @StatisticsResample to ''Y'' cannot be combined with @StatisticsSample. See https://ola.hallengren.com/sql-server-index-and-statistics-maintenance.html#StatisticsResample.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -8215,7 +8199,7 @@ BEGIN
   IF @PartitionLevel NOT IN('Y','N') OR @PartitionLevel IS NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @PartitionLevel is not supported.', 16, 1)
+    VALUES('The value for the parameter @PartitionLevel is not supported. Supported values are ''Y'' and ''N''. See https://ola.hallengren.com/sql-server-index-and-statistics-maintenance.html#PartitionLevel.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -8223,7 +8207,7 @@ BEGIN
   IF @MSShippedObjects NOT IN('Y','N') OR @MSShippedObjects IS NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @MSShippedObjects is not supported.', 16, 1)
+    VALUES('The value for the parameter @MSShippedObjects is not supported. Supported values are ''Y'' and ''N''. See https://ola.hallengren.com/sql-server-index-and-statistics-maintenance.html#MSShippedObjects.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -8231,13 +8215,13 @@ BEGIN
   IF EXISTS(SELECT * FROM @SelectedIndexes WHERE DatabaseName IS NULL OR SchemaName IS NULL OR ObjectName IS NULL OR IndexName IS NULL)
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @Indexes is not supported.', 16, 1)
+    VALUES('The value for the parameter @Indexes is not supported. The value contains one or more items that could not be parsed. See https://ola.hallengren.com/sql-server-index-and-statistics-maintenance.html#Indexes.', 16, 1)
   END
 
   IF @Indexes IS NOT NULL AND NOT EXISTS(SELECT * FROM @SelectedIndexes)
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @Indexes is not supported.', 16, 2)
+    VALUES('The value for the parameter @Indexes is not supported. The value could not be parsed into a list of indexes. See https://ola.hallengren.com/sql-server-index-and-statistics-maintenance.html#Indexes.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -8245,35 +8229,23 @@ BEGIN
   IF @TimeLimit < 0
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @TimeLimit is not supported.', 16, 1)
+    VALUES('The value for the parameter @TimeLimit is not supported. The value has to be greater than or equal to 0. See https://ola.hallengren.com/sql-server-index-and-statistics-maintenance.html#TimeLimit.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
 
-  IF @Delay < 0
+  IF @Delay < 0 OR @Delay >= 86400
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @Delay is not supported.', 16, 1)
-  END
-
-  IF @Delay >= 86400
-  BEGIN
-    INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @Delay is not supported.', 16, 2)
+    VALUES('The value for the parameter @Delay is not supported. The value has to be greater than or equal to 0 and less than 86400. See https://ola.hallengren.com/sql-server-index-and-statistics-maintenance.html#Delay.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
 
-  IF @LockTimeout < 0
+  IF @LockTimeout < 0 OR @LockTimeout > 86400
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @LockTimeout is not supported.', 16, 1)
-  END
-
-  IF @LockTimeout > 86400
-  BEGIN
-    INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @LockTimeout is not supported.', 16, 2)
+    VALUES('The value for the parameter @LockTimeout is not supported. The value has to be between 0 and 86400. See https://ola.hallengren.com/sql-server-integrity-check.html#LockTimeout.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -8281,7 +8253,7 @@ BEGIN
   IF @LockMessageSeverity NOT IN(10, 16) OR @LockMessageSeverity IS NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @LockMessageSeverity is not supported.', 16, 1)
+    VALUES('The value for the parameter @LockMessageSeverity is not supported. Supported values are 10 and 16. See https://ola.hallengren.com/sql-server-index-and-statistics-maintenance.html#LockMessageSeverity.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -8289,7 +8261,7 @@ BEGIN
   IF @StringDelimiter IS NULL OR LEN(@StringDelimiter) <> 1
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @StringDelimiter is not supported.', 16, 1)
+    VALUES('The value for the parameter @StringDelimiter is not supported. The value has to be exactly one character. See https://ola.hallengren.com/sql-server-index-and-statistics-maintenance.html#StringDelimiter.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -8297,13 +8269,13 @@ BEGIN
   IF @DatabaseOrder NOT IN('DATABASE_NAME_ASC','DATABASE_NAME_DESC','DATABASE_SIZE_ASC','DATABASE_SIZE_DESC')
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @DatabaseOrder is not supported.', 16, 1)
+    VALUES('The value for the parameter @DatabaseOrder is not supported. Supported values are DATABASE_NAME_ASC, DATABASE_NAME_DESC, DATABASE_SIZE_ASC and DATABASE_SIZE_DESC. See https://ola.hallengren.com/sql-server-index-and-statistics-maintenance.html#DatabaseOrder.', 16, 1)
   END
 
   IF @DatabaseOrder IS NOT NULL AND @EngineEdition = 5
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @DatabaseOrder is not supported.', 16, 2)
+    VALUES('The parameter @DatabaseOrder is not supported in Azure SQL Database. See https://ola.hallengren.com/sql-server-index-and-statistics-maintenance.html#DatabaseOrder.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -8311,13 +8283,13 @@ BEGIN
   IF @DatabasesInParallel NOT IN('Y','N') OR @DatabasesInParallel IS NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @DatabasesInParallel is not supported.', 16, 1)
+    VALUES('The value for the parameter @DatabasesInParallel is not supported. Supported values are ''Y'' and ''N''. See https://ola.hallengren.com/sql-server-index-and-statistics-maintenance.html#DatabasesInParallel.', 16, 1)
   END
 
   IF @DatabasesInParallel = 'Y' AND @EngineEdition = 5
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @DatabasesInParallel is not supported.', 16, 2)
+    VALUES('The parameter @DatabasesInParallel is not supported in Azure SQL Database. See https://ola.hallengren.com/sql-server-index-and-statistics-maintenance.html#DatabasesInParallel.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -8325,7 +8297,7 @@ BEGIN
   IF LEN(@ExecuteAsUser) > 128
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @ExecuteAsUser is not supported.', 16, 1)
+    VALUES('The value for the parameter @ExecuteAsUser is not supported. The maximum length is 128 characters. See https://ola.hallengren.com/sql-server-index-and-statistics-maintenance.html#ExecuteAsUser.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -8333,7 +8305,7 @@ BEGIN
   IF @LogToTable NOT IN('Y','N') OR @LogToTable IS NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @LogToTable is not supported.', 16, 1)
+    VALUES('The value for the parameter @LogToTable is not supported. Supported values are ''Y'' and ''N''. See https://ola.hallengren.com/sql-server-index-and-statistics-maintenance.html#LogToTable.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -8341,15 +8313,7 @@ BEGIN
   IF @Execute NOT IN('Y','N') OR @Execute IS NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @Execute is not supported.', 16, 1)
-  END
-
-  ----------------------------------------------------------------------------------------------------
-
-  IF EXISTS(SELECT * FROM @Errors)
-  BEGIN
-    INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The documentation is available at https://ola.hallengren.com/sql-server-index-and-statistics-maintenance.html.', 16, 1)
+    VALUES('The value for the parameter @Execute is not supported. Supported values are ''Y'' and ''N''. See https://ola.hallengren.com/sql-server-index-and-statistics-maintenance.html#Execute.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -8365,7 +8329,7 @@ BEGIN
   IF @ErrorMessage IS NOT NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The following databases in the @Databases parameter do not exist: ' + @ErrorMessage + '.', 10, 1)
+    VALUES('The following databases in the @Databases parameter do not exist: ' + @ErrorMessage + '. See https://ola.hallengren.com/sql-server-index-and-statistics-maintenance.html#Databases.', 10, 1)
   END
 
   SELECT @ErrorMessage = STRING_AGG(CAST(QUOTENAME(DatabaseName) AS nvarchar(max)), ', ')
@@ -8377,7 +8341,7 @@ BEGIN
   IF @ErrorMessage IS NOT NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The following databases in the @Indexes parameter do not exist: ' + @ErrorMessage + '.', 10, 1)
+    VALUES('The following databases in the @Indexes parameter do not exist: ' + @ErrorMessage + '. See https://ola.hallengren.com/sql-server-index-and-statistics-maintenance.html#Indexes.', 10, 1)
   END
 
   SELECT @ErrorMessage = STRING_AGG(CAST(QUOTENAME(AvailabilityGroupName) AS nvarchar(max)), ', ')
@@ -8389,7 +8353,7 @@ BEGIN
   IF @ErrorMessage IS NOT NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The following availability groups do not exist: ' + @ErrorMessage + '.', 10, 1)
+    VALUES('The following availability groups do not exist: ' + @ErrorMessage + '. See https://ola.hallengren.com/sql-server-index-and-statistics-maintenance.html#AvailabilityGroups.', 10, 1)
   END
 
   SELECT @ErrorMessage = STRING_AGG(CAST(QUOTENAME(DatabaseName) AS nvarchar(max)), ', ')
@@ -8402,7 +8366,7 @@ BEGIN
   IF @ErrorMessage IS NOT NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The following databases have been selected in the @Indexes parameter, but not in the @Databases or @AvailabilityGroups parameters: ' + @ErrorMessage + '.', 10, 1)
+    VALUES('The following databases have been selected in the @Indexes parameter, but not in the @Databases or @AvailabilityGroups parameters: ' + @ErrorMessage + '. See https://ola.hallengren.com/sql-server-index-and-statistics-maintenance.html#Indexes.', 10, 1)
   END
 
   ----------------------------------------------------------------------------------------------------

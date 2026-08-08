@@ -56,7 +56,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-08-08 16:00:55                                                               //--
+  --// Version: 2026-08-08 22:31:52                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -517,13 +517,13 @@ BEGIN
   IF NOT (SELECT uses_ansi_nulls FROM sys.sql_modules WHERE [object_id] = @@PROCID) = 1
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('ANSI_NULLS has to be set to ON for the stored procedure.', 16, 1)
+    VALUES('ANSI_NULLS has to be set to ON for the stored procedure. See https://ola.hallengren.com/sql-server-index-and-statistics-maintenance.html.', 16, 1)
   END
 
   IF NOT (SELECT uses_quoted_identifier FROM sys.sql_modules WHERE [object_id] = @@PROCID) = 1
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('QUOTED_IDENTIFIER has to be set to ON for the stored procedure.', 16, 1)
+    VALUES('QUOTED_IDENTIFIER has to be set to ON for the stored procedure. See https://ola.hallengren.com/sql-server-index-and-statistics-maintenance.html.', 16, 1)
   END
 
   IF NOT EXISTS (SELECT * FROM sys.objects objects INNER JOIN sys.schemas schemas ON objects.[schema_id] = schemas.[schema_id] WHERE objects.[type] = 'P' AND schemas.[name] = 'dbo' AND objects.[name] = 'CommandExecute')
@@ -547,19 +547,19 @@ BEGIN
   IF @DatabasesInParallel = 'Y' AND NOT EXISTS (SELECT * FROM sys.objects objects INNER JOIN sys.schemas schemas ON objects.[schema_id] = schemas.[schema_id] WHERE objects.[type] = 'U' AND schemas.[name] = 'dbo' AND objects.[name] = 'Queue')
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The table Queue is missing. Download https://ola.hallengren.com/scripts/Queue.sql.', 16, 1)
+    VALUES('The table Queue is missing. It is required when @DatabasesInParallel = ''Y''. Download https://ola.hallengren.com/scripts/Queue.sql.', 16, 1)
   END
 
   IF @DatabasesInParallel = 'Y' AND NOT EXISTS (SELECT * FROM sys.objects objects INNER JOIN sys.schemas schemas ON objects.[schema_id] = schemas.[schema_id] WHERE objects.[type] = 'U' AND schemas.[name] = 'dbo' AND objects.[name] = 'QueueDatabase')
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The table QueueDatabase is missing. Download https://ola.hallengren.com/scripts/QueueDatabase.sql.', 16, 1)
+    VALUES('The table QueueDatabase is missing. It is required when @DatabasesInParallel = ''Y''. Download https://ola.hallengren.com/scripts/QueueDatabase.sql.', 16, 1)
   END
 
   IF @@TRANCOUNT <> 0
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The transaction count is not 0.', 16, 1)
+    VALUES('The stored procedure cannot be executed inside a transaction. The transaction count (@@TRANCOUNT) has to be 0. See https://ola.hallengren.com/sql-server-index-and-statistics-maintenance.html.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -682,7 +682,7 @@ BEGIN
   IF @Databases IS NOT NULL AND (NOT EXISTS(SELECT * FROM @SelectedDatabases) OR EXISTS(SELECT * FROM @SelectedDatabases WHERE DatabaseName IS NULL OR DATALENGTH(DatabaseName) = 0))
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @Databases is not supported.', 16, 1)
+    VALUES('The value for the parameter @Databases is not supported. The value could not be parsed into a list of databases. See https://ola.hallengren.com/sql-server-index-and-statistics-maintenance.html#Databases.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -774,22 +774,28 @@ BEGIN
 
   END
 
-  IF @AvailabilityGroups IS NOT NULL AND (NOT EXISTS(SELECT * FROM @SelectedAvailabilityGroups) OR EXISTS(SELECT * FROM @SelectedAvailabilityGroups WHERE AvailabilityGroupName IS NULL OR AvailabilityGroupName = '') OR @IsHadrEnabled = 0)
+  IF @AvailabilityGroups IS NOT NULL AND (NOT EXISTS(SELECT * FROM @SelectedAvailabilityGroups) OR EXISTS(SELECT * FROM @SelectedAvailabilityGroups WHERE AvailabilityGroupName IS NULL OR AvailabilityGroupName = ''))
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @AvailabilityGroups is not supported.', 16, 1)
+    VALUES('The value for the parameter @AvailabilityGroups is not supported. The value could not be parsed into a list of availability groups. See https://ola.hallengren.com/sql-server-index-and-statistics-maintenance.html#AvailabilityGroups.', 16, 1)
+  END
+
+  IF @AvailabilityGroups IS NOT NULL AND @IsHadrEnabled = 0
+  BEGIN
+    INSERT INTO @Errors ([Message], Severity, [State])
+    VALUES('The parameter @AvailabilityGroups can only be used when availability groups are enabled on the instance. See https://ola.hallengren.com/sql-server-index-and-statistics-maintenance.html#AvailabilityGroups.', 16, 1)
   END
 
   IF (@Databases IS NULL AND @AvailabilityGroups IS NULL)
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('You need to specify one of the parameters @Databases and @AvailabilityGroups.', 16, 2)
+    VALUES('You need to specify one of the parameters @Databases and @AvailabilityGroups. See https://ola.hallengren.com/sql-server-index-and-statistics-maintenance.html.', 16, 1)
   END
 
   IF (@Databases IS NOT NULL AND @AvailabilityGroups IS NOT NULL)
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('You can only specify one of the parameters @Databases and @AvailabilityGroups.', 16, 3)
+    VALUES('You can only specify one of the parameters @Databases and @AvailabilityGroups. See https://ola.hallengren.com/sql-server-index-and-statistics-maintenance.html.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -927,13 +933,13 @@ BEGIN
   IF EXISTS (SELECT [Action] FROM @ActionsPreferred WHERE FragmentationGroup = 'Low' AND [Action] NOT IN(SELECT * FROM @Actions))
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @FragmentationLow is not supported.', 16, 1)
+    VALUES('The value for the parameter @FragmentationLow is not supported. Supported values are INDEX_REBUILD_ONLINE, INDEX_REBUILD_OFFLINE and INDEX_REORGANIZE. See https://ola.hallengren.com/sql-server-index-and-statistics-maintenance.html#FragmentationLow.', 16, 1)
   END
 
   IF EXISTS (SELECT * FROM @ActionsPreferred WHERE FragmentationGroup = 'Low' GROUP BY [Action] HAVING COUNT(*) > 1)
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @FragmentationLow is not supported.', 16, 2)
+    VALUES('The value for the parameter @FragmentationLow is not supported. The same action has been specified more than once. See https://ola.hallengren.com/sql-server-index-and-statistics-maintenance.html#FragmentationLow.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -941,13 +947,13 @@ BEGIN
   IF EXISTS (SELECT [Action] FROM @ActionsPreferred WHERE FragmentationGroup = 'Medium' AND [Action] NOT IN(SELECT * FROM @Actions))
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @FragmentationMedium is not supported.', 16, 1)
+    VALUES('The value for the parameter @FragmentationMedium is not supported. Supported values are INDEX_REBUILD_ONLINE, INDEX_REBUILD_OFFLINE and INDEX_REORGANIZE. See https://ola.hallengren.com/sql-server-index-and-statistics-maintenance.html#FragmentationMedium.', 16, 1)
   END
 
   IF EXISTS (SELECT * FROM @ActionsPreferred WHERE FragmentationGroup = 'Medium' GROUP BY [Action] HAVING COUNT(*) > 1)
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @FragmentationMedium is not supported.', 16, 2)
+    VALUES('The value for the parameter @FragmentationMedium is not supported. The same action has been specified more than once. See https://ola.hallengren.com/sql-server-index-and-statistics-maintenance.html#FragmentationMedium.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -955,13 +961,13 @@ BEGIN
   IF EXISTS (SELECT [Action] FROM @ActionsPreferred WHERE FragmentationGroup = 'High' AND [Action] NOT IN(SELECT * FROM @Actions))
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @FragmentationHigh is not supported.', 16, 1)
+    VALUES('The value for the parameter @FragmentationHigh is not supported. Supported values are INDEX_REBUILD_ONLINE, INDEX_REBUILD_OFFLINE and INDEX_REORGANIZE. See https://ola.hallengren.com/sql-server-index-and-statistics-maintenance.html#FragmentationHigh.', 16, 1)
   END
 
   IF EXISTS (SELECT * FROM @ActionsPreferred WHERE FragmentationGroup = 'High' GROUP BY [Action] HAVING COUNT(*) > 1)
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @FragmentationHigh is not supported.', 16, 2)
+    VALUES('The value for the parameter @FragmentationHigh is not supported. The same action has been specified more than once. See https://ola.hallengren.com/sql-server-index-and-statistics-maintenance.html#FragmentationHigh.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -969,7 +975,7 @@ BEGIN
   IF @FragmentationLevel1 <= 0 OR @FragmentationLevel1 >= 100 OR @FragmentationLevel1 IS NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @FragmentationLevel1 is not supported.', 16, 1)
+    VALUES('The value for the parameter @FragmentationLevel1 is not supported. The value has to be greater than 0 and less than 100. See https://ola.hallengren.com/sql-server-index-and-statistics-maintenance.html#FragmentationLevel1.', 16, 1)
   END
 
 
@@ -978,7 +984,7 @@ BEGIN
   IF @FragmentationLevel2 <= 0 OR @FragmentationLevel2 >= 100 OR @FragmentationLevel2 IS NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @FragmentationLevel2 is not supported.', 16, 1)
+    VALUES('The value for the parameter @FragmentationLevel2 is not supported. The value has to be greater than 0 and less than 100. See https://ola.hallengren.com/sql-server-index-and-statistics-maintenance.html#FragmentationLevel2.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -986,7 +992,7 @@ BEGIN
   IF @FragmentationLevel2 <= @FragmentationLevel1
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @FragmentationLevel2 has to be greater than the value for @FragmentationLevel1.', 16, 1)
+    VALUES('The value for the parameter @FragmentationLevel2 has to be greater than the value for @FragmentationLevel1. See https://ola.hallengren.com/sql-server-index-and-statistics-maintenance.html#FragmentationLevel2.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -994,7 +1000,7 @@ BEGIN
   IF @MinNumberOfPages < 0 OR @MinNumberOfPages IS NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @MinNumberOfPages is not supported.', 16, 1)
+    VALUES('The value for the parameter @MinNumberOfPages is not supported. The value has to be greater than or equal to 0. See https://ola.hallengren.com/sql-server-index-and-statistics-maintenance.html#MinNumberOfPages.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -1002,7 +1008,7 @@ BEGIN
   IF @MaxNumberOfPages < 0
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @MaxNumberOfPages is not supported.', 16, 1)
+    VALUES('The value for the parameter @MaxNumberOfPages is not supported. The value has to be greater than or equal to 0. See https://ola.hallengren.com/sql-server-index-and-statistics-maintenance.html#MaxNumberOfPages.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -1010,7 +1016,7 @@ BEGIN
   IF @MinNumberOfPages > @MaxNumberOfPages
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @MaxNumberOfPages has to be greater than or equal to the value for @MinNumberOfPages.', 16, 1)
+    VALUES('The value for the parameter @MaxNumberOfPages has to be greater than or equal to the value for @MinNumberOfPages. See https://ola.hallengren.com/sql-server-index-and-statistics-maintenance.html#MaxNumberOfPages.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -1018,7 +1024,7 @@ BEGIN
   IF @SortInTempdb NOT IN('Y','N') OR @SortInTempdb IS NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @SortInTempdb is not supported.', 16, 1)
+    VALUES('The value for the parameter @SortInTempdb is not supported. Supported values are ''Y'' and ''N''. See https://ola.hallengren.com/sql-server-index-and-statistics-maintenance.html#SortInTempdb.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -1026,7 +1032,7 @@ BEGIN
   IF @MaxDOP < 0 OR @MaxDOP > 64
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @MaxDOP is not supported.', 16, 1)
+    VALUES('The value for the parameter @MaxDOP is not supported. The value has to be between 0 and 64. See https://ola.hallengren.com/sql-server-index-and-statistics-maintenance.html#MaxDOP.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -1034,7 +1040,7 @@ BEGIN
   IF @FillFactor <= 0 OR @FillFactor > 100
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @FillFactor is not supported.', 16, 1)
+    VALUES('The value for the parameter @FillFactor is not supported. The value has to be between 1 and 100. See https://ola.hallengren.com/sql-server-index-and-statistics-maintenance.html#FillFactor.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -1042,7 +1048,7 @@ BEGIN
   IF @PadIndex NOT IN('Y','N')
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @PadIndex is not supported.', 16, 1)
+    VALUES('The value for the parameter @PadIndex is not supported. Supported values are ''Y'' and ''N''. See https://ola.hallengren.com/sql-server-index-and-statistics-maintenance.html#PadIndex.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -1050,7 +1056,7 @@ BEGIN
   IF @DataCompression NOT IN('NONE', 'PAGE', 'ROW')
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @DataCompression is not supported.', 16, 1)
+    VALUES('The value for the parameter @DataCompression is not supported. Supported values are NONE, PAGE and ROW. See https://ola.hallengren.com/sql-server-index-and-statistics-maintenance.html#DataCompression.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -1058,13 +1064,13 @@ BEGIN
   IF @WaitAtLowPriorityMaxDuration < 0
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @WaitAtLowPriorityMaxDuration is not supported.', 16, 1)
+    VALUES('The value for the parameter @WaitAtLowPriorityMaxDuration is not supported. The value has to be greater than or equal to 0. See https://ola.hallengren.com/sql-server-index-and-statistics-maintenance.html#WaitAtLowPriorityMaxDuration.', 16, 1)
   END
 
   IF @WaitAtLowPriorityAbortAfterWait = 'SELF' AND @WaitAtLowPriorityMaxDuration = 0
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @WaitAtLowPriorityMaxDuration is not supported.', 16, 2)
+    VALUES('The value for the parameter @WaitAtLowPriorityMaxDuration is not supported. The value has to be greater than 0 when @WaitAtLowPriorityAbortAfterWait = ''SELF''. See https://ola.hallengren.com/sql-server-index-and-statistics-maintenance.html#WaitAtLowPriorityMaxDuration.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -1072,7 +1078,7 @@ BEGIN
   IF @WaitAtLowPriorityAbortAfterWait NOT IN('NONE','SELF','BLOCKERS')
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @WaitAtLowPriorityAbortAfterWait is not supported.', 16, 1)
+    VALUES('The value for the parameter @WaitAtLowPriorityAbortAfterWait is not supported. Supported values are NONE, SELF and BLOCKERS. See https://ola.hallengren.com/sql-server-index-and-statistics-maintenance.html#WaitAtLowPriorityAbortAfterWait.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -1080,7 +1086,7 @@ BEGIN
   IF (@WaitAtLowPriorityAbortAfterWait IS NOT NULL AND @WaitAtLowPriorityMaxDuration IS NULL) OR (@WaitAtLowPriorityAbortAfterWait IS NULL AND @WaitAtLowPriorityMaxDuration IS NOT NULL)
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The parameters @WaitAtLowPriorityMaxDuration and @WaitAtLowPriorityAbortAfterWait can only be used together.', 16, 1)
+    VALUES('The parameters @WaitAtLowPriorityMaxDuration and @WaitAtLowPriorityAbortAfterWait can only be used together. See https://ola.hallengren.com/sql-server-index-and-statistics-maintenance.html.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -1088,13 +1094,13 @@ BEGIN
   IF @Resumable NOT IN('Y','N') OR @Resumable IS NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @Resumable is not supported.', 16, 1)
+    VALUES('The value for the parameter @Resumable is not supported. Supported values are ''Y'' and ''N''. See https://ola.hallengren.com/sql-server-index-and-statistics-maintenance.html#Resumable.', 16, 1)
   END
 
   IF @Resumable = 'Y' AND @SortInTempdb = 'Y'
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('You can only specify one of the parameters @Resumable and @SortInTempdb.', 16, 2)
+    VALUES('You can only specify one of the parameters @Resumable and @SortInTempdb. See https://ola.hallengren.com/sql-server-index-and-statistics-maintenance.html.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -1102,7 +1108,7 @@ BEGIN
   IF @LOBCompaction NOT IN('Y','N') OR @LOBCompaction IS NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @LOBCompaction is not supported.', 16, 1)
+    VALUES('The value for the parameter @LOBCompaction is not supported. Supported values are ''Y'' and ''N''. See https://ola.hallengren.com/sql-server-index-and-statistics-maintenance.html#LOBCompaction.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -1110,7 +1116,7 @@ BEGIN
   IF @UpdateStatistics NOT IN('ALL','COLUMNS','INDEX')
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @UpdateStatistics is not supported.', 16, 1)
+    VALUES('The value for the parameter @UpdateStatistics is not supported. Supported values are ALL, COLUMNS and INDEX. See https://ola.hallengren.com/sql-server-index-and-statistics-maintenance.html#UpdateStatistics.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -1118,7 +1124,7 @@ BEGIN
   IF @OnlyModifiedStatistics NOT IN('Y','N') OR @OnlyModifiedStatistics IS NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @OnlyModifiedStatistics is not supported.', 16, 1)
+    VALUES('The value for the parameter @OnlyModifiedStatistics is not supported. Supported values are ''Y'' and ''N''. See https://ola.hallengren.com/sql-server-index-and-statistics-maintenance.html#OnlyModifiedStatistics.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -1126,7 +1132,7 @@ BEGIN
   IF @StatisticsModificationLevel <= 0 OR @StatisticsModificationLevel > 100
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @StatisticsModificationLevel is not supported.', 16, 1)
+    VALUES('The value for the parameter @StatisticsModificationLevel is not supported. The value has to be greater than 0 and less than or equal to 100. See https://ola.hallengren.com/sql-server-index-and-statistics-maintenance.html#StatisticsModificationLevel.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -1134,7 +1140,7 @@ BEGIN
   IF @OnlyModifiedStatistics = 'Y' AND @StatisticsModificationLevel IS NOT NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('You can only specify one of the parameters @OnlyModifiedStatistics and @StatisticsModificationLevel.', 16, 1)
+    VALUES('You can only specify one of the parameters @OnlyModifiedStatistics and @StatisticsModificationLevel. See https://ola.hallengren.com/sql-server-index-and-statistics-maintenance.html.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -1142,7 +1148,7 @@ BEGIN
   IF @StatisticsSample <= 0 OR @StatisticsSample  > 100
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @StatisticsSample is not supported.', 16, 1)
+    VALUES('The value for the parameter @StatisticsSample is not supported. The value has to be between 1 and 100. See https://ola.hallengren.com/sql-server-index-and-statistics-maintenance.html#StatisticsSample.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -1150,25 +1156,25 @@ BEGIN
   IF @StatisticsPersistSample NOT IN('Y','N')
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @StatisticsPersistSample is not supported.', 16, 1)
+    VALUES('The value for the parameter @StatisticsPersistSample is not supported. Supported values are ''Y'' and ''N''. See https://ola.hallengren.com/sql-server-index-and-statistics-maintenance.html#StatisticsPersistSample.', 16, 1)
   END
 
   IF @StatisticsPersistSample IS NOT NULL AND @StatisticsSample IS NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The parameter @StatisticsPersistSample can only be used together with @StatisticsSample.', 16, 2)
+    VALUES('The parameter @StatisticsPersistSample can only be used together with @StatisticsSample. See https://ola.hallengren.com/sql-server-index-and-statistics-maintenance.html#StatisticsPersistSample.', 16, 1)
   END
 
   IF @StatisticsPersistSample IS NOT NULL AND @StatisticsResample = 'Y'
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The parameters @StatisticsPersistSample and @StatisticsResample cannot be used together.', 16, 3)
+    VALUES('The parameters @StatisticsPersistSample and @StatisticsResample cannot be used together. See https://ola.hallengren.com/sql-server-index-and-statistics-maintenance.html.', 16, 1)
   END
 
   IF @StatisticsPersistSample IS NOT NULL AND NOT (@Version >= 14.03006 OR @EngineEdition = 5 OR (@EngineEdition = 8 AND @ProductUpdateType = 'Continuous'))
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @StatisticsPersistSample is not supported.', 16, 4)
+    VALUES('The value for the parameter @StatisticsPersistSample is not supported. PERSIST_SAMPLE_PERCENT is not supported in this version of SQL Server. See https://ola.hallengren.com/sql-server-index-and-statistics-maintenance.html#StatisticsPersistSample.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -1176,13 +1182,13 @@ BEGIN
   IF @StatisticsResample NOT IN('Y','N') OR @StatisticsResample IS NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @StatisticsResample is not supported.', 16, 1)
+    VALUES('The value for the parameter @StatisticsResample is not supported. Supported values are ''Y'' and ''N''. See https://ola.hallengren.com/sql-server-index-and-statistics-maintenance.html#StatisticsResample.', 16, 1)
   END
 
   IF @StatisticsResample = 'Y' AND @StatisticsSample IS NOT NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @StatisticsResample is not supported.', 16, 2)
+    VALUES('Setting @StatisticsResample to ''Y'' cannot be combined with @StatisticsSample. See https://ola.hallengren.com/sql-server-index-and-statistics-maintenance.html#StatisticsResample.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -1190,7 +1196,7 @@ BEGIN
   IF @PartitionLevel NOT IN('Y','N') OR @PartitionLevel IS NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @PartitionLevel is not supported.', 16, 1)
+    VALUES('The value for the parameter @PartitionLevel is not supported. Supported values are ''Y'' and ''N''. See https://ola.hallengren.com/sql-server-index-and-statistics-maintenance.html#PartitionLevel.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -1198,7 +1204,7 @@ BEGIN
   IF @MSShippedObjects NOT IN('Y','N') OR @MSShippedObjects IS NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @MSShippedObjects is not supported.', 16, 1)
+    VALUES('The value for the parameter @MSShippedObjects is not supported. Supported values are ''Y'' and ''N''. See https://ola.hallengren.com/sql-server-index-and-statistics-maintenance.html#MSShippedObjects.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -1206,13 +1212,13 @@ BEGIN
   IF EXISTS(SELECT * FROM @SelectedIndexes WHERE DatabaseName IS NULL OR SchemaName IS NULL OR ObjectName IS NULL OR IndexName IS NULL)
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @Indexes is not supported.', 16, 1)
+    VALUES('The value for the parameter @Indexes is not supported. The value contains one or more items that could not be parsed. See https://ola.hallengren.com/sql-server-index-and-statistics-maintenance.html#Indexes.', 16, 1)
   END
 
   IF @Indexes IS NOT NULL AND NOT EXISTS(SELECT * FROM @SelectedIndexes)
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @Indexes is not supported.', 16, 2)
+    VALUES('The value for the parameter @Indexes is not supported. The value could not be parsed into a list of indexes. See https://ola.hallengren.com/sql-server-index-and-statistics-maintenance.html#Indexes.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -1220,35 +1226,23 @@ BEGIN
   IF @TimeLimit < 0
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @TimeLimit is not supported.', 16, 1)
+    VALUES('The value for the parameter @TimeLimit is not supported. The value has to be greater than or equal to 0. See https://ola.hallengren.com/sql-server-index-and-statistics-maintenance.html#TimeLimit.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
 
-  IF @Delay < 0
+  IF @Delay < 0 OR @Delay >= 86400
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @Delay is not supported.', 16, 1)
-  END
-
-  IF @Delay >= 86400
-  BEGIN
-    INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @Delay is not supported.', 16, 2)
+    VALUES('The value for the parameter @Delay is not supported. The value has to be greater than or equal to 0 and less than 86400. See https://ola.hallengren.com/sql-server-index-and-statistics-maintenance.html#Delay.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
 
-  IF @LockTimeout < 0
+  IF @LockTimeout < 0 OR @LockTimeout > 86400
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @LockTimeout is not supported.', 16, 1)
-  END
-
-  IF @LockTimeout > 86400
-  BEGIN
-    INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @LockTimeout is not supported.', 16, 2)
+    VALUES('The value for the parameter @LockTimeout is not supported. The value has to be between 0 and 86400. See https://ola.hallengren.com/sql-server-integrity-check.html#LockTimeout.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -1256,7 +1250,7 @@ BEGIN
   IF @LockMessageSeverity NOT IN(10, 16) OR @LockMessageSeverity IS NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @LockMessageSeverity is not supported.', 16, 1)
+    VALUES('The value for the parameter @LockMessageSeverity is not supported. Supported values are 10 and 16. See https://ola.hallengren.com/sql-server-index-and-statistics-maintenance.html#LockMessageSeverity.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -1264,7 +1258,7 @@ BEGIN
   IF @StringDelimiter IS NULL OR LEN(@StringDelimiter) <> 1
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @StringDelimiter is not supported.', 16, 1)
+    VALUES('The value for the parameter @StringDelimiter is not supported. The value has to be exactly one character. See https://ola.hallengren.com/sql-server-index-and-statistics-maintenance.html#StringDelimiter.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -1272,13 +1266,13 @@ BEGIN
   IF @DatabaseOrder NOT IN('DATABASE_NAME_ASC','DATABASE_NAME_DESC','DATABASE_SIZE_ASC','DATABASE_SIZE_DESC')
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @DatabaseOrder is not supported.', 16, 1)
+    VALUES('The value for the parameter @DatabaseOrder is not supported. Supported values are DATABASE_NAME_ASC, DATABASE_NAME_DESC, DATABASE_SIZE_ASC and DATABASE_SIZE_DESC. See https://ola.hallengren.com/sql-server-index-and-statistics-maintenance.html#DatabaseOrder.', 16, 1)
   END
 
   IF @DatabaseOrder IS NOT NULL AND @EngineEdition = 5
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @DatabaseOrder is not supported.', 16, 2)
+    VALUES('The parameter @DatabaseOrder is not supported in Azure SQL Database. See https://ola.hallengren.com/sql-server-index-and-statistics-maintenance.html#DatabaseOrder.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -1286,13 +1280,13 @@ BEGIN
   IF @DatabasesInParallel NOT IN('Y','N') OR @DatabasesInParallel IS NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @DatabasesInParallel is not supported.', 16, 1)
+    VALUES('The value for the parameter @DatabasesInParallel is not supported. Supported values are ''Y'' and ''N''. See https://ola.hallengren.com/sql-server-index-and-statistics-maintenance.html#DatabasesInParallel.', 16, 1)
   END
 
   IF @DatabasesInParallel = 'Y' AND @EngineEdition = 5
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @DatabasesInParallel is not supported.', 16, 2)
+    VALUES('The parameter @DatabasesInParallel is not supported in Azure SQL Database. See https://ola.hallengren.com/sql-server-index-and-statistics-maintenance.html#DatabasesInParallel.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -1300,7 +1294,7 @@ BEGIN
   IF LEN(@ExecuteAsUser) > 128
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @ExecuteAsUser is not supported.', 16, 1)
+    VALUES('The value for the parameter @ExecuteAsUser is not supported. The maximum length is 128 characters. See https://ola.hallengren.com/sql-server-index-and-statistics-maintenance.html#ExecuteAsUser.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -1308,7 +1302,7 @@ BEGIN
   IF @LogToTable NOT IN('Y','N') OR @LogToTable IS NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @LogToTable is not supported.', 16, 1)
+    VALUES('The value for the parameter @LogToTable is not supported. Supported values are ''Y'' and ''N''. See https://ola.hallengren.com/sql-server-index-and-statistics-maintenance.html#LogToTable.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -1316,15 +1310,7 @@ BEGIN
   IF @Execute NOT IN('Y','N') OR @Execute IS NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @Execute is not supported.', 16, 1)
-  END
-
-  ----------------------------------------------------------------------------------------------------
-
-  IF EXISTS(SELECT * FROM @Errors)
-  BEGIN
-    INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The documentation is available at https://ola.hallengren.com/sql-server-index-and-statistics-maintenance.html.', 16, 1)
+    VALUES('The value for the parameter @Execute is not supported. Supported values are ''Y'' and ''N''. See https://ola.hallengren.com/sql-server-index-and-statistics-maintenance.html#Execute.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -1340,7 +1326,7 @@ BEGIN
   IF @ErrorMessage IS NOT NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The following databases in the @Databases parameter do not exist: ' + @ErrorMessage + '.', 10, 1)
+    VALUES('The following databases in the @Databases parameter do not exist: ' + @ErrorMessage + '. See https://ola.hallengren.com/sql-server-index-and-statistics-maintenance.html#Databases.', 10, 1)
   END
 
   SELECT @ErrorMessage = STRING_AGG(CAST(QUOTENAME(DatabaseName) AS nvarchar(max)), ', ')
@@ -1352,7 +1338,7 @@ BEGIN
   IF @ErrorMessage IS NOT NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The following databases in the @Indexes parameter do not exist: ' + @ErrorMessage + '.', 10, 1)
+    VALUES('The following databases in the @Indexes parameter do not exist: ' + @ErrorMessage + '. See https://ola.hallengren.com/sql-server-index-and-statistics-maintenance.html#Indexes.', 10, 1)
   END
 
   SELECT @ErrorMessage = STRING_AGG(CAST(QUOTENAME(AvailabilityGroupName) AS nvarchar(max)), ', ')
@@ -1364,7 +1350,7 @@ BEGIN
   IF @ErrorMessage IS NOT NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The following availability groups do not exist: ' + @ErrorMessage + '.', 10, 1)
+    VALUES('The following availability groups do not exist: ' + @ErrorMessage + '. See https://ola.hallengren.com/sql-server-index-and-statistics-maintenance.html#AvailabilityGroups.', 10, 1)
   END
 
   SELECT @ErrorMessage = STRING_AGG(CAST(QUOTENAME(DatabaseName) AS nvarchar(max)), ', ')
@@ -1377,7 +1363,7 @@ BEGIN
   IF @ErrorMessage IS NOT NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The following databases have been selected in the @Indexes parameter, but not in the @Databases or @AvailabilityGroups parameters: ' + @ErrorMessage + '.', 10, 1)
+    VALUES('The following databases have been selected in the @Indexes parameter, but not in the @Databases or @AvailabilityGroups parameters: ' + @ErrorMessage + '. See https://ola.hallengren.com/sql-server-index-and-statistics-maintenance.html#Indexes.', 10, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
