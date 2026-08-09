@@ -10,7 +10,7 @@ License: https://ola.hallengren.com/license.html
 
 GitHub: https://github.com/olahallengren/sql-server-maintenance-solution
 
-Version: 2026-08-09 13:35:14
+Version: 2026-08-09 16:58:36
 
 You can contact me by e-mail at ola@hallengren.com.
 
@@ -133,7 +133,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-08-09 13:35:14                                                               //--
+  --// Version: 2026-08-09 16:58:36                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -493,7 +493,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-08-09 13:35:14                                                               //--
+  --// Version: 2026-08-09 16:58:36                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -1352,6 +1352,30 @@ BEGIN
     VALUES('Backup to NUL is only supported with SQL Server native backups. See https://ola.hallengren.com/sql-server-backup.html#Directory.', 16, 1)
   END
 
+  IF (SELECT COUNT(*) FROM @Directories WHERE Mirror = 0) > 64
+  BEGIN
+    INSERT INTO @Errors ([Message], Severity, [State])
+    VALUES('The value for the parameter @Directory is not supported. The maximum number of directories is 64. See https://ola.hallengren.com/sql-server-backup.html#Directory.', 16, 1)
+  END
+
+  IF (SELECT COUNT(*) FROM @Directories WHERE Mirror = 0) > 32 AND @BackupSoftware = 'SQLBACKUP'
+  BEGIN
+    INSERT INTO @Errors ([Message], Severity, [State])
+    VALUES('The value for the parameter @Directory is not supported. The maximum number of directories with Redgate SQL Backup Pro is 32. See https://ola.hallengren.com/sql-server-backup.html#Directory.', 16, 1)
+  END
+
+  IF (SELECT COUNT(*) FROM @Directories WHERE Mirror = 0) > 32 AND EXISTS(SELECT * FROM @Directories WHERE Mirror = 1) AND @BackupSoftware IS NULL
+  BEGIN
+    INSERT INTO @Errors ([Message], Severity, [State])
+    VALUES('The value for the parameter @Directory is not supported. The maximum number of directories when performing mirrored SQL Server native backups is 32. See https://ola.hallengren.com/sql-server-backup.html#Directory.', 16, 1)
+  END
+
+  IF (SELECT COUNT(*) FROM @Directories WHERE Mirror = 0) > 32 AND EXISTS(SELECT * FROM @Directories WHERE Mirror = 1) AND @BackupSoftware = 'LITESPEED'
+  BEGIN
+    INSERT INTO @Errors ([Message], Severity, [State])
+    VALUES('The value for the parameter @Directory is not supported. The maximum number of directories when performing mirrored backups with LiteSpeed for SQL Server is 32. See https://ola.hallengren.com/sql-server-backup.html#Directory.', 16, 1)
+  END
+
   ----------------------------------------------------------------------------------------------------
 
   IF EXISTS(SELECT * FROM @Directories WHERE Mirror = 1 AND (NOT (DirectoryPath LIKE '_:' OR DirectoryPath LIKE '_:\%' OR DirectoryPath LIKE '\\%\%' OR (DirectoryPath LIKE '/%' AND @HostPlatform = 'Linux')) OR DirectoryPath IS NULL OR LEFT(DirectoryPath,1) = ' ' OR RIGHT(DirectoryPath,1) = ' '))
@@ -1360,10 +1384,16 @@ BEGIN
     VALUES('The value for the parameter @MirrorDirectory is not supported. Specify a local path (e.g. D:\Backup), a UNC path (e.g. \\Server\Share), or a path starting with / on Linux, without leading or trailing spaces. See https://ola.hallengren.com/sql-server-backup.html#MirrorDirectory.', 16, 1)
   END
 
-  IF @BackupSoftware IN('SQLBACKUP','SQLSAFE') AND (SELECT COUNT(*) FROM @Directories WHERE Mirror = 1) > 1
+  IF @BackupSoftware = 'SQLBACKUP' AND (SELECT COUNT(*) FROM @Directories WHERE Mirror = 1) > 1
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @MirrorDirectory is not supported. Redgate SQL Backup Pro and Idera SQL Safe Backup support only one mirror directory. See https://ola.hallengren.com/sql-server-backup.html#MirrorDirectory.', 16, 1)
+    VALUES('The value for the parameter @MirrorDirectory is not supported. Redgate SQL Backup Pro supports only one mirror directory. See https://ola.hallengren.com/sql-server-backup.html#MirrorDirectory.', 16, 1)
+  END
+
+  IF @BackupSoftware = 'SQLSAFE' AND (SELECT COUNT(*) FROM @Directories WHERE Mirror = 1) > 1
+  BEGIN
+    INSERT INTO @Errors ([Message], Severity, [State])
+    VALUES('The value for the parameter @MirrorDirectory is not supported. Idera SQL Safe Backup supports only one mirror directory. See https://ola.hallengren.com/sql-server-backup.html#MirrorDirectory.', 16, 1)
   END
 
   IF @MirrorDirectory IS NOT NULL AND @EngineEdition = 8
@@ -1518,6 +1548,24 @@ BEGIN
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
     VALUES('Striped backups across S3-compatible storage and Azure Blob Storage are not supported. See https://ola.hallengren.com/sql-server-backup.html#URL.', 16, 1)
+  END
+
+  IF (SELECT COUNT(*) FROM @URLs WHERE Mirror = 0) > 64
+  BEGIN
+    INSERT INTO @Errors ([Message], Severity, [State])
+    VALUES('The value for the parameter @URL is not supported. The maximum number of URLs is 64. See https://ola.hallengren.com/sql-server-backup.html#URL.', 16, 1)
+  END
+
+  IF (SELECT COUNT(*) FROM @URLs WHERE Mirror = 0) > 32 AND EXISTS(SELECT * FROM @URLs WHERE Mirror = 1)
+  BEGIN
+    INSERT INTO @Errors ([Message], Severity, [State])
+    VALUES('The value for the parameter @URL is not supported. The maximum number of URLs when performing mirrored backups is 32. See https://ola.hallengren.com/sql-server-backup.html#URL.', 16, 1)
+  END
+
+  IF @URL IS NOT NULL AND @Credential IS NOT NULL AND (SELECT COUNT(*) FROM @URLs WHERE Mirror = 0) > 1
+  BEGIN
+    INSERT INTO @Errors ([Message], Severity, [State])
+    VALUES('The value for the parameter @URL is not supported. Backup striping to URL with page blobs is not supported. See https://ola.hallengren.com/sql-server-backup.html#URL.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -1734,10 +1782,22 @@ BEGIN
     VALUES('Backup compression is not supported in this edition of SQL Server. See https://ola.hallengren.com/sql-server-backup.html#Compress.', 16, 1)
   END
 
-  IF @Compress = 'N' AND @BackupSoftware IN ('LITESPEED','SQLBACKUP','SQLSAFE') AND (@CompressionLevelNumeric IS NULL OR @CompressionLevelNumeric >= 1)
+  IF @Compress = 'N' AND @BackupSoftware = 'LITESPEED' AND (@CompressionLevelNumeric IS NULL OR @CompressionLevelNumeric >= 1)
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('Setting @Compress to ''N'' with LiteSpeed for SQL Server, Redgate SQL Backup Pro or Idera SQL Safe Backup requires @CompressionLevelNumeric = 0. See https://ola.hallengren.com/sql-server-backup.html#Compress.', 16, 1)
+    VALUES('Setting @Compress to ''N'' with LiteSpeed for SQL Server requires @CompressionLevelNumeric = 0. See https://ola.hallengren.com/sql-server-backup.html#Compress.', 16, 1)
+  END
+
+  IF @Compress = 'N' AND @BackupSoftware = 'SQLBACKUP' AND (@CompressionLevelNumeric IS NULL OR @CompressionLevelNumeric >= 1)
+  BEGIN
+    INSERT INTO @Errors ([Message], Severity, [State])
+    VALUES('Setting @Compress to ''N'' with Redgate SQL Backup Pro requires @CompressionLevelNumeric = 0. See https://ola.hallengren.com/sql-server-backup.html#Compress.', 16, 1)
+  END
+
+  IF @Compress = 'N' AND @BackupSoftware = 'SQLSAFE' AND (@CompressionLevelNumeric IS NULL OR @CompressionLevelNumeric >= 1)
+  BEGIN
+    INSERT INTO @Errors ([Message], Severity, [State])
+    VALUES('Setting @Compress to ''N'' with Idera SQL Safe Backup requires @CompressionLevelNumeric = 0. See https://ola.hallengren.com/sql-server-backup.html#Compress.', 16, 1)
   END
 
   IF @Compress = 'Y' AND @BackupSoftware IN ('LITESPEED','SQLBACKUP','SQLSAFE') AND @CompressionLevelNumeric = 0
@@ -2006,10 +2066,16 @@ BEGIN
     VALUES('Backup striping to URL with page blobs is not supported. See https://learn.microsoft.com/en-us/sql/relational-databases/backup-restore/sql-server-backup-to-url.', 16, 1)
   END
 
-  IF @NumberOfFiles > 1 AND @BackupSoftware IN('SQLBACKUP','SQLSAFE') AND EXISTS(SELECT * FROM @Directories WHERE Mirror = 1)
+  IF @NumberOfFiles > 1 AND @BackupSoftware = 'SQLBACKUP' AND EXISTS(SELECT * FROM @Directories WHERE Mirror = 1)
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @NumberOfFiles is not supported. Mirrored backups with multiple files are not supported with Redgate SQL Backup Pro and Idera SQL Safe Backup. See https://ola.hallengren.com/sql-server-backup.html#NumberOfFiles.', 16, 1)
+    VALUES('The value for the parameter @NumberOfFiles is not supported. Mirrored backups with multiple files are not supported with Redgate SQL Backup Pro. See https://ola.hallengren.com/sql-server-backup.html#NumberOfFiles.', 16, 1)
+  END
+
+  IF @NumberOfFiles > 1 AND @BackupSoftware = 'SQLSAFE' AND EXISTS(SELECT * FROM @Directories WHERE Mirror = 1)
+  BEGIN
+    INSERT INTO @Errors ([Message], Severity, [State])
+    VALUES('The value for the parameter @NumberOfFiles is not supported. Mirrored backups with multiple files are not supported with Idera SQL Safe Backup. See https://ola.hallengren.com/sql-server-backup.html#NumberOfFiles.', 16, 1)
   END
 
   IF @NumberOfFiles > 32 AND @BackupSoftware = 'DATA_DOMAIN_BOOST'
@@ -2030,10 +2096,22 @@ BEGIN
     VALUES('The value for the parameter @NumberOfFiles is not supported. The number of files has to be evenly divisible by the number of URLs. See https://ola.hallengren.com/sql-server-backup.html#NumberOfFiles.', 16, 1)
   END
 
-  IF @NumberOfFiles > 32 AND @URL LIKE 's3%' AND @MirrorURL LIKE 's3%'
+  IF @BackupSoftware IS NULL AND @NumberOfFiles > 32 AND EXISTS(SELECT * FROM @Directories WHERE Mirror = 1)
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @NumberOfFiles is not supported. The maximum number of files when performing mirrored backups to S3 storage is 32. See https://ola.hallengren.com/sql-server-backup.html#NumberOfFiles.', 16, 1)
+    VALUES('The value for the parameter @NumberOfFiles is not supported. The maximum number of files when performing mirrored SQL Server native backups to disk is 32. See https://ola.hallengren.com/sql-server-backup.html#NumberOfFiles.', 16, 1)
+  END
+
+  IF @NumberOfFiles > 32 AND EXISTS(SELECT * FROM @URLs WHERE Mirror = 1)
+  BEGIN
+    INSERT INTO @Errors ([Message], Severity, [State])
+    VALUES('The value for the parameter @NumberOfFiles is not supported. The maximum number of files when performing mirrored backups to URL is 32. See https://ola.hallengren.com/sql-server-backup.html#NumberOfFiles.', 16, 1)
+  END
+
+  IF @BackupSoftware = 'LITESPEED' AND @NumberOfFiles > 32 AND EXISTS(SELECT * FROM @Directories WHERE Mirror = 1)
+  BEGIN
+    INSERT INTO @Errors ([Message], Severity, [State])
+    VALUES('The value for the parameter @NumberOfFiles is not supported. The maximum number of files when performing mirrored backups with LiteSpeed for SQL Server is 32. See https://ola.hallengren.com/sql-server-backup.html#NumberOfFiles.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -2282,10 +2360,22 @@ BEGIN
     VALUES('The parameter @EncryptionKey can only be used together with @Encrypt = ''Y''. See https://ola.hallengren.com/sql-server-backup.html#EncryptionKey.', 16, 1)
   END
 
-  IF @EncryptionKey IS NULL AND @Encrypt = 'Y' AND @BackupSoftware IN('LITESPEED','SQLBACKUP','SQLSAFE')
+  IF @EncryptionKey IS NULL AND @Encrypt = 'Y' AND @BackupSoftware = 'LITESPEED'
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('You need to specify @EncryptionKey when performing encrypted backups with LiteSpeed for SQL Server, Redgate SQL Backup Pro or Idera SQL Safe Backup. See https://ola.hallengren.com/sql-server-backup.html#EncryptionKey.', 16, 1)
+    VALUES('You need to specify @EncryptionKey when performing encrypted backups with LiteSpeed for SQL Server. See https://ola.hallengren.com/sql-server-backup.html#EncryptionKey.', 16, 1)
+  END
+
+  IF @EncryptionKey IS NULL AND @Encrypt = 'Y' AND @BackupSoftware = 'SQLBACKUP'
+  BEGIN
+    INSERT INTO @Errors ([Message], Severity, [State])
+    VALUES('You need to specify @EncryptionKey when performing encrypted backups with Redgate SQL Backup Pro. See https://ola.hallengren.com/sql-server-backup.html#EncryptionKey.', 16, 1)
+  END
+
+  IF @EncryptionKey IS NULL AND @Encrypt = 'Y' AND @BackupSoftware = 'SQLSAFE'
+  BEGIN
+    INSERT INTO @Errors ([Message], Severity, [State])
+    VALUES('You need to specify @EncryptionKey when performing encrypted backups with Idera SQL Safe Backup. See https://ola.hallengren.com/sql-server-backup.html#EncryptionKey.', 16, 1)
   END
 
   IF @EncryptionKey IS NOT NULL AND @BackupSoftware = 'DATA_DOMAIN_BOOST'
@@ -2422,6 +2512,18 @@ BEGIN
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
     VALUES('The parameter @MirrorURL can only be used together with @URL. See https://ola.hallengren.com/sql-server-backup.html#MirrorURL.', 16, 1)
+  END
+
+  IF @MirrorURL IS NOT NULL AND @Credential IS NOT NULL
+  BEGIN
+    INSERT INTO @Errors ([Message], Severity, [State])
+    VALUES('The value for the parameter @MirrorURL is not supported. Mirrored backup to URL with page blobs is not supported. See https://ola.hallengren.com/sql-server-backup.html#MirrorURL.', 16, 1)
+  END
+
+  IF @MirrorURL IS NOT NULL AND @BackupSoftware IS NULL AND @EngineEdition NOT IN (3, 8)
+  BEGIN
+    INSERT INTO @Errors ([Message], Severity, [State])
+    VALUES('The value for the parameter @MirrorURL is not supported. Mirrored backup to URL is not supported in this edition of SQL Server. See https://ola.hallengren.com/sql-server-backup.html#MirrorURL.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -3497,7 +3599,12 @@ BEGIN
                              WHEN @CurrentBackupType = 'DIFF' THEN CAST(@CurrentModifiedExtentPageCount AS bigint) * 8192
                              WHEN @CurrentBackupType = 'LOG' THEN CAST(@CurrentLogSizeSinceLastLogBackup * 1024 * 1024 AS bigint)
                              END,
-           MaxNumberOfFiles = CASE WHEN @BackupSoftware IN('SQLBACKUP','DATA_DOMAIN_BOOST') THEN 32 ELSE 64 END,
+           MaxNumberOfFiles = CASE WHEN @BackupSoftware IN('SQLBACKUP','SQLSAFE') AND EXISTS(SELECT * FROM @Directories WHERE Mirror = 1) THEN 1
+                                   WHEN @BackupSoftware = 'LITESPEED' AND EXISTS(SELECT * FROM @Directories WHERE Mirror = 1) THEN 32
+                                   WHEN @BackupSoftware IN('SQLBACKUP','DATA_DOMAIN_BOOST') THEN 32
+                                   WHEN @BackupSoftware IS NULL AND (EXISTS(SELECT * FROM @Directories WHERE Mirror = 1) OR EXISTS(SELECT * FROM @URLs WHERE Mirror = 1)) THEN 32
+                                   ELSE 64
+                              END,
            CASE WHEN (SELECT COUNT(*) FROM @Directories WHERE Mirror = 0) > 0 THEN (SELECT COUNT(*) FROM @Directories WHERE Mirror = 0) ELSE (SELECT COUNT(*) FROM @URLs WHERE Mirror = 0) END AS NumberOfDirectories,
            CAST(@MinBackupSizeForMultipleFiles AS bigint) * 1024 * 1024 AS MinBackupSizeForMultipleFiles,
            CAST(@MaxFileSize AS bigint) * 1024 * 1024 AS MaxFileSize
@@ -5043,7 +5150,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-08-09 13:35:14                                                               //--
+  --// Version: 2026-08-09 16:58:36                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -7083,7 +7190,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-08-09 13:35:14                                                               //--
+  --// Version: 2026-08-09 16:58:36                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
