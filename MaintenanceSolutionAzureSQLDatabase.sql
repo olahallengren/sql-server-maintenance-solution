@@ -9,7 +9,7 @@ License: https://ola.hallengren.com/license.html
 
 GitHub: https://github.com/olahallengren/sql-server-maintenance-solution
 
-Version: 2026-08-09 00:40:19
+Version: 2026-08-09 13:21:51
 
 You can contact me by e-mail at ola@hallengren.com.
 
@@ -88,7 +88,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-08-09 00:40:19                                                               //--
+  --// Version: 2026-08-09 13:21:51                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -394,7 +394,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-08-09 00:40:19                                                               //--
+  --// Version: 2026-08-09 13:21:51                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -2434,7 +2434,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-08-09 00:40:19                                                               //--
+  --// Version: 2026-08-09 13:21:51                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -4682,6 +4682,8 @@ BEGIN
 
         IF @CurrentAlterIndexCompleted = 0 AND @CurrentIndexID IS NOT NULL AND EXISTS(SELECT * FROM @ActionsPreferred) AND @CurrentOnReadOnlyFileGroup = 0
         BEGIN
+          SET @CurrentMaxDOP = @MaxDOP
+
           -- Does the index exist?
           SET @CurrentCommand = ''
 
@@ -4838,8 +4840,6 @@ BEGIN
             SET @CurrentAction = 'INDEX_REBUILD_ONLINE'
           END
 
-          SET @CurrentMaxDOP = @MaxDOP
-
           -- Workaround for limitation in SQL Server, http://support.microsoft.com/kb/2292737
           IF @CurrentAction = 'INDEX_REBUILD_ONLINE' AND @CurrentIndexType IN (1, 2) AND @CurrentAllowPageLocks = 0
           BEGIN
@@ -4983,14 +4983,14 @@ BEGIN
           END
         END
 
-        SET @CurrentMaxDOP = @MaxDOP
-
         -- Should the statistics be updated?
         IF @CurrentUpdateStatisticsCompleted = 0
         AND @CurrentStatisticsID IS NOT NULL
         AND ((@UpdateStatistics = 'ALL' AND (@CurrentIndexType IN (1,2,7) OR @CurrentIndexID IS NULL)) OR (@UpdateStatistics = 'INDEX' AND @CurrentIndexID IS NOT NULL AND @CurrentIndexType IN (1,2,7)) OR (@UpdateStatistics = 'COLUMNS' AND @CurrentIndexID IS NULL))
         AND ((@CurrentIsPartition = 0 AND (@CurrentAction NOT IN('INDEX_REBUILD_ONLINE','INDEX_REBUILD_OFFLINE') OR @CurrentAction IS NULL)) OR (@CurrentIsPartition = 1 AND (@CurrentIsLastPartition = 1 OR (@PartitionLevel = 'Y' AND @CurrentIsIncremental = 1))))
         BEGIN
+          SET @CurrentMaxDOP = @MaxDOP
+
           -- Does the statistics exist?
           SET @CurrentCommand = ''
 
