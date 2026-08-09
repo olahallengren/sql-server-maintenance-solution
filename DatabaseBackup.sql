@@ -94,7 +94,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-08-09 00:40:19                                                               //--
+  --// Version: 2026-08-09 13:35:14                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -1527,40 +1527,52 @@ BEGIN
 
   ----------------------------------------------------------------------------------------------------
 
-  IF @MaxTransferSize < 65536 OR @MaxTransferSize > 20971520
+  IF @BackupSoftware IS NULL AND @URL IS NULL AND (@MaxTransferSize < 65536 OR @MaxTransferSize > 4194304)
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @MaxTransferSize is not supported. The value has to be between 65536 and 20971520. See https://ola.hallengren.com/sql-server-backup.html#MaxTransferSize.', 16, 1)
+    VALUES('The value for the parameter @MaxTransferSize is not supported. The value has to be between 65536 and 4194304 when performing SQL Server native backups to disk. See https://ola.hallengren.com/sql-server-backup.html#MaxTransferSize.', 16, 1)
   END
 
-  IF @MaxTransferSize > 1048576 AND @BackupSoftware = 'SQLBACKUP'
+  IF @BackupSoftware IS NULL AND @URL IS NOT NULL AND @Credential IS NULL AND (@Version >= 16 OR (@EngineEdition = 8 AND @ProductUpdateType = 'Continuous')) AND (@MaxTransferSize < 65536 OR @MaxTransferSize > 20971520)
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @MaxTransferSize is not supported. The maximum value with Redgate SQL Backup Pro is 1048576. See https://ola.hallengren.com/sql-server-backup.html#MaxTransferSize.', 16, 1)
+    VALUES('The value for the parameter @MaxTransferSize is not supported. The value has to be between 65536 and 20971520 when backing up to URL with block blobs on this version of SQL Server. See https://ola.hallengren.com/sql-server-backup.html#MaxTransferSize.', 16, 1)
   END
 
-  IF @MaxTransferSize IS NOT NULL AND @BackupSoftware = 'SQLSAFE'
+  IF @BackupSoftware IS NULL AND @URL IS NOT NULL AND @Credential IS NULL AND NOT (@Version >= 16 OR (@EngineEdition = 8 AND @ProductUpdateType = 'Continuous')) AND (@MaxTransferSize < 65536 OR @MaxTransferSize > 4194304)
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The parameter @MaxTransferSize is not supported with Idera SQL Safe Backup. See https://ola.hallengren.com/sql-server-backup.html#MaxTransferSize.', 16, 1)
+    VALUES('The value for the parameter @MaxTransferSize is not supported. The value has to be between 65536 and 4194304 when backing up to URL with block blobs on this version of SQL Server. See https://ola.hallengren.com/sql-server-backup.html#MaxTransferSize.', 16, 1)
   END
 
-  IF @MaxTransferSize IS NOT NULL AND @URL IS NOT NULL AND @Credential IS NOT NULL
+  IF @URL IS NOT NULL AND @Credential IS NOT NULL AND @MaxTransferSize IS NOT NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
     VALUES('MAXTRANSFERSIZE is not supported when backing up to URL with page blobs. See https://learn.microsoft.com/en-us/sql/relational-databases/backup-restore/sql-server-backup-to-url.', 16, 1)
   END
 
-  IF @MaxTransferSize IS NOT NULL AND @BackupSoftware = 'DATA_DOMAIN_BOOST'
+  IF @BackupSoftware = 'SQLBACKUP' AND (@MaxTransferSize < 65536 OR @MaxTransferSize > 1048576)
+  BEGIN
+    INSERT INTO @Errors ([Message], Severity, [State])
+    VALUES('The value for the parameter @MaxTransferSize is not supported. The value has to be between 65536 and 1048576 when backing up using Redgate SQL Backup Pro. See https://ola.hallengren.com/sql-server-backup.html#MaxTransferSize.', 16, 1)
+  END
+
+  IF @BackupSoftware = 'LITESPEED' AND (@MaxTransferSize < 65536 OR @MaxTransferSize > 4194304)
+  BEGIN
+    INSERT INTO @Errors ([Message], Severity, [State])
+    VALUES('The value for the parameter @MaxTransferSize is not supported. The value has to be between 65536 and 4194304 when backing up using LiteSpeed for SQL Server. See https://ola.hallengren.com/sql-server-backup.html#MaxTransferSize.', 16, 1)
+  END
+
+  IF @BackupSoftware = 'SQLSAFE' AND @MaxTransferSize IS NOT NULL
+  BEGIN
+    INSERT INTO @Errors ([Message], Severity, [State])
+    VALUES('The parameter @MaxTransferSize is not supported with Idera SQL Safe Backup. See https://ola.hallengren.com/sql-server-backup.html#MaxTransferSize.', 16, 1)
+  END
+
+  IF @BackupSoftware = 'DATA_DOMAIN_BOOST' AND @MaxTransferSize IS NOT NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
     VALUES('The parameter @MaxTransferSize is not supported with Data Domain Boost. See https://ola.hallengren.com/sql-server-backup.html#MaxTransferSize.', 16, 1)
-  END
-
-  IF @MaxTransferSize > 4194304 AND @URL IS NULL AND @BackupSoftware IS NULL
-  BEGIN
-    INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @MaxTransferSize is not supported. The maximum value for SQL Server native backups to disk is 4194304. See https://ola.hallengren.com/sql-server-backup.html#MaxTransferSize.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -2379,10 +2391,10 @@ BEGIN
     VALUES('Setting @Init to ''Y'' is not supported with Data Domain Boost. See https://ola.hallengren.com/sql-server-backup.html#Init.', 16, 1)
   END
 
-  IF @Init = 'Y' AND EXISTS(SELECT * FROM @URLs WHERE Mirror = 0 AND DirectoryPath LIKE 's3://%/%')
+  IF @Init = 'Y' AND @URL IS NOT NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('Setting @Init to ''Y'' is not supported when backing up to S3-compatible storage. See https://ola.hallengren.com/sql-server-backup.html#Init.', 16, 1)
+    VALUES('Setting @Init to ''Y'' is not supported with backup to URL. See https://ola.hallengren.com/sql-server-backup.html#Init.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -2479,6 +2491,12 @@ BEGIN
     VALUES('The parameter @ExpireDate is only supported with SQL Server native backups and LiteSpeed for SQL Server. See https://ola.hallengren.com/sql-server-backup.html#ExpireDate.', 16, 1)
   END
 
+  IF @ExpireDate IS NOT NULL AND @URL IS NOT NULL
+  BEGIN
+    INSERT INTO @Errors ([Message], Severity, [State])
+    VALUES('The parameter @ExpireDate is not supported with backup to URL. See https://ola.hallengren.com/sql-server-backup.html#ExpireDate.', 16, 1)
+  END
+
   ----------------------------------------------------------------------------------------------------
 
   IF @RetainDays < 0
@@ -2491,6 +2509,12 @@ BEGIN
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
     VALUES('The parameter @RetainDays is only supported with SQL Server native backups and LiteSpeed for SQL Server. See https://ola.hallengren.com/sql-server-backup.html#RetainDays.', 16, 1)
+  END
+
+  IF @RetainDays IS NOT NULL AND @URL IS NOT NULL
+  BEGIN
+    INSERT INTO @Errors ([Message], Severity, [State])
+    VALUES('The parameter @RetainDays is not supported with backup to URL. See https://ola.hallengren.com/sql-server-backup.html#RetainDays.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
