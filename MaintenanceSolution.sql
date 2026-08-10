@@ -10,7 +10,7 @@ License: https://ola.hallengren.com/license.html
 
 GitHub: https://github.com/olahallengren/sql-server-maintenance-solution
 
-Version: 2026-08-09 16:58:36
+Version: 2026-08-10 19:53:25
 
 You can contact me by e-mail at ola@hallengren.com.
 
@@ -133,7 +133,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-08-09 16:58:36                                                               //--
+  --// Version: 2026-08-10 19:53:25                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -493,7 +493,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-08-09 16:58:36                                                               //--
+  --// Version: 2026-08-10 19:53:25                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -1992,16 +1992,22 @@ BEGIN
     VALUES('The value for the parameter @MaxTransferSize is not supported. The value has to be between 65536 and 4194304 when performing SQL Server native backups to disk. See https://ola.hallengren.com/sql-server-backup.html#MaxTransferSize.', 16, 1)
   END
 
-  IF @BackupSoftware IS NULL AND @URL IS NOT NULL AND @Credential IS NULL AND (@Version >= 16 OR (@EngineEdition = 8 AND @ProductUpdateType = 'Continuous')) AND (@MaxTransferSize < 65536 OR @MaxTransferSize > 20971520)
+  IF @BackupSoftware IS NULL AND @URL IS NOT NULL AND @Credential IS NULL AND NOT EXISTS(SELECT * FROM @URLs WHERE Mirror = 0 AND DirectoryPath LIKE 's3://%/%') AND (@Version >= 16 OR (@EngineEdition = 8 AND @ProductUpdateType = 'Continuous')) AND (@MaxTransferSize < 65536 OR @MaxTransferSize > 20971520)
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
     VALUES('The value for the parameter @MaxTransferSize is not supported. The value has to be between 65536 and 20971520 when backing up to URL with block blobs on this version of SQL Server. See https://ola.hallengren.com/sql-server-backup.html#MaxTransferSize.', 16, 1)
   END
 
-  IF @BackupSoftware IS NULL AND @URL IS NOT NULL AND @Credential IS NULL AND NOT (@Version >= 16 OR (@EngineEdition = 8 AND @ProductUpdateType = 'Continuous')) AND (@MaxTransferSize < 65536 OR @MaxTransferSize > 4194304)
+  IF @BackupSoftware IS NULL AND @URL IS NOT NULL AND @Credential IS NULL AND NOT EXISTS(SELECT * FROM @URLs WHERE Mirror = 0 AND DirectoryPath LIKE 's3://%/%') AND NOT (@Version >= 16 OR (@EngineEdition = 8 AND @ProductUpdateType = 'Continuous')) AND (@MaxTransferSize < 65536 OR @MaxTransferSize > 4194304)
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
     VALUES('The value for the parameter @MaxTransferSize is not supported. The value has to be between 65536 and 4194304 when backing up to URL with block blobs on this version of SQL Server. See https://ola.hallengren.com/sql-server-backup.html#MaxTransferSize.', 16, 1)
+  END
+
+  IF @BackupSoftware IS NULL AND @URL IS NOT NULL AND @Credential IS NULL AND EXISTS(SELECT * FROM @URLs WHERE Mirror = 0 AND DirectoryPath LIKE 's3://%/%') AND (@MaxTransferSize < 5242880 OR @MaxTransferSize > 20971520)
+  BEGIN
+    INSERT INTO @Errors ([Message], Severity, [State])
+    VALUES('The value for the parameter @MaxTransferSize is not supported. The value has to be between 5242880 and 20971520 when backing up to S3-compatible storage. See https://ola.hallengren.com/sql-server-backup.html#MaxTransferSize.', 16, 1)
   END
 
   IF @URL IS NOT NULL AND @Credential IS NOT NULL AND @MaxTransferSize IS NOT NULL
@@ -2992,12 +2998,6 @@ BEGIN
     VALUES('The parameter @ExpireDate is only supported with SQL Server native backups and LiteSpeed for SQL Server. See https://ola.hallengren.com/sql-server-backup.html#ExpireDate.', 16, 1)
   END
 
-  IF @ExpireDate IS NOT NULL AND @URL IS NOT NULL
-  BEGIN
-    INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The parameter @ExpireDate is not supported with backup to URL. See https://ola.hallengren.com/sql-server-backup.html#ExpireDate.', 16, 1)
-  END
-
   ----------------------------------------------------------------------------------------------------
 
   IF @RetainDays < 0
@@ -3010,12 +3010,6 @@ BEGIN
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
     VALUES('The parameter @RetainDays is only supported with SQL Server native backups and LiteSpeed for SQL Server. See https://ola.hallengren.com/sql-server-backup.html#RetainDays.', 16, 1)
-  END
-
-  IF @RetainDays IS NOT NULL AND @URL IS NOT NULL
-  BEGIN
-    INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The parameter @RetainDays is not supported with backup to URL. See https://ola.hallengren.com/sql-server-backup.html#RetainDays.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -5150,7 +5144,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-08-09 16:58:36                                                               //--
+  --// Version: 2026-08-10 19:53:25                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -7190,7 +7184,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-08-09 16:58:36                                                               //--
+  --// Version: 2026-08-10 19:53:25                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
