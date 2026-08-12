@@ -94,7 +94,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-08-12 20:48:42                                                               //--
+  --// Version: 2026-08-12 20:57:17                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -319,11 +319,8 @@ BEGIN
     SET @Version = 16.01000
   END
 
-  IF @EngineEdition <> 5
-  BEGIN
-    SELECT @HostPlatform = host_platform
-    FROM sys.dm_os_host_info
-  END
+  SELECT @HostPlatform = host_platform
+  FROM sys.dm_os_host_info
 
   IF @Version >= 16 AND @EngineEdition NOT IN(5, 8)
   BEGIN
