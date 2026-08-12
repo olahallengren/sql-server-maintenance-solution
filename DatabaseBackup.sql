@@ -94,7 +94,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-08-12 20:57:17                                                               //--
+  --// Version: 2026-08-12 22:02:18                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -435,11 +435,8 @@ BEGIN
     RAISERROR('%s',10,1,@StartMessage) WITH NOWAIT
   END
 
-  IF @EngineEdition <> 5
-  BEGIN
-    SET @StartMessage = 'Platform: ' + ISNULL(@HostPlatform, 'N/A')
-    RAISERROR('%s',10,1,@StartMessage) WITH NOWAIT
-  END
+  SET @StartMessage = 'Platform: ' + ISNULL(@HostPlatform, 'N/A')
+  RAISERROR('%s',10,1,@StartMessage) WITH NOWAIT
 
   IF @Version >= 16 AND @EngineEdition NOT IN(5, 8)
   BEGIN
