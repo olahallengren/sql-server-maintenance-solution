@@ -94,7 +94,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-08-10 19:53:25                                                               //--
+  --// Version: 2026-08-12 22:02:18                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -126,6 +126,7 @@ BEGIN
   DECLARE @HostPlatform nvarchar(max)
   DECLARE @ContainedAvailabilityGroupID uniqueidentifier
   DECLARE @ContainedAvailabilityGroupListenerConnection bit
+  DECLARE @IsSysadmin bit = IS_SRVROLEMEMBER('sysadmin')
   DECLARE @DirectorySeparator nvarchar(max)
 
   DECLARE @Updated bit
@@ -318,11 +319,8 @@ BEGIN
     SET @Version = 16.01000
   END
 
-  IF @EngineEdition <> 5
-  BEGIN
-    SELECT @HostPlatform = host_platform
-    FROM sys.dm_os_host_info
-  END
+  SELECT @HostPlatform = host_platform
+  FROM sys.dm_os_host_info
 
   IF @Version >= 16 AND @EngineEdition NOT IN(5, 8)
   BEGIN
@@ -437,17 +435,17 @@ BEGIN
     RAISERROR('%s',10,1,@StartMessage) WITH NOWAIT
   END
 
-  IF @EngineEdition <> 5
-  BEGIN
-    SET @StartMessage = 'Platform: ' + ISNULL(@HostPlatform, 'N/A')
-    RAISERROR('%s',10,1,@StartMessage) WITH NOWAIT
-  END
+  SET @StartMessage = 'Platform: ' + ISNULL(@HostPlatform, 'N/A')
+  RAISERROR('%s',10,1,@StartMessage) WITH NOWAIT
 
   IF @Version >= 16 AND @EngineEdition NOT IN(5, 8)
   BEGIN
     SET @StartMessage = 'Contained availability group connection: ' + CASE WHEN @ContainedAvailabilityGroupListenerConnection = 1 THEN 'Yes' WHEN @ContainedAvailabilityGroupListenerConnection = 0 THEN 'No' ELSE 'N/A' END
     RAISERROR('%s',10,1,@StartMessage) WITH NOWAIT
   END
+
+  SET @StartMessage = 'Is sysadmin: ' + CASE WHEN @IsSysadmin = 1 THEN 'Yes' WHEN @IsSysadmin = 0 THEN 'No' ELSE 'N/A' END
+  RAISERROR('%s',10,1,@StartMessage) WITH NOWAIT
 
   SET @StartMessage = 'Database: ' + QUOTENAME(DB_NAME())
   RAISERROR('%s',10,1,@StartMessage) WITH NOWAIT

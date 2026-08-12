@@ -10,7 +10,7 @@ License: https://ola.hallengren.com/license.html
 
 GitHub: https://github.com/olahallengren/sql-server-maintenance-solution
 
-Version: 2026-08-10 19:53:25
+Version: 2026-08-12 22:02:18
 
 You can contact me by e-mail at ola@hallengren.com.
 
@@ -133,7 +133,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-08-10 19:53:25                                                               //--
+  --// Version: 2026-08-12 22:02:18                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -493,7 +493,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-08-10 19:53:25                                                               //--
+  --// Version: 2026-08-12 22:02:18                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -525,6 +525,7 @@ BEGIN
   DECLARE @HostPlatform nvarchar(max)
   DECLARE @ContainedAvailabilityGroupID uniqueidentifier
   DECLARE @ContainedAvailabilityGroupListenerConnection bit
+  DECLARE @IsSysadmin bit = IS_SRVROLEMEMBER('sysadmin')
   DECLARE @DirectorySeparator nvarchar(max)
 
   DECLARE @Updated bit
@@ -717,11 +718,8 @@ BEGIN
     SET @Version = 16.01000
   END
 
-  IF @EngineEdition <> 5
-  BEGIN
-    SELECT @HostPlatform = host_platform
-    FROM sys.dm_os_host_info
-  END
+  SELECT @HostPlatform = host_platform
+  FROM sys.dm_os_host_info
 
   IF @Version >= 16 AND @EngineEdition NOT IN(5, 8)
   BEGIN
@@ -836,17 +834,17 @@ BEGIN
     RAISERROR('%s',10,1,@StartMessage) WITH NOWAIT
   END
 
-  IF @EngineEdition <> 5
-  BEGIN
-    SET @StartMessage = 'Platform: ' + ISNULL(@HostPlatform, 'N/A')
-    RAISERROR('%s',10,1,@StartMessage) WITH NOWAIT
-  END
+  SET @StartMessage = 'Platform: ' + ISNULL(@HostPlatform, 'N/A')
+  RAISERROR('%s',10,1,@StartMessage) WITH NOWAIT
 
   IF @Version >= 16 AND @EngineEdition NOT IN(5, 8)
   BEGIN
     SET @StartMessage = 'Contained availability group connection: ' + CASE WHEN @ContainedAvailabilityGroupListenerConnection = 1 THEN 'Yes' WHEN @ContainedAvailabilityGroupListenerConnection = 0 THEN 'No' ELSE 'N/A' END
     RAISERROR('%s',10,1,@StartMessage) WITH NOWAIT
   END
+
+  SET @StartMessage = 'Is sysadmin: ' + CASE WHEN @IsSysadmin = 1 THEN 'Yes' WHEN @IsSysadmin = 0 THEN 'No' ELSE 'N/A' END
+  RAISERROR('%s',10,1,@StartMessage) WITH NOWAIT
 
   SET @StartMessage = 'Database: ' + QUOTENAME(DB_NAME())
   RAISERROR('%s',10,1,@StartMessage) WITH NOWAIT
@@ -5144,7 +5142,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-08-10 19:53:25                                                               //--
+  --// Version: 2026-08-12 22:02:18                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -5177,6 +5175,7 @@ BEGIN
   DECLARE @HostPlatform nvarchar(max)
   DECLARE @ContainedAvailabilityGroupID uniqueidentifier
   DECLARE @ContainedAvailabilityGroupListenerConnection bit
+  DECLARE @IsSysadmin bit = IS_SRVROLEMEMBER('sysadmin')
 
   DECLARE @QueueID int
   DECLARE @QueueStartTime datetime2
@@ -5392,6 +5391,12 @@ BEGIN
   IF @Version >= 16 AND @EngineEdition NOT IN(5, 8)
   BEGIN
     SET @StartMessage = 'Contained availability group connection: ' + CASE WHEN @ContainedAvailabilityGroupListenerConnection = 1 THEN 'Yes' WHEN @ContainedAvailabilityGroupListenerConnection = 0 THEN 'No' ELSE 'N/A' END
+    RAISERROR('%s',10,1,@StartMessage) WITH NOWAIT
+  END
+
+  IF @EngineEdition <> 5
+  BEGIN
+    SET @StartMessage = 'Is sysadmin: ' + CASE WHEN @IsSysadmin = 1 THEN 'Yes' WHEN @IsSysadmin = 0 THEN 'No' ELSE 'N/A' END
     RAISERROR('%s',10,1,@StartMessage) WITH NOWAIT
   END
 
@@ -7184,7 +7189,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-08-10 19:53:25                                                               //--
+  --// Version: 2026-08-12 22:02:18                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -7221,6 +7226,7 @@ BEGIN
   DECLARE @HostPlatform nvarchar(max)
   DECLARE @ContainedAvailabilityGroupID uniqueidentifier
   DECLARE @ContainedAvailabilityGroupListenerConnection bit
+  DECLARE @IsSysadmin bit = IS_SRVROLEMEMBER('sysadmin')
 
   DECLARE @QueueID int
   DECLARE @QueueStartTime datetime2
@@ -7367,7 +7373,7 @@ BEGIN
                                        Selected bit DEFAULT 0,
                                        AlterIndexCompleted bit DEFAULT 0,
                                        UpdateStatisticsCompleted bit DEFAULT 0,
-                                       Completed AS CASE WHEN AlterIndexCompleted = 1 AND UpdateStatisticsCompleted = 1 THEN 1 ELSE 0 END,
+                                       Completed AS CAST(CASE WHEN AlterIndexCompleted = 1 AND UpdateStatisticsCompleted = 1 THEN 1 ELSE 0 END AS bit) PERSISTED,
                                        PRIMARY KEY (Selected, Completed, [Order], ID),
                                        INDEX IX_ObjectID_IndexID_PartitionNumber NONCLUSTERED (ObjectID, IndexID, PartitionNumber),
                                        INDEX IX_ObjectID_StatisticsID_PartitionNumber NONCLUSTERED (ObjectID, StatisticsID, PartitionNumber))
@@ -7595,6 +7601,12 @@ BEGIN
   IF @Version >= 16 AND @EngineEdition NOT IN(5, 8)
   BEGIN
     SET @StartMessage = 'Contained availability group connection: ' + CASE WHEN @ContainedAvailabilityGroupListenerConnection = 1 THEN 'Yes' WHEN @ContainedAvailabilityGroupListenerConnection = 0 THEN 'No' ELSE 'N/A' END
+    RAISERROR('%s',10,1,@StartMessage) WITH NOWAIT
+  END
+
+  IF @EngineEdition <> 5
+  BEGIN
+    SET @StartMessage = 'Is sysadmin: ' + CASE WHEN @IsSysadmin = 1 THEN 'Yes' WHEN @IsSysadmin = 0 THEN 'No' ELSE 'N/A' END
     RAISERROR('%s',10,1,@StartMessage) WITH NOWAIT
   END
 
