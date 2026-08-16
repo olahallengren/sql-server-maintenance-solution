@@ -94,7 +94,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-08-12 22:02:18                                                               //--
+  --// Version: 2026-08-16 22:00:30                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -4066,7 +4066,15 @@ BEGIN
       END
 
       -- Perform a backup
-      IF NOT EXISTS (SELECT * FROM @CurrentDirectories WHERE DirectoryPath <> 'NUL' AND DirectoryPath NOT IN(SELECT DirectoryPath FROM @Directories) AND (CreateOutput <> 0 OR CreateOutput IS NULL))
+      IF @BackupSoftware = 'DATA_DOMAIN_BOOST' AND @CurrentDatabaseName LIKE '%"%'
+      BEGIN
+        SET @ErrorMessage = 'The name of the database ' + QUOTENAME(@CurrentDatabaseName) + ' is not supported. Double quotes (") are not supported with Data Domain Boost.'
+        RAISERROR('%s',16,1,@ErrorMessage) WITH NOWAIT
+        SET @Error = @@ERROR
+        SET @ReturnCode = @Error
+        RAISERROR(@EmptyLine,10,1) WITH NOWAIT
+      END
+      ELSE IF NOT EXISTS (SELECT * FROM @CurrentDirectories WHERE DirectoryPath <> 'NUL' AND DirectoryPath NOT IN(SELECT DirectoryPath FROM @Directories) AND (CreateOutput <> 0 OR CreateOutput IS NULL))
       OR @HostPlatform = 'Linux'
       BEGIN
         IF @BackupSoftware IS NULL
