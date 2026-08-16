@@ -9,7 +9,7 @@ License: https://ola.hallengren.com/license.html
 
 GitHub: https://github.com/olahallengren/sql-server-maintenance-solution
 
-Version: 2026-08-16 22:00:30
+Version: 2026-08-16 23:09:18
 
 You can contact me by e-mail at ola@hallengren.com.
 
@@ -88,7 +88,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-08-16 22:00:30                                                               //--
+  --// Version: 2026-08-16 23:09:18                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -394,7 +394,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-08-16 22:00:30                                                               //--
+  --// Version: 2026-08-16 23:09:18                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -2441,7 +2441,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-08-16 22:00:30                                                               //--
+  --// Version: 2026-08-16 23:09:18                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
