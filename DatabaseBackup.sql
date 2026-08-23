@@ -94,7 +94,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-08-23 14:14:17                                                               //--
+  --// Version: 2026-08-23 14:34:11                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -1331,7 +1331,7 @@ BEGIN
   IF @CleanupTime IS NOT NULL AND @URL IS NOT NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @CleanupTime is not supported. Cleanup is not supported on Azure Blob Storage. See https://ola.hallengren.com/sql-server-backup.html#CleanupTime.', 16, 1)
+    VALUES('The value for the parameter @CleanupTime is not supported. Cleanup is not supported when backing up to URL. See https://ola.hallengren.com/sql-server-backup.html#CleanupTime.', 16, 1)
   END
 
   IF @CleanupTime IS NOT NULL AND EXISTS(SELECT * FROM @Directories WHERE DirectoryPath = 'NUL')
