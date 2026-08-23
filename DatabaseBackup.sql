@@ -94,7 +94,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-08-23 14:34:11                                                               //--
+  --// Version: 2026-08-23 14:46:45                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -998,7 +998,7 @@ BEGIN
   IF @MirrorDirectory IS NOT NULL AND @EngineEdition = 8
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    VALUES('The value for the parameter @MirrorDirectory is not supported. Mirrored backup is not supported on Azure SQL Managed Instance. See https://ola.hallengren.com/sql-server-backup.html#MirrorDirectory.', 16, 1)
+    VALUES('The parameter @MirrorDirectory is not supported on Azure SQL Managed Instance. See https://ola.hallengren.com/sql-server-backup.html#MirrorDirectory.', 16, 1)
   END
 
   IF @MirrorDirectory IS NOT NULL AND @BackupSoftware = 'DATA_DOMAIN_BOOST'
