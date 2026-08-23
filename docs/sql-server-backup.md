@@ -455,6 +455,16 @@ You can use the following tokens:
 | CopyOnly | COPY_ONLY for copy-only backups |
 | Description | Backup description |
 | BackupSetName | Backup set name |
+| Year | Year |
+| Month | Month |
+| Day | Day |
+| Week | Week |
+| Weekday | Weekday |
+| Hour | Hour |
+| Minute | Minute |
+| Second | Second |
+| Millisecond | Millisecond |
+| Microsecond | Microsecond |
 | MajorVersion | Major version |
 | MinorVersion | Minor version |
 | DirectorySeparator | The directory separator |
@@ -484,6 +494,16 @@ You can use the following tokens:
 | CopyOnly | COPY_ONLY for copy-only backups |
 | Description | Backup description |
 | BackupSetName | Backup set name |
+| Year | Year |
+| Month | Month |
+| Day | Day |
+| Week | Week |
+| Weekday | Weekday |
+| Hour | Hour |
+| Minute | Minute |
+| Second | Second |
+| Millisecond | Millisecond |
+| Microsecond | Microsecond |
 | MajorVersion | Major version |
 | MinorVersion | Minor version |
 | DirectorySeparator | The directory separator |
