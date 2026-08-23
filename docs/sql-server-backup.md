@@ -80,7 +80,13 @@ The Verify option in DatabaseBackup uses the SQL Server [RESTORE VERIFYONLY](htt
 
 Specify the time, in hours, after which the backup files are deleted. If no time is specified, then no backup files are deleted.
 
-DatabaseBackup has a check to verify that transaction log backups that are newer than the most recent full or differential backup are not deleted.
+By default, backup files are deleted after each database is backed up and verified. Backup files are deleted only if the backup and verification of the database were successful.
+
+DatabaseBackup has a check to verify that transaction log backups that are newer than the most recent full or differential backup are not deleted. This is to guarantee that you can always perform a point-in-time restore.
+
+DatabaseBackup uses the extended stored procedure xp_delete_file to delete backup files. xp_delete_file deletes files based on a directory, a file extension, and a modified date. Therefore if you are using date or time tokens (e.g. {Year}, {Month}, and {Day}) in the parameters @DirectoryStructure or @AvailabilityGroupDirectoryStructure, then old backup files may be in different directories, and may not be deleted.
+
+Cleanup is not supported when backing up to URL.
 
 ### CleanupMode
 
@@ -334,6 +340,10 @@ Specify the time, in hours, after which the backup files are deleted in the mirr
 By default, backup files are deleted after each database is backed up and verified. Backup files are deleted only if the backup and verification of the database were successful.
 
 DatabaseBackup has a check to verify that transaction log backups that are newer than the most recent full or differential backup are not deleted. This is to guarantee that you can always perform a point-in-time restore.
+
+DatabaseBackup uses the extended stored procedure xp_delete_file to delete backup files. xp_delete_file deletes files based on a directory, a file extension, and a modified date. Therefore if you are using date or time tokens (e.g. {Year}, {Month}, and {Day}) in the parameters @DirectoryStructure or @AvailabilityGroupDirectoryStructure, then old backup files may be in different directories, and may not be deleted.
+
+Cleanup is not supported when backing up to URL.
 
 ### MirrorCleanupMode
 
