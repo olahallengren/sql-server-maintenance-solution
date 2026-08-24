@@ -9,7 +9,6 @@ END
 GO
 
 ALTER PROCEDURE [dbo].[IndexOptimize]
-
 @Databases nvarchar(max) = NULL,
 @FragmentationLow nvarchar(max) = NULL,
 @FragmentationMedium nvarchar(max) = 'INDEX_REORGANIZE,INDEX_REBUILD_ONLINE,INDEX_REBUILD_OFFLINE',
@@ -46,6 +45,7 @@ ALTER PROCEDURE [dbo].[IndexOptimize]
 @DatabasesInParallel nvarchar(max) = 'N',
 @ExecuteAsUser nvarchar(max) = NULL,
 @LogToTable nvarchar(max) = 'N',
+@MinIndexUsageDays int = NULL,
 @Execute nvarchar(max) = 'Y'
 
 AS
@@ -363,6 +363,13 @@ BEGIN
 
   DECLARE @EmptyLine nvarchar(max) = CHAR(9)
 
+  
+  DECLARE @CurrentStatsResetEstimate datetime2
+  DECLARE @CurrentHoursSinceReset    int
+  DECLARE @CurrentStatsTrusted       bit
+  DECLARE @RequiredTrustHours        int = @MinIndexUsageDays * 24
+
+  DECLARE @Version numeric(18,10) = CAST(LEFT(CAST(SERVERPROPERTY('ProductVersion') AS nvarchar(max)),CHARINDEX('.',CAST(SERVERPROPERTY('ProductVersion') AS nvarchar(max))) - 1) + '.' + REPLACE(RIGHT(CAST(SERVERPROPERTY('ProductVersion') AS nvarchar(max)), LEN(CAST(SERVERPROPERTY('ProductVersion') AS nvarchar(max))) - CHARINDEX('.',CAST(SERVERPROPERTY('ProductVersion') AS nvarchar(max)))),'.','') AS numeric(18,10))
   DECLARE @ProductVersion nvarchar(max) = CAST(SERVERPROPERTY('ProductVersion') AS nvarchar(max))
   DECLARE @ProductUpdateType nvarchar(max) = CAST(SERVERPROPERTY('ProductUpdateType') AS nvarchar(max))
   DECLARE @EngineEdition int = CAST(SERVERPROPERTY('EngineEdition') AS int)
@@ -400,6 +407,44 @@ BEGIN
   --// Log initial information                                                                    //--
   ----------------------------------------------------------------------------------------------------
 
+  SET @Parameters = '@Databases = ' + ISNULL('''' + REPLACE(@Databases,'''','''''') + '''','NULL')
+  SET @Parameters += ', @FragmentationLow = ' + ISNULL('''' + REPLACE(@FragmentationLow,'''','''''') + '''','NULL')
+  SET @Parameters += ', @FragmentationMedium = ' + ISNULL('''' + REPLACE(@FragmentationMedium,'''','''''') + '''','NULL')
+  SET @Parameters += ', @FragmentationHigh = ' + ISNULL('''' + REPLACE(@FragmentationHigh,'''','''''') + '''','NULL')
+  SET @Parameters += ', @FragmentationLevel1 = ' + ISNULL(CAST(@FragmentationLevel1 AS nvarchar),'NULL')
+  SET @Parameters += ', @FragmentationLevel2 = ' + ISNULL(CAST(@FragmentationLevel2 AS nvarchar),'NULL')
+  SET @Parameters += ', @MinNumberOfPages = ' + ISNULL(CAST(@MinNumberOfPages AS nvarchar),'NULL')
+  SET @Parameters += ', @MaxNumberOfPages = ' + ISNULL(CAST(@MaxNumberOfPages AS nvarchar),'NULL')
+  SET @Parameters += ', @SortInTempdb = ' + ISNULL('''' + REPLACE(@SortInTempdb,'''','''''') + '''','NULL')
+  SET @Parameters += ', @MaxDOP = ' + ISNULL(CAST(@MaxDOP AS nvarchar),'NULL')
+  SET @Parameters += ', @FillFactor = ' + ISNULL(CAST(@FillFactor AS nvarchar),'NULL')
+  SET @Parameters += ', @PadIndex = ' + ISNULL('''' + REPLACE(@PadIndex,'''','''''') + '''','NULL')
+  SET @Parameters += ', @LOBCompaction = ' + ISNULL('''' + REPLACE(@LOBCompaction,'''','''''') + '''','NULL')
+  SET @Parameters += ', @UpdateStatistics = ' + ISNULL('''' + REPLACE(@UpdateStatistics,'''','''''') + '''','NULL')
+  SET @Parameters += ', @OnlyModifiedStatistics = ' + ISNULL('''' + REPLACE(@OnlyModifiedStatistics,'''','''''') + '''','NULL')
+  SET @Parameters += ', @StatisticsModificationLevel = ' + ISNULL(CAST(@StatisticsModificationLevel AS nvarchar),'NULL')
+  SET @Parameters += ', @StatisticsSample = ' + ISNULL(CAST(@StatisticsSample AS nvarchar),'NULL')
+  SET @Parameters += ', @StatisticsResample = ' + ISNULL('''' + REPLACE(@StatisticsResample,'''','''''') + '''','NULL')
+  SET @Parameters += ', @PartitionLevel = ' + ISNULL('''' + REPLACE(@PartitionLevel,'''','''''') + '''','NULL')
+  SET @Parameters += ', @MSShippedObjects = ' + ISNULL('''' + REPLACE(@MSShippedObjects,'''','''''') + '''','NULL')
+  SET @Parameters += ', @Indexes = ' + ISNULL('''' + REPLACE(@Indexes,'''','''''') + '''','NULL')
+  SET @Parameters += ', @TimeLimit = ' + ISNULL(CAST(@TimeLimit AS nvarchar),'NULL')
+  SET @Parameters += ', @Delay = ' + ISNULL(CAST(@Delay AS nvarchar),'NULL')
+  SET @Parameters += ', @WaitAtLowPriorityMaxDuration = ' + ISNULL(CAST(@WaitAtLowPriorityMaxDuration AS nvarchar),'NULL')
+  SET @Parameters += ', @WaitAtLowPriorityAbortAfterWait = ' + ISNULL('''' + REPLACE(@WaitAtLowPriorityAbortAfterWait,'''','''''') + '''','NULL')
+  SET @Parameters += ', @Resumable = ' + ISNULL('''' + REPLACE(@Resumable,'''','''''') + '''','NULL')
+  SET @Parameters += ', @AvailabilityGroups = ' + ISNULL('''' + REPLACE(@AvailabilityGroups,'''','''''') + '''','NULL')
+  SET @Parameters += ', @LockTimeout = ' + ISNULL(CAST(@LockTimeout AS nvarchar),'NULL')
+  SET @Parameters += ', @LockMessageSeverity = ' + ISNULL(CAST(@LockMessageSeverity AS nvarchar),'NULL')
+  SET @Parameters += ', @StringDelimiter = ' + ISNULL('''' + REPLACE(@StringDelimiter,'''','''''') + '''','NULL')
+  SET @Parameters += ', @DatabaseOrder = ' + ISNULL('''' + REPLACE(@DatabaseOrder,'''','''''') + '''','NULL')
+  SET @Parameters += ', @DatabasesInParallel = ' + ISNULL('''' + REPLACE(@DatabasesInParallel,'''','''''') + '''','NULL')
+  SET @Parameters += ', @ExecuteAsUser = ' + ISNULL('''' + REPLACE(@ExecuteAsUser,'''','''''') + '''','NULL')
+  SET @Parameters += ', @LogToTable = ' + ISNULL('''' + REPLACE(@LogToTable,'''','''''') + '''','NULL')
+  SET @Parameters += ', @MinIndexUsageDays = ' + ISNULL(CAST(@MinIndexUsageDays AS nvarchar),'NULL')
+  SET @Parameters += ', @Execute = ' + ISNULL('''' + REPLACE(@Execute,'''','''''') + '''','NULL')
+
+  SET @StartMessage = 'Date and time: ' + CONVERT(nvarchar,@StartTime,120)
   INSERT INTO @Parameters ([Name], ValueNvarchar) VALUES('@Databases', @Databases)
   INSERT INTO @Parameters ([Name], ValueNvarchar) VALUES('@FragmentationLow', @FragmentationLow)
   INSERT INTO @Parameters ([Name], ValueNvarchar) VALUES('@FragmentationMedium', @FragmentationMedium)
@@ -1160,6 +1205,14 @@ BEGIN
 
   ----------------------------------------------------------------------------------------------------
 
+  IF @MinIndexUsageDays < 0
+  BEGIN
+    INSERT INTO @Errors ([Message], Severity, [State])
+    SELECT 'The value for the parameter @MinIndexUsageDays is not supported.', 16, 1
+  END
+  ----------------------------------------------------------------------------------------------------
+
+  IF @Delay < 0
   IF @StatisticsPersistSample NOT IN('Y','N')
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
@@ -1652,6 +1705,7 @@ BEGIN
       RAISERROR('%s',10,1,@DatabaseMessage) WITH NOWAIT
 
       SET @DatabaseMessage = 'Recovery model: ' + @CurrentRecoveryModel
+      RAISERROR('%s',10,1,@DatabaseMessage) WITH NOWAIT      
       RAISERROR('%s',10,1,@DatabaseMessage) WITH NOWAIT
     END
 
@@ -1752,14 +1806,58 @@ BEGIN
                                                                                        WHEN @CurrentDistributedAvailabilityGroupRole = 'PRIMARY' AND @CurrentAvailabilityGroupRole = 'SECONDARY' THEN 'Secondary replica in primary availability group' ELSE 'N/A' END
       RAISERROR('%s',10,1,@DatabaseMessage) WITH NOWAIT
     END
+        -- Reset internal trust state for this database.
+    SET @CurrentStatsResetEstimate = NULL
+    SET @CurrentHoursSinceReset    = NULL
+    SET @CurrentStatsTrusted       = NULL
 
-    IF @CurrentDatabaseMirroringRole IS NOT NULL
+    -- Reset internal trust state for this database.
+    SET @CurrentStatsResetEstimate = NULL
+    SET @CurrentHoursSinceReset    = NULL
+    SET @CurrentStatsTrusted       = NULL
+
+    -- Estimate when sys.dm_db_index_usage_stats was last reset for this DB.
+    -- Take the LATEST of:
+    --   1) instance start time            -- a restart wipes the DMV
+    --   2) database create_date           -- catches attach / restore / new DBs
+    --   3) earliest activity in the DMV   -- a lower bound; usage must be at least this old
+    -- Skip the computation entirely on contexts where the DMV would be misleading or unavailable:
+    --   - DB not ONLINE
+    --   - AG secondary (or DB whose AG role cannot be determined)
+    --   - Amazon RDS rdsadmin
+    IF @MinIndexUsageDays IS NOT NULL
+       AND @CurrentDatabaseState = 'ONLINE'
+       AND NOT (@CurrentAvailabilityGroup IS NOT NULL AND (@CurrentAvailabilityGroupRole <> 'PRIMARY' OR @CurrentAvailabilityGroupRole IS NULL))
+       AND NOT (@AmazonRDS = 1 AND @CurrentDatabaseName = 'rdsadmin')
     BEGIN
-      SET @DatabaseMessage = 'Database mirroring role: ' + @CurrentDatabaseMirroringRole
-      RAISERROR('%s',10,1,@DatabaseMessage) WITH NOWAIT
-    END
+      SELECT @CurrentStatsResetEstimate =
+        (SELECT MAX(t) FROM (VALUES
+           ((SELECT sqlserver_start_time FROM sys.dm_os_sys_info)),
+           ((SELECT create_date FROM sys.databases WHERE [name] = @CurrentDatabaseName)),
+           ((SELECT MIN(x) FROM (VALUES
+                ((SELECT MIN(last_user_seek)   FROM sys.dm_db_index_usage_stats WHERE database_id = DB_ID(@CurrentDatabaseName))),
+                ((SELECT MIN(last_user_scan)   FROM sys.dm_db_index_usage_stats WHERE database_id = DB_ID(@CurrentDatabaseName))),
+                ((SELECT MIN(last_user_lookup) FROM sys.dm_db_index_usage_stats WHERE database_id = DB_ID(@CurrentDatabaseName))),
+                ((SELECT MIN(last_user_update) FROM sys.dm_db_index_usage_stats WHERE database_id = DB_ID(@CurrentDatabaseName)))
+             ) AS u(x)))
+        ) AS r(t))
 
-    RAISERROR(@EmptyLine,10,1) WITH NOWAIT
+      SET @CurrentHoursSinceReset = DATEDIFF(HOUR, @CurrentStatsResetEstimate, SYSDATETIME())
+      SET @CurrentStatsTrusted    = CASE WHEN @CurrentHoursSinceReset >= @RequiredTrustHours
+                                         THEN 1 ELSE 0 END
+
+      SET @DatabaseMessage = 'Usage stats reset estimate: '
+                           + ISNULL(CONVERT(nvarchar(30), @CurrentStatsResetEstimate, 121),'N/A')
+                           + ' (DMV age: ' + ISNULL(CAST(@CurrentHoursSinceReset AS nvarchar), 'N/A') + ' h'
+                           + ', required: ' + CAST(@RequiredTrustHours AS nvarchar) + ' h / '
+                           + CAST(@MinIndexUsageDays AS nvarchar) + ' d) - Trusted: '
+                           + CASE WHEN @CurrentStatsTrusted = 1
+                                  THEN 'Yes'
+                                  ELSE 'NO - Insufficient history in sys.dm_db_index_usage_stats (likely restart, failover, detach/attach, or recent index DDL). Unused-index skip disabled for this database; fragmentation-based maintenance will still run.'
+                             END
+      RAISERROR('%s',10,1,@DatabaseMessage) WITH NOWAIT
+      RAISERROR(@EmptyLine,10,1) WITH NOWAIT
+    END
 
     IF @ExecuteAsUser IS NOT NULL
     AND @CurrentDatabaseState = 'ONLINE'
@@ -2183,6 +2281,67 @@ BEGIN
         WHERE Selected = 1
         )
         UPDATE tmpIndexesStatistics
+        SET tmpIndexesStatistics.StartPosition = SelectedIndexes2.StartPosition
+        FROM @tmpIndexesStatistics tmpIndexesStatistics
+        INNER JOIN (SELECT tmpIndexesStatistics.SchemaName, tmpIndexesStatistics.ObjectName, tmpIndexesStatistics.IndexName, tmpIndexesStatistics.StatisticsName, MIN(SelectedIndexes.StartPosition) AS StartPosition
+                    FROM @tmpIndexesStatistics tmpIndexesStatistics
+                    INNER JOIN @SelectedIndexes SelectedIndexes
+                    ON @CurrentDatabaseName LIKE REPLACE(SelectedIndexes.DatabaseName,'_','[_]') AND tmpIndexesStatistics.SchemaName LIKE REPLACE(SelectedIndexes.SchemaName,'_','[_]') AND tmpIndexesStatistics.ObjectName LIKE REPLACE(SelectedIndexes.ObjectName,'_','[_]') AND COALESCE(tmpIndexesStatistics.IndexName,tmpIndexesStatistics.StatisticsName) LIKE REPLACE(SelectedIndexes.IndexName,'_','[_]')
+                    WHERE SelectedIndexes.Selected = 1
+                    GROUP BY tmpIndexesStatistics.SchemaName, tmpIndexesStatistics.ObjectName, tmpIndexesStatistics.IndexName, tmpIndexesStatistics.StatisticsName) SelectedIndexes2
+        ON tmpIndexesStatistics.SchemaName = SelectedIndexes2.SchemaName
+        AND tmpIndexesStatistics.ObjectName = SelectedIndexes2.ObjectName
+        AND (tmpIndexesStatistics.IndexName = SelectedIndexes2.IndexName OR tmpIndexesStatistics.IndexName IS NULL)
+        AND (tmpIndexesStatistics.StatisticsName = SelectedIndexes2.StatisticsName OR tmpIndexesStatistics.StatisticsName IS NULL)
+      END;
+
+
+      -- Skip indexes that look unused, but ONLY when the DMV is old enough to trust.
+      -- If the DMV is too young (@CurrentStatsTrusted = 0), do nothing here:
+      -- we fall back to the existing fragmentation-based behavior rather than
+      -- making decisions on data we cannot trust.
+      IF @MinIndexUsageDays IS NOT NULL AND @CurrentStatsTrusted = 1
+      BEGIN
+        UPDATE tis
+        SET tis.Selected = 0
+        FROM @tmpIndexesStatistics tis
+        WHERE tis.IndexID IS NOT NULL
+          AND tis.IndexID > 1   -- never deselect the clustered index / heap entry
+          AND NOT EXISTS (
+                SELECT 1
+                FROM sys.dm_db_index_usage_stats us
+                WHERE us.database_id = DB_ID(@CurrentDatabaseName)
+                  AND us.object_id   = tis.ObjectID
+                  AND us.index_id    = tis.IndexID
+                  AND (us.user_seeks + us.user_scans + us.user_lookups) > 0
+              )
+      END;
+
+
+
+      WITH tmpIndexesStatistics AS (
+      SELECT SchemaName, ObjectName, [Order], ROW_NUMBER() OVER (ORDER BY ISNULL(ResumableIndexOperation,0) DESC, StartPosition ASC, SchemaName ASC, ObjectName ASC, CASE WHEN IndexType IS NULL THEN 1 ELSE 0 END ASC, IndexType ASC, IndexName ASC, StatisticsName ASC, PartitionNumber ASC) AS RowNumber
+      FROM @tmpIndexesStatistics tmpIndexesStatistics
+      WHERE Selected = 1
+      )
+      UPDATE tmpIndexesStatistics
+      SET [Order] = RowNumber
+
+      SELECT @ErrorMessage = STRING_AGG(QUOTENAME(DatabaseName) + '.' + QUOTENAME(SchemaName) + '.' + QUOTENAME(ObjectName), ', ')
+      FROM @SelectedIndexes SelectedIndexes
+      WHERE DatabaseName = @CurrentDatabaseName
+      AND SchemaName NOT LIKE '%[%]%'
+      AND ObjectName NOT LIKE '%[%]%'
+      AND IndexName LIKE '%[%]%'
+      AND NOT EXISTS (SELECT * FROM @tmpIndexesStatistics WHERE SchemaName = SelectedIndexes.SchemaName AND ObjectName = SelectedIndexes.ObjectName)
+
+      IF @ErrorMessage IS NOT NULL
+      BEGIN
+        SET @ErrorMessage = 'The following objects in the @Indexes parameter do not exist: ' + @ErrorMessage + '.'
+        RAISERROR('%s',10,1,@ErrorMessage) WITH NOWAIT
+        SET @Error = @@ERROR
+        RAISERROR(@EmptyLine,10,1) WITH NOWAIT
+      END
         SET [Order] = RowNumber
 
         -- Update that alter index is completed for rows that have no index, if no index actions have been selected, for rows on read-only filegroups, or based on the page counts
@@ -3006,6 +3165,10 @@ BEGIN
     END
 
     -- Clear variables
+    SET @CurrentStatsResetEstimate = NULL
+    SET @CurrentHoursSinceReset    = NULL
+    SET @CurrentStatsTrusted       = NULL
+
     SET @CurrentDBID = NULL
     SET @CurrentDatabaseName = NULL
 
