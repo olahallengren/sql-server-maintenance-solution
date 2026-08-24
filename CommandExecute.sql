@@ -22,6 +22,8 @@ ALTER PROCEDURE [dbo].[CommandExecute]
 @IndexType int = NULL,
 @StatisticsName nvarchar(max) = NULL,
 @PartitionNumber int = NULL,
+@EncryptionKey nvarchar(max) = NULL,
+@EncryptionKeyPlaceholder nvarchar(max) = NULL,
 @ExtendedInfo xml = NULL,
 @LockMessageSeverity int = 16,
 @ExecuteAsUser nvarchar(max) = NULL,
@@ -36,7 +38,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-05-18 20:15:56                                                               //--
+  --// Version: 2026-08-23 14:46:45                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -50,7 +52,7 @@ BEGIN
   DECLARE @Errors TABLE (ID int IDENTITY PRIMARY KEY,
                          [Message] nvarchar(max) NOT NULL,
                          Severity int NOT NULL,
-                         [State] int)
+                         [State] int NOT NULL)
 
   DECLARE @CurrentMessage nvarchar(max)
   DECLARE @CurrentSeverity int
@@ -70,32 +72,28 @@ BEGIN
 
   DECLARE @RevertCommand nvarchar(max)
 
+  DECLARE @CommandMasked nvarchar(max)
+
   ----------------------------------------------------------------------------------------------------
   --// Check core requirements                                                                    //--
   ----------------------------------------------------------------------------------------------------
 
-  IF NOT (SELECT [compatibility_level] FROM sys.databases WHERE [name] = DB_NAME()) >= 90
-  BEGIN
-    INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The database ' + QUOTENAME(DB_NAME()) + ' has to be in compatibility level 90 or higher.', 16, 1
-  END
-
   IF NOT (SELECT uses_ansi_nulls FROM sys.sql_modules WHERE [object_id] = @@PROCID) = 1
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'ANSI_NULLS has to be set to ON for the stored procedure.', 16, 1
+    VALUES('ANSI_NULLS has to be set to ON for the stored procedure.', 16, 1)
   END
 
   IF NOT (SELECT uses_quoted_identifier FROM sys.sql_modules WHERE [object_id] = @@PROCID) = 1
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'QUOTED_IDENTIFIER has to be set to ON for the stored procedure.', 16, 1
+    VALUES('QUOTED_IDENTIFIER has to be set to ON for the stored procedure.', 16, 1)
   END
 
   IF @LogToTable = 'Y' AND NOT EXISTS (SELECT * FROM sys.objects objects INNER JOIN sys.schemas schemas ON objects.[schema_id] = schemas.[schema_id] WHERE objects.[type] = 'U' AND schemas.[name] = 'dbo' AND objects.[name] = 'CommandLog')
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The table CommandLog is missing. Download https://ola.hallengren.com/scripts/CommandLog.sql.', 16, 1
+    VALUES('The table CommandLog is missing. Download https://ola.hallengren.com/scripts/CommandLog.sql.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
@@ -105,56 +103,62 @@ BEGIN
   IF @DatabaseContext IS NULL OR NOT EXISTS (SELECT * FROM sys.databases WHERE name = @DatabaseContext)
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @DatabaseContext is not supported.', 16, 1
+    VALUES('The value for the parameter @DatabaseContext is not supported. Specify the name of an existing database.', 16, 1)
   END
 
   IF @Command IS NULL OR @Command = ''
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @Command is not supported.', 16, 1
+    VALUES('The value for the parameter @Command is not supported. The value cannot be NULL or empty.', 16, 1)
   END
 
   IF @CommandType IS NULL OR @CommandType = '' OR LEN(@CommandType) > 60
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @CommandType is not supported.', 16, 1
+    VALUES('The value for the parameter @CommandType is not supported. The value cannot be NULL or empty, and the maximum length is 60 characters.', 16, 1)
   END
 
   IF @Mode NOT IN(1,2) OR @Mode IS NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @Mode is not supported.', 16, 1
+    VALUES('The value for the parameter @Mode is not supported. Supported values are 1 and 2.', 16, 1)
+  END
+
+  IF (@EncryptionKey IS NULL AND @EncryptionKeyPlaceholder IS NOT NULL) OR (@EncryptionKey IS NOT NULL AND @EncryptionKeyPlaceholder IS NULL)
+  BEGIN
+    INSERT INTO @Errors ([Message], Severity, [State])
+    VALUES('The parameters @EncryptionKey and @EncryptionKeyPlaceholder must be specified together.', 16, 1)
   END
 
   IF @LockMessageSeverity NOT IN(10,16) OR @LockMessageSeverity IS NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @LockMessageSeverity is not supported.', 16, 1
+    VALUES('The value for the parameter @LockMessageSeverity is not supported. Supported values are 10 and 16.', 16, 1)
   END
 
   IF LEN(@ExecuteAsUser) > 128
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @ExecuteAsUser is not supported.', 16, 1
+    VALUES('The value for the parameter @ExecuteAsUser is not supported. The maximum length is 128 characters.', 16, 1)
   END
 
   IF @LogToTable NOT IN('Y','N') OR @LogToTable IS NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @LogToTable is not supported.', 16, 1
+    VALUES('The value for the parameter @LogToTable is not supported. Supported values are ''Y'' and ''N''.', 16, 1)
   END
 
   IF @Execute NOT IN('Y','N') OR @Execute IS NULL
   BEGIN
     INSERT INTO @Errors ([Message], Severity, [State])
-    SELECT 'The value for the parameter @Execute is not supported.', 16, 1
+    VALUES('The value for the parameter @Execute is not supported. Supported values are ''Y'' and ''N''.', 16, 1)
   END
 
   ----------------------------------------------------------------------------------------------------
   --// Raise errors                                                                               //--
   ----------------------------------------------------------------------------------------------------
 
-  DECLARE ErrorCursor CURSOR FAST_FORWARD FOR SELECT [Message], Severity, [State] FROM @Errors ORDER BY [ID] ASC
+  DECLARE ErrorCursor CURSOR LOCAL FAST_FORWARD FOR SELECT [Message], Severity, [State] FROM @Errors ORDER BY [ID] ASC
 
   OPEN ErrorCursor
 
@@ -190,18 +194,26 @@ BEGIN
   END
 
   ----------------------------------------------------------------------------------------------------
+  --// Mask encryption key                                                                        //--
+  ----------------------------------------------------------------------------------------------------
+
+  SET @CommandMasked = CASE WHEN @EncryptionKeyPlaceholder IS NULL THEN @Command ELSE REPLACE(@Command,@EncryptionKeyPlaceholder,'********') END
+
+  SET @Command = CASE WHEN @EncryptionKeyPlaceholder IS NULL THEN @Command ELSE REPLACE(@Command,@EncryptionKeyPlaceholder,REPLACE(ISNULL(@EncryptionKey,''),'''','''''')) END
+
+  ----------------------------------------------------------------------------------------------------
   --// Log initial information                                                                    //--
   ----------------------------------------------------------------------------------------------------
 
   SET @StartTime = SYSDATETIME()
 
-  SET @StartMessage = 'Date and time: ' + CONVERT(nvarchar,@StartTime,120)
+  SET @StartMessage = 'Date and time: ' + CONVERT(nvarchar(max),@StartTime,120)
   RAISERROR('%s',10,1,@StartMessage) WITH NOWAIT
 
   SET @StartMessage = 'Database context: ' + QUOTENAME(@DatabaseContext)
   RAISERROR('%s',10,1,@StartMessage) WITH NOWAIT
 
-  SET @StartMessage = 'Command: ' + @Command
+  SET @StartMessage = 'Command: ' + @CommandMasked
   RAISERROR('%s',10,1,@StartMessage) WITH NOWAIT
 
   IF @Comment IS NOT NULL
@@ -213,10 +225,10 @@ BEGIN
   IF @LogToTable = 'Y'
   BEGIN
     INSERT INTO dbo.CommandLog (DatabaseName, SchemaName, ObjectName, ObjectType, IndexName, IndexType, StatisticsName, PartitionNumber, ExtendedInfo, CommandType, Command, StartTime)
-    VALUES (@DatabaseName, @SchemaName, @ObjectName, @ObjectType, @IndexName, @IndexType, @StatisticsName, @PartitionNumber, @ExtendedInfo, @CommandType, @Command, @StartTime)
-  END
+    VALUES (@DatabaseName, @SchemaName, @ObjectName, @ObjectType, @IndexName, @IndexType, @StatisticsName, @PartitionNumber, @ExtendedInfo, @CommandType, @CommandMasked, @StartTime)
 
-  SET @ID = SCOPE_IDENTITY()
+    SET @ID = SCOPE_IDENTITY()
+  END
 
   ----------------------------------------------------------------------------------------------------
   --// Execute command                                                                            //--
@@ -238,7 +250,7 @@ BEGIN
       SET @Error = ERROR_NUMBER()
       SET @ErrorMessageOriginal = ERROR_MESSAGE()
 
-      SET @ErrorMessage = 'Msg ' + CAST(ERROR_NUMBER() AS nvarchar) + ', ' + ISNULL(ERROR_MESSAGE(),'')
+      SET @ErrorMessage = 'Msg ' + CAST(ERROR_NUMBER() AS nvarchar(max)) + ', ' + ISNULL(ERROR_MESSAGE(),'')
       SET @Severity = CASE WHEN ERROR_NUMBER() IN(1205, 1222, 5245) THEN @LockMessageSeverity ELSE ERROR_SEVERITY() END
       RAISERROR('%s',@Severity,1,@ErrorMessage) WITH NOWAIT
 
@@ -263,10 +275,10 @@ BEGIN
   SET @EndMessage = 'Outcome: ' + CASE WHEN @Execute = 'N' THEN 'Not Executed' WHEN @Error = 0 THEN 'Succeeded' ELSE 'Failed' END
   RAISERROR('%s',10,1,@EndMessage) WITH NOWAIT
 
-  SET @EndMessage = 'Duration: ' + CASE WHEN (DATEDIFF(SECOND,@StartTime,@EndTime) / (24 * 3600)) > 0 THEN CAST((DATEDIFF(SECOND,@StartTime,@EndTime) / (24 * 3600)) AS nvarchar) + '.' ELSE '' END + CONVERT(nvarchar,DATEADD(SECOND,DATEDIFF(SECOND,@StartTime,@EndTime),'1900-01-01'),108)
+  SET @EndMessage = 'Duration: ' + CASE WHEN (DATEDIFF(SECOND,@StartTime,@EndTime) / (24 * 3600)) > 0 THEN CAST((DATEDIFF(SECOND,@StartTime,@EndTime) / (24 * 3600)) AS nvarchar(max)) + '.' ELSE '' END + CONVERT(nvarchar(max),DATEADD(SECOND,DATEDIFF(SECOND,@StartTime,@EndTime),'1900-01-01'),108)
   RAISERROR('%s',10,1,@EndMessage) WITH NOWAIT
 
-  SET @EndMessage = 'Date and time: ' + CONVERT(nvarchar,@EndTime,120)
+  SET @EndMessage = 'Date and time: ' + CONVERT(nvarchar(max),@EndTime,120)
   RAISERROR('%s',10,1,@EndMessage) WITH NOWAIT
 
   RAISERROR(@EmptyLine,10,1) WITH NOWAIT
