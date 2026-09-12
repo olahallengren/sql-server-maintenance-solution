@@ -40,7 +40,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-08-23 14:46:45                                                               //--
+  --// Version: 2026-09-12 13:23:20                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -906,6 +906,18 @@ BEGIN
     VALUES('The value for the parameter @AvailabilityGroupReplicas is not supported. Supported values are ALL, PRIMARY, SECONDARY and PREFERRED_BACKUP_REPLICA. See https://ola.hallengren.com/sql-server-integrity-check.html#AvailabilityGroupReplicas.', 16, 1)
   END
 
+  IF @AvailabilityGroupReplicas = 'SECONDARY' AND NOT (@EngineEdition = 3)
+  BEGIN
+    INSERT INTO @Errors ([Message], Severity, [State])
+    VALUES('Setting @AvailabilityGroupReplicas to SECONDARY is not supported in this edition of SQL Server. See https://ola.hallengren.com/sql-server-integrity-check.html#AvailabilityGroupReplicas.', 16, 1)
+  END
+
+  IF @AvailabilityGroupReplicas = 'PREFERRED_BACKUP_REPLICA' AND NOT (@EngineEdition = 3)
+  BEGIN
+    INSERT INTO @Errors ([Message], Severity, [State])
+    VALUES('Setting @AvailabilityGroupReplicas to PREFERRED_BACKUP_REPLICA is not supported in this edition of SQL Server. See https://ola.hallengren.com/sql-server-integrity-check.html#AvailabilityGroupReplicas.', 16, 1)
+  END
+
   ----------------------------------------------------------------------------------------------------
 
   IF @Updateability NOT IN('READ_ONLY','READ_WRITE','ALL') OR @Updateability IS NULL
@@ -1492,7 +1504,7 @@ BEGIN
       WHERE group_id = @CurrentAvailabilityGroupID
     END
 
-    IF @IsHadrEnabled = 1 AND @CurrentAvailabilityGroup IS NOT NULL AND @AvailabilityGroupReplicas = 'PREFERRED_BACKUP_REPLICA'
+    IF @IsHadrEnabled = 1 AND @CurrentAvailabilityGroup IS NOT NULL AND @EngineEdition = 3 AND @AvailabilityGroupReplicas = 'PREFERRED_BACKUP_REPLICA'
     BEGIN
       SELECT @CurrentIsPreferredBackupReplica = sys.fn_hadr_backup_is_preferred_replica(@CurrentDatabaseName)
     END

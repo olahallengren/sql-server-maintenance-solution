@@ -94,7 +94,7 @@ BEGIN
   --// Source:  https://ola.hallengren.com                                                        //--
   --// License: https://ola.hallengren.com/license.html                                           //--
   --// GitHub:  https://github.com/olahallengren/sql-server-maintenance-solution                  //--
-  --// Version: 2026-08-23 14:46:45                                                               //--
+  --// Version: 2026-09-12 13:23:20                                                               //--
   ----------------------------------------------------------------------------------------------------
 
   SET NOCOUNT ON
@@ -3098,7 +3098,7 @@ BEGIN
       WHERE group_id = @CurrentAvailabilityGroupID
     END
 
-    IF @IsHadrEnabled = 1 AND @CurrentAvailabilityGroup IS NOT NULL
+    IF @IsHadrEnabled = 1 AND @CurrentAvailabilityGroup IS NOT NULL AND @EngineEdition = 3
     BEGIN
       SELECT @CurrentIsPreferredBackupReplica = sys.fn_hadr_backup_is_preferred_replica(@CurrentDatabaseName)
     END
